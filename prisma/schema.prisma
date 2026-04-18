@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -10,4 +5,225 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ─── User & Project ─────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects ResearchProject[]
+}
+
+model ResearchProject {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?  @db.Text
+  domain      String? // e.g. "组织行为学", "战略管理"
+  notebookUrl String? // NotebookLM notebook share URL
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  papers  Paper[]
+  reviews LiteratureReview[]
+  ideas   ResearchIdea[]
+  nodes   GraphNode[]
+  edges   GraphEdge[]
+  theories Theory[]
+}
+
+// ─── Papers ─────────────────────────────────────
+
+model Paper {
+  id             String   @id @default(cuid())
+  projectId      String
+  externalId     String? // Semantic Scholar / OpenAlex ID
+  doi            String?
+  title          String
+  abstract       String?  @db.Text
+  authors        Json // [{name, authorId?}]
+  year           Int?
+  venue          String?
+  citationCount  Int      @default(0)
+  referenceCount Int      @default(0)
+  source         String // "semantic_scholar" | "openalex" | "google_scholar" | "manual"
+  pdfUrl         String?
+  openAccessPdf  String? // direct PDF download URL
+  fieldsOfStudy  Json? // ["Management", "Psychology"]
+  rawMetadata    Json?
+  isSelected     Boolean  @default(false)
+  notes          String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project   ResearchProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  variables VariableRelation[]
+  theories  PaperTheory[]
+  cluster   PaperCluster?
+
+  @@unique([projectId, doi])
+  @@unique([projectId, externalId])
+  @@index([projectId, year])
+  @@index([projectId, citationCount])
+}
+
+model PaperCluster {
+  id        String @id @default(cuid())
+  paperId   String @unique
+  clusterId Int
+  label     String
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+}
+
+// ─── Literature Review ──────────────────────────
+
+model LiteratureReview {
+  id        String   @id @default(cuid())
+  projectId String
+  title     String
+  themes    Json // [{theme, description, papers}]
+  timeline  Json? // research timeline
+  gaps      Json // [{gap, evidence}]
+  directions Json? // future directions
+  fullText  String   @db.Text
+  paperIds  Json // paper IDs used
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project ResearchProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// ─── Research Ideas ─────────────────────────────
+
+model ResearchIdea {
+  id               String     @id @default(cuid())
+  projectId        String
+  title            String
+  theory           String
+  context          String
+  method           String
+  hypothesis       String     @db.Text
+  contribution     String     @db.Text
+  noveltyScore     Float?
+  feasibilityScore Float?
+  impactScore      Float?
+  evaluation       Json?
+  similarPapers    Json?
+  status           IdeaStatus @default(GENERATED)
+  userNotes        String?    @db.Text
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  project ResearchProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+enum IdeaStatus {
+  GENERATED
+  BOOKMARKED
+  DEVELOPING
+  ARCHIVED
+}
+
+// ─── Knowledge Graph ────────────────────────────
+
+model GraphNode {
+  id        String   @id @default(cuid())
+  projectId String
+  label     String
+  aliases   Json? // synonym list
+  nodeType  NodeType
+  frequency Int      @default(1)
+  createdAt DateTime @default(now())
+
+  project  ResearchProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  outEdges GraphEdge[]     @relation("FromNode")
+  inEdges  GraphEdge[]     @relation("ToNode")
+
+  @@unique([projectId, label])
+}
+
+enum NodeType {
+  INDEPENDENT_VAR
+  DEPENDENT_VAR
+  MEDIATOR
+  MODERATOR
+  CONTROL_VAR
+}
+
+model GraphEdge {
+  id           String       @id @default(cuid())
+  projectId    String
+  fromNodeId   String
+  toNodeId     String
+  relationType RelationType
+  direction    String? // "positive" | "negative" | "mixed"
+  weight       Int          @default(1)
+  supportPapers Json // paper IDs supporting this edge
+  createdAt    DateTime     @default(now())
+
+  project  ResearchProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fromNode GraphNode       @relation("FromNode", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNode   GraphNode       @relation("ToNode", fields: [toNodeId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, fromNodeId, toNodeId, relationType])
+}
+
+enum RelationType {
+  DIRECT_EFFECT
+  MEDIATION
+  MODERATION
+}
+
+model VariableRelation {
+  id             String   @id @default(cuid())
+  paperId        String
+  independentVar String
+  dependentVar   String
+  mediators      Json? // string[]
+  moderators     Json? // string[]
+  direction      String? // positive/negative/mixed
+  effectSize     String?
+  sampleContext  String?
+  createdAt      DateTime @default(now())
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+}
+
+// ─── Theory Framework ───────────────────────────
+
+model Theory {
+  id             String   @id @default(cuid())
+  projectId      String
+  name           String
+  coreConstructs Json
+  assumptions    Json?
+  boundaries     Json?
+  seminalPapers  Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project    ResearchProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  paperLinks PaperTheory[]
+
+  @@unique([projectId, name])
+}
+
+model PaperTheory {
+  id       String  @id @default(cuid())
+  paperId  String
+  theoryId String
+  usage    String? // "extends" | "tests" | "challenges"
+
+  paper  Paper  @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  theory Theory @relation(fields: [theoryId], references: [id], onDelete: Cascade)
+
+  @@unique([paperId, theoryId])
 }
