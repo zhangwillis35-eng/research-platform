@@ -1,6 +1,11 @@
-import { generateOutline, generateReviewStream } from "@/lib/research/storm-review";
+import {
+  generateOutline,
+  generateReviewStream,
+  runNotebookLMAnalysis,
+} from "@/lib/research/storm-review";
 import type { AIProvider } from "@/lib/ai";
 import type { UnifiedPaper } from "@/lib/sources/types";
+import type { NotebookLMConfig } from "@/lib/integrations/notebooklm";
 
 export async function POST(request: Request) {
   try {
@@ -10,13 +15,13 @@ export async function POST(request: Request) {
       papers,
       perspectives,
       provider = "gemini",
-      phase = "full", // "outline" | "review" | "full"
+      notebookLM,
     } = body as {
       topic: string;
       papers: UnifiedPaper[];
       perspectives?: string[];
       provider?: AIProvider;
-      phase?: "outline" | "review" | "full";
+      notebookLM?: NotebookLMConfig | null;
     };
 
     if (!topic || !papers?.length) {
@@ -26,36 +31,65 @@ export async function POST(request: Request) {
       );
     }
 
-    const perspectiveList = perspectives ?? [
-      "理论视角",
-      "实证方法视角",
-      "应用情境视角",
-      "批评与争议视角",
-    ];
-
-    // Phase 1: Generate outline
-    const outline = await generateOutline(topic, papers, perspectiveList, provider);
-
-    if (phase === "outline") {
-      return new Response(JSON.stringify({ outline }), {
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    // Phase 2: Stream full review
-    const stream = generateReviewStream(outline, papers, provider);
     const encoder = new TextEncoder();
-
     const readable = new ReadableStream({
       async start(controller) {
-        // First send the outline
-        controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ type: "outline", outline })}\n\n`
-          )
-        );
-
         try {
+          // Phase 0: NotebookLM deep analysis (if configured)
+          let nlmInsights: string | undefined;
+          if (notebookLM) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "phase", phase: "notebooklm", message: "正在通过 NotebookLM 分析全文..." })}\n\n`
+              )
+            );
+            try {
+              const nlmResult = await runNotebookLMAnalysis(
+                topic,
+                papers.length,
+                notebookLM
+              );
+              nlmInsights = nlmResult.reviewInsights + "\n\n" + nlmResult.variableInsights;
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ type: "nlm_done", insights: nlmInsights.slice(0, 500) + "..." })}\n\n`
+                )
+              );
+            } catch {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ type: "nlm_skip", reason: "NotebookLM 不可用，使用摘要模式" })}\n\n`
+                )
+              );
+            }
+          }
+
+          // Phase 1: Generate outline
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "phase", phase: "outline", message: "正在生成综述大纲..." })}\n\n`
+            )
+          );
+
+          const outline = await generateOutline(
+            { topic, papers, perspectives, provider },
+            nlmInsights
+          );
+
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "outline", outline })}\n\n`
+            )
+          );
+
+          // Phase 2: Stream full review
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "phase", phase: "writing", message: "正在撰写综述..." })}\n\n`
+            )
+          );
+
+          const stream = generateReviewStream(outline, papers, provider, nlmInsights);
           for await (const chunk of stream) {
             controller.enqueue(
               encoder.encode(
@@ -63,9 +97,10 @@ export async function POST(request: Request) {
               )
             );
           }
+
           controller.enqueue(
             encoder.encode(
-              `data: ${JSON.stringify({ type: "done" })}\n\n`
+              `data: ${JSON.stringify({ type: "done", hasNLM: !!nlmInsights })}\n\n`
             )
           );
         } catch (err) {

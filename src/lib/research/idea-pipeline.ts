@@ -11,6 +11,12 @@
 import { callAI } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
 import type { UnifiedPaper } from "@/lib/sources/types";
+import {
+  generateIdeaQuestions,
+  runDeepAnalysis,
+  combineAnswers,
+  type NotebookLMConfig,
+} from "@/lib/integrations/notebooklm";
 
 export interface ResearchDimensions {
   theories: string[];
@@ -50,7 +56,8 @@ export interface IdeaPipelineResult {
 // Step 1: Extract research dimensions from literature
 async function extractDimensions(
   papers: UnifiedPaper[],
-  provider: AIProvider
+  provider: AIProvider,
+  nlmContext: string = ""
 ): Promise<ResearchDimensions> {
   const content = papers
     .slice(0, 20)
@@ -73,7 +80,7 @@ async function extractDimensions(
 }
 
 每个维度提取 4-8 项，研究空白至少 3 个。理论、情境、方法各自独立列出。`,
-    messages: [{ role: "user", content }],
+    messages: [{ role: "user", content: content + (nlmContext ? `\n\n## NotebookLM 全文分析结果\n\n${nlmContext}\n\n请结合以上 NotebookLM 的全文分析来提取更精确的维度。` : "") }],
     jsonMode: true,
     temperature: 0.2,
   });
@@ -89,7 +96,8 @@ async function extractDimensions(
 async function generateAndRankIdeas(
   dimensions: ResearchDimensions,
   papers: UnifiedPaper[],
-  provider: AIProvider
+  provider: AIProvider,
+  nlmContext: string = ""
 ): Promise<ResearchIdea[]> {
   const response = await callAI({
     provider,
@@ -128,7 +136,7 @@ async function generateAndRankIdeas(
     messages: [
       {
         role: "user",
-        content: `维度提取结果：\n${JSON.stringify(dimensions, null, 2)}\n\n参考文献数量：${papers.length} 篇\n顶级期刊（UTD24/FT50）：${papers.filter((p) => p.journalRanking?.utd24 || p.journalRanking?.ft50).length} 篇`,
+        content: `维度提取结果：\n${JSON.stringify(dimensions, null, 2)}\n\n参考文献数量：${papers.length} 篇\n顶级期刊（UTD24/FT50）：${papers.filter((p) => p.journalRanking?.utd24 || p.journalRanking?.ft50).length} 篇${nlmContext ? `\n\n## NotebookLM 全文深度分析\n\n${nlmContext}\n\n请基于以上全文分析结果，生成更具针对性和创新性的研究想法。` : ""}`,
       },
     ],
     jsonMode: true,
@@ -183,17 +191,31 @@ async function simulatePeerReview(
   }
 }
 
-// Full pipeline
+// Full pipeline (enhanced with optional NotebookLM)
 export async function runIdeaPipeline(
   papers: UnifiedPaper[],
   provider: AIProvider = "gemini",
-  withPeerReview: boolean = true
+  withPeerReview: boolean = true,
+  notebookLMConfig?: NotebookLMConfig | null,
+  topic?: string
 ): Promise<IdeaPipelineResult> {
-  // Step 1: Extract dimensions
-  const dimensions = await extractDimensions(papers, provider);
+  // Step 0 (optional): NotebookLM deep analysis
+  let nlmContext = "";
+  if (notebookLMConfig && topic) {
+    try {
+      const ideaQueries = generateIdeaQuestions(topic);
+      const nlmResult = await runDeepAnalysis(notebookLMConfig, ideaQueries);
+      nlmContext = combineAnswers(nlmResult.answers, ideaQueries);
+    } catch {
+      // Fallback: continue without NotebookLM
+    }
+  }
+
+  // Step 1: Extract dimensions (enhanced with NLM context)
+  const dimensions = await extractDimensions(papers, provider, nlmContext);
 
   // Steps 2-5: Generate and rank
-  const ideas = await generateAndRankIdeas(dimensions, papers, provider);
+  const ideas = await generateAndRankIdeas(dimensions, papers, provider, nlmContext);
 
   // Step 6: Peer review top 3
   if (withPeerReview && ideas.length > 0) {

@@ -151,7 +151,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* NotebookLM placeholder */}
+      {/* NotebookLM Integration */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-3 text-lg">
@@ -159,13 +159,82 @@ export default function SettingsPage() {
               N
             </span>
             NotebookLM 集成
-            <Badge variant="secondary" className="text-xs">即将上线</Badge>
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            将核心文献上传到 NotebookLM，平台通过 MCP 协议自动调用 Gemini 进行基于全文的 RAG 分析。
+            将核心文献 PDF 上传到 NotebookLM，平台自动调用 Gemini 进行基于全文的 RAG 深度分析。
           </p>
+
+          <div className="bg-muted/50 rounded-lg p-4 text-sm space-y-2">
+            <p className="font-medium">使用流程：</p>
+            <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+              <li>在 <a href="https://notebooklm.google.com" target="_blank" rel="noopener noreferrer" className="text-teal underline">notebooklm.google.com</a> 创建新 Notebook</li>
+              <li>上传研究相关的 PDF 文献（最多 50 篇）</li>
+              <li>点击右上角 &quot;Share&quot; → &quot;Anyone with the link&quot; → 复制链接</li>
+              <li>将链接粘贴到下方</li>
+              <li>在文献综述/想法生成页面开启 &quot;NotebookLM 增强&quot;</li>
+            </ol>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">
+              NotebookLM Notebook URL
+            </label>
+            <Input
+              placeholder="https://notebooklm.google.com/notebook/..."
+              onChange={(e) => {
+                localStorage.setItem("notebooklm_url", e.target.value);
+              }}
+              defaultValue={typeof window !== "undefined" ? localStorage.getItem("notebooklm_url") ?? "" : ""}
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">
+              分析模式
+            </label>
+            <div className="flex gap-3 text-sm">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="nlm-mode" value="manual" defaultChecked className="accent-teal" />
+                <span>手动模式 <span className="text-muted-foreground">（平台生成问题，你在 NotebookLM 中提问）</span></span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="nlm-mode" value="auto" className="accent-teal" />
+                <span>自动模式 <span className="text-muted-foreground">（需要本地代理服务）</span></span>
+              </label>
+            </div>
+          </div>
+
+          <div className="border-t pt-4 space-y-2">
+            <p className="text-sm font-medium">NotebookLM 在流程中的作用：</p>
+            <div className="grid sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3 rounded-lg border border-border/50">
+                <p className="font-medium text-blue-600">文献综述</p>
+                <p className="text-muted-foreground mt-1">
+                  基于全文提取主要发现、矛盾结论、研究空白，比仅靠摘要更准确
+                </p>
+              </div>
+              <div className="p-3 rounded-lg border border-border/50">
+                <p className="font-medium text-blue-600">变量提取</p>
+                <p className="text-muted-foreground mt-1">
+                  从全文中提取 IV/DV/中介/调节，包括效应量、样本量等细节
+                </p>
+              </div>
+              <div className="p-3 rounded-lg border border-border/50">
+                <p className="font-medium text-blue-600">理论分析</p>
+                <p className="text-muted-foreground mt-1">
+                  识别各文献的理论框架、核心假设和边界条件
+                </p>
+              </div>
+              <div className="p-3 rounded-lg border border-border/50">
+                <p className="font-medium text-blue-600">想法生成</p>
+                <p className="text-muted-foreground mt-1">
+                  基于全文发现未被验证的情境和理论空白
+                </p>
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>

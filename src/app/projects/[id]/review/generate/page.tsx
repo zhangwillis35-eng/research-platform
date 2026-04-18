@@ -26,7 +26,7 @@ interface ReviewOutline {
   futureDirections: string[];
 }
 
-type Phase = "idle" | "searching" | "outlining" | "writing" | "done";
+type Phase = "idle" | "searching" | "notebooklm" | "outlining" | "writing" | "done";
 
 export default function ReviewGeneratePage() {
   const [topic, setTopic] = useState("");
@@ -36,6 +36,8 @@ export default function ReviewGeneratePage() {
   const [reviewText, setReviewText] = useState("");
   const [paperCount, setPaperCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [useNLM, setUseNLM] = useState(false);
+  const [nlmStatus, setNlmStatus] = useState<string | null>(null);
 
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
@@ -70,13 +72,18 @@ export default function ReviewGeneratePage() {
       return;
     }
 
-    // Step 2: Generate outline + stream review
+    // Step 2: Generate outline + stream review (with optional NotebookLM)
     setPhase("outlining");
+    const nlmUrl = typeof window !== "undefined" ? localStorage.getItem("notebooklm_url") : null;
+    const notebookLM = useNLM && nlmUrl
+      ? { proxyUrl: "http://localhost:27124", notebookUrl: nlmUrl, mode: "manual" as const }
+      : null;
+
     try {
       const reviewRes = await fetch("/api/research/review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, papers, provider }),
+        body: JSON.stringify({ topic, papers, provider, notebookLM }),
       });
 
       if (!reviewRes.ok) throw new Error("综述生成失败");
@@ -94,7 +101,14 @@ export default function ReviewGeneratePage() {
             if (!line.startsWith("data: ")) continue;
             try {
               const data = JSON.parse(line.slice(6));
-              if (data.type === "outline") {
+              if (data.type === "phase" && data.phase === "notebooklm") {
+                setPhase("notebooklm");
+                setNlmStatus(data.message);
+              } else if (data.type === "nlm_done") {
+                setNlmStatus("NotebookLM 分析完成");
+              } else if (data.type === "nlm_skip") {
+                setNlmStatus(data.reason);
+              } else if (data.type === "outline") {
                 setOutline(data.outline);
                 setPhase("writing");
               } else if (data.type === "text") {
@@ -116,6 +130,7 @@ export default function ReviewGeneratePage() {
   const phaseLabels: Record<Phase, string> = {
     idle: "",
     searching: "正在检索文献...",
+    notebooklm: nlmStatus ?? "正在通过 NotebookLM 分析全文...",
     outlining: "正在生成大纲...",
     writing: "正在撰写综述...",
     done: "综述生成完成",
@@ -136,34 +151,49 @@ export default function ReviewGeneratePage() {
       </div>
 
       {/* Input */}
-      <form onSubmit={handleGenerate} className="flex gap-3">
-        <Input
-          placeholder="输入研究主题，如：数字化转型与组织韧性"
-          value={topic}
-          onChange={(e) => setTopic(e.target.value)}
-          className="flex-1"
-          disabled={phase !== "idle" && phase !== "done"}
-        />
-        <Button
-          type="submit"
-          disabled={phase !== "idle" && phase !== "done"}
-          className="bg-teal text-teal-foreground hover:bg-teal/90"
-        >
-          生成综述
-        </Button>
+      <form onSubmit={handleGenerate} className="space-y-3">
+        <div className="flex gap-3">
+          <Input
+            placeholder="输入研究主题，如：数字化转型与组织韧性"
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            className="flex-1"
+            disabled={phase !== "idle" && phase !== "done"}
+          />
+          <Button
+            type="submit"
+            disabled={phase !== "idle" && phase !== "done"}
+            className="bg-teal text-teal-foreground hover:bg-teal/90"
+          >
+            生成综述
+          </Button>
+        </div>
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={useNLM}
+              onChange={(e) => setUseNLM(e.target.checked)}
+              className="accent-teal"
+            />
+            <span className="font-medium">启用 NotebookLM 增强</span>
+            <span className="text-xs text-muted-foreground">（基于全文 PDF 深度分析，更准确）</span>
+          </label>
+        </div>
       </form>
 
       {/* Progress */}
       {phase !== "idle" && (
         <div className="flex items-center gap-3 text-sm">
           <div className="flex gap-1">
-            {(["searching", "outlining", "writing", "done"] as Phase[]).map((p, i) => (
+            {(useNLM
+              ? ["searching", "notebooklm", "outlining", "writing", "done"] as Phase[]
+              : ["searching", "outlining", "writing", "done"] as Phase[]
+            ).map((p, i, arr) => (
               <div
                 key={p}
-                className={`h-1.5 w-12 rounded-full transition-colors ${
-                  ["searching", "outlining", "writing", "done"].indexOf(phase) >= i
-                    ? "bg-teal"
-                    : "bg-border"
+                className={`h-1.5 w-10 rounded-full transition-colors ${
+                  arr.indexOf(phase) >= i ? "bg-teal" : "bg-border"
                 }`}
               />
             ))}
