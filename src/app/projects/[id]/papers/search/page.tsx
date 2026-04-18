@@ -571,138 +571,95 @@ export default function PaperSearchPage() {
               key={i}
               className="group border border-border/50 rounded-lg p-4 hover:border-teal/20 transition-all duration-150 bg-card"
             >
-              {/* Title row */}
+              {/* Row 1: checkbox + title */}
               <div className="flex items-start gap-3">
                 <input
                   type="checkbox"
                   checked={selectedPapers.has(i)}
                   onChange={() => togglePaper(i)}
-                  className="accent-teal mt-1 shrink-0"
+                  className="accent-teal mt-1.5 shrink-0"
                 />
-                <div className="flex items-start justify-between gap-3 flex-1 min-w-0">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-medium text-[15px] leading-snug group-hover:text-teal transition-colors">
-                      {paper.title}
-                    </h3>
-                  </div>
-                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                    <CardDescription className="text-xs">
-                      {paper.authors
-                        .slice(0, 3)
-                        .map((a) => a.name)
-                        .join(", ")}
-                      {paper.authors.length > 3 && " et al."}
-                      {paper.year && ` (${paper.year})`}
-                      {paper.venue && ` — ${paper.venue}`}
-                    </CardDescription>
-                  </div>
-                </div>
-                <div className="flex flex-col items-end gap-1.5 shrink-0">
-                  {/* Journal ranking badges */}
-                  {paper.journalRanking?.badges && paper.journalRanking.badges.length > 0 && (
-                    <div className="flex gap-1">
-                      {paper.journalRanking.badges.map((badge) => (
+                  <h3 className="font-medium text-[15px] leading-snug group-hover:text-teal transition-colors">
+                    {paper.title}
+                  </h3>
+                  {/* Row 2: authors + year + venue */}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {paper.authors.slice(0, 3).map((a) => a.name).join(", ")}
+                    {paper.authors.length > 3 && " et al."}
+                    {paper.year && ` (${paper.year})`}
+                    {paper.venue && ` — ${paper.venue}`}
+                  </p>
+                  {/* Row 3: abstract */}
+                  {paper.abstract && (
+                    <p className="text-sm text-muted-foreground line-clamp-2 mt-2">
+                      {paper.abstract}
+                    </p>
+                  )}
+                  {/* Row 4: actions (left) + badges (right) */}
+                  <div className="flex items-center justify-between mt-3 gap-2">
+                    {/* Left: action buttons */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <Button size="sm" variant="outline" className="h-6 text-[11px] px-2">
+                        添加到文献库
+                      </Button>
+                      {(paper.openAccessPdf || paper.unpaywallUrl) && (
+                        <a href={paper.openAccessPdf || paper.unpaywallUrl} target="_blank" rel="noopener noreferrer">
+                          <Button size="sm" variant="ghost" className="h-6 text-[11px] px-2 text-green-600">PDF</Button>
+                        </a>
+                      )}
+                      {paper.doi && (
+                        <a href={`https://doi.org/${paper.doi}`} target="_blank" rel="noopener noreferrer">
+                          <Button size="sm" variant="ghost" className="h-6 text-[11px] px-2">DOI</Button>
+                        </a>
+                      )}
+                      {paper.connectedPapersUrl && (
+                        <a href={paper.connectedPapersUrl} target="_blank" rel="noopener noreferrer">
+                          <Button size="sm" variant="ghost" className="h-6 text-[11px] px-2 text-teal">Related</Button>
+                        </a>
+                      )}
+                      <a href={`https://scholar.google.com/scholar?q=${encodeURIComponent(paper.title)}`} target="_blank" rel="noopener noreferrer">
+                        <Button size="sm" variant="ghost" className="h-6 text-[11px] px-2">Scholar</Button>
+                      </a>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 text-[11px] px-2 text-purple-600"
+                        onClick={() => {
+                          const obsUrl = localStorage.getItem("obsidian_base_url") || "https://127.0.0.1:27124";
+                          const apiKey = localStorage.getItem("obsidian_api_key") || "";
+                          const filename = paper.title.replace(/[/\\:*?"<>|]/g, "_").slice(0, 80);
+                          const notePath = `ScholarFlow/Papers/${filename}.md`;
+                          const content = `---\ntitle: "${paper.title}"\nyear: ${paper.year ?? "unknown"}\nvenue: "${paper.venue ?? ""}"\ndoi: "${paper.doi ?? ""}"\ntags: [paper]\n---\n\n# ${paper.title}\n\n${paper.authors.map((a) => a.name).join(", ")} (${paper.year ?? "N/A"})\n${paper.venue ?? ""}\n\n## 摘要\n${paper.abstract ?? "_No abstract_"}\n`;
+                          const hdrs: HeadersInit = { "Content-Type": "text/markdown" };
+                          if (apiKey) hdrs["Authorization"] = `Bearer ${apiKey}`;
+                          fetch(`${obsUrl}/vault/${encodeURIComponent(notePath)}`, { method: "PUT", headers: hdrs, body: content })
+                            .then(() => alert("已推送到 Obsidian"))
+                            .catch(() => alert("推送失败"));
+                        }}
+                      >
+                        Obsidian
+                      </Button>
+                    </div>
+                    {/* Right: badges */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {paper.journalRanking?.badges?.map((badge) => (
                         <Badge
                           key={badge}
-                          className={`text-[10px] px-1.5 py-0 font-bold ${rankingColors[badge] ?? "bg-gray-500 text-white"}`}
+                          className={`text-[10px] px-1.5 py-0 font-bold leading-tight ${rankingColors[badge] ?? ""}`}
                         >
                           {badge}
                         </Badge>
                       ))}
+                      <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${sourceColors[paper.source] ?? ""}`}>
+                        {sourceLabels[paper.source] ?? paper.source}
+                      </Badge>
+                      <span className="text-[11px] text-muted-foreground tabular-nums whitespace-nowrap">
+                        引用 {paper.citationCount.toLocaleString()}
+                      </span>
                     </div>
-                  )}
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    引用 {paper.citationCount.toLocaleString()}
-                  </span>
-                  <Badge
-                    variant="secondary"
-                    className={`text-[10px] ${sourceColors[paper.source] ?? ""}`}
-                  >
-                    {sourceLabels[paper.source] ?? paper.source}
-                  </Badge>
+                  </div>
                 </div>
-              </div>
-
-              {/* Abstract */}
-              {paper.abstract && (
-                <p className="text-sm text-muted-foreground line-clamp-2 mt-2.5">
-                  {paper.abstract}
-                </p>
-              )}
-
-              {/* Actions */}
-              <div className="flex items-center gap-2 mt-3">
-                <Button size="sm" variant="outline" className="h-7 text-xs">
-                  添加到文献库
-                </Button>
-                {(paper.openAccessPdf || paper.unpaywallUrl) && (
-                  <a
-                    href={paper.openAccessPdf || paper.unpaywallUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Button size="sm" variant="ghost" className="h-7 text-xs text-green-600">
-                      PDF (Open Access)
-                    </Button>
-                  </a>
-                )}
-                {paper.doi && (
-                  <a
-                    href={`https://doi.org/${paper.doi}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Button size="sm" variant="ghost" className="h-7 text-xs">
-                      DOI
-                    </Button>
-                  </a>
-                )}
-                {paper.connectedPapersUrl && (
-                  <a
-                    href={paper.connectedPapersUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Button size="sm" variant="ghost" className="h-7 text-xs text-teal">
-                      Connected Papers
-                    </Button>
-                  </a>
-                )}
-                {paper.doi && (
-                  <a
-                    href={`https://scholar.google.com/scholar?q=${encodeURIComponent(paper.title)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Button size="sm" variant="ghost" className="h-7 text-xs">
-                      Google Scholar
-                    </Button>
-                  </a>
-                )}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 text-xs text-purple-600"
-                  onClick={() => {
-                    // Push directly to Obsidian from browser
-                    const obsUrl = localStorage.getItem("obsidian_base_url") || "http://127.0.0.1:27123";
-                    const apiKey = localStorage.getItem("obsidian_api_key") || "";
-                    const filename = paper.title.replace(/[/\\:*?"<>|]/g, "_").slice(0, 80);
-                    const path = `ScholarFlow/Papers/${filename}.md`;
-                    const content = `---\ntitle: "${paper.title}"\nauthors: "${paper.authors.map((a) => a.name).join(", ")}"\nyear: ${paper.year ?? "unknown"}\nvenue: "${paper.venue ?? ""}"\ndoi: "${paper.doi ?? ""}"\ntags: [paper, literature]\n---\n\n# ${paper.title}\n\n**${paper.authors.map((a) => a.name).join(", ")}** (${paper.year ?? "N/A"})\n${paper.venue ?? ""}${paper.journalRanking?.badges?.length ? ` | ${paper.journalRanking.badges.join(" / ")}` : ""}\n${paper.doi ? `DOI: [${paper.doi}](https://doi.org/${paper.doi})` : ""}\n\n## 摘要\n${paper.abstract ?? "_No abstract_"}\n\n## 笔记\n_在此添加阅读笔记..._\n`;
-                    const hdrs: HeadersInit = { "Content-Type": "text/markdown" };
-                    if (apiKey) hdrs["Authorization"] = `Bearer ${apiKey}`;
-                    fetch(`${obsUrl}/vault/${encodeURIComponent(path)}`, {
-                      method: "PUT",
-                      headers: hdrs,
-                      body: content,
-                    }).then(() => alert("已推送到 Obsidian")).catch(() => alert("推送失败，请确认 Obsidian 已运行"));
-                  }}
-                >
-                  → Obsidian
-                </Button>
-              </div>
               </div>
             </div>
           ))}

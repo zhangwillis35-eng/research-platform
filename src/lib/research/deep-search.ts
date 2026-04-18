@@ -28,13 +28,27 @@ export async function deepSearch(
 ): Promise<DeepSearchResult> {
   const startTime = Date.now();
 
-  // Step 1: Plan — decompose into sub-questions
-  const plan = await planResearch(topic, provider);
+  // Step 1: Plan — decompose into sub-questions (with fallback)
+  let plan: ResearchPlan;
+  try {
+    plan = await planResearch(topic, provider);
+  } catch {
+    // Fallback: use original topic directly if AI planning fails
+    plan = {
+      mainQuestion: topic,
+      subQuestions: [topic],
+      searchQueries: {
+        precision: [topic],
+        broad: [topic, `${topic} management`, `${topic} review`],
+      },
+      perspectives: ["理论视角", "实证视角", "应用视角"],
+    };
+  }
 
-  // Step 2: Execute — parallel search for all queries
+  // Step 2: Execute — parallel search for all queries (limit to 5 queries for speed)
   const allQueries = [
-    ...plan.searchQueries.precision.map((q) => `"${q}"`),
-    ...plan.searchQueries.broad,
+    ...plan.searchQueries.precision.slice(0, 2).map((q) => `"${q}"`),
+    ...plan.searchQueries.broad.slice(0, 3),
   ];
 
   const searchPromises = allQueries.map((query) =>
