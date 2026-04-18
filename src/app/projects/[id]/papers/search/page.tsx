@@ -39,6 +39,7 @@ interface JournalBadges {
 interface JournalMeta {
   impactFactor?: number;
   sjrQuartile?: string;
+  absRating?: string;
   ssci: boolean;
   sci: boolean;
   casZone?: string;
@@ -90,13 +91,17 @@ const sourceColors: Record<string, string> = {
 const rankingColors: Record<string, string> = {
   UTD24: "bg-red-600 text-white",
   FT50: "bg-amber-500 text-white",
-  "ABS 4*": "bg-purple-600 text-white",
   SSCI: "bg-blue-600 text-white",
   SCI: "bg-cyan-600 text-white",
   Q1: "bg-emerald-600 text-white",
   Q2: "bg-lime-600 text-white",
   Q3: "bg-yellow-600 text-white",
   Q4: "bg-gray-500 text-white",
+  "ABS 4*": "bg-purple-700 text-white",
+  "ABS 4": "bg-purple-600 text-white",
+  "ABS 3": "bg-indigo-500 text-white",
+  "ABS 2": "bg-sky-500 text-white",
+  "ABS 1": "bg-slate-400 text-white",
   "中科院一区": "bg-red-700 text-white",
   "中科院二区": "bg-orange-600 text-white",
   "中科院三区": "bg-sky-600 text-white",

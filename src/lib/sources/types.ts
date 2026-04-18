@@ -14,9 +14,11 @@ export interface JournalMeta {
   impactFactor?: number;
   hIndex?: number;
   sjrQuartile?: "Q1" | "Q2" | "Q3" | "Q4";
+  absRating?: "4*" | "4" | "3" | "2" | "1";
   ssci: boolean;
   sci: boolean;
   casZone?: "一区" | "二区" | "三区" | "四区";
+  isOpenAccess?: boolean;
 }
 
 export interface UnifiedPaper {

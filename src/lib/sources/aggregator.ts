@@ -3,7 +3,7 @@ import { searchSemanticScholar } from "./semantic-scholar";
 import { searchOpenAlex } from "./openalex";
 import { searchGoogleScholar } from "./google-scholar";
 import { getJournalRanking, getRankingBadges } from "./journal-rankings";
-import { getJournalMetadata } from "./journal-metadata";
+import { getJournalMetadata, batchEnrichJournals } from "./journal-metadata";
 import { batchFindOpenAccess } from "./unpaywall";
 
 // Google Scholar is PRIMARY, others supplement
@@ -31,6 +31,25 @@ export async function searchAllSources(
 
   // Enrich papers with journal rankings and tool links
   const enriched = enrichPapers(deduplicated);
+
+  // Batch enrich unknown journals from OpenAlex
+  const unknownVenues = enriched
+    .filter((p) => p.venue && !p.journalMeta?.impactFactor)
+    .map((p) => p.venue!)
+    .filter(Boolean);
+
+  if (unknownVenues.length > 0) {
+    const oaMetrics = await batchEnrichJournals(unknownVenues);
+    for (const paper of enriched) {
+      if (paper.venue && oaMetrics.has(paper.venue) && !paper.journalMeta?.impactFactor) {
+        const extra = oaMetrics.get(paper.venue)!;
+        if (paper.journalMeta) {
+          paper.journalMeta.impactFactor = paper.journalMeta.impactFactor ?? extra.impactFactor;
+          paper.journalMeta.hIndex = paper.journalMeta.hIndex ?? extra.hIndex;
+        }
+      }
+    }
+  }
 
   // Batch lookup Unpaywall for papers with DOIs but no PDF
   const doisNeedingPdf = enriched
@@ -62,10 +81,11 @@ function enrichPapers(papers: UnifiedPaper[]): UnifiedPaper[] {
 
     const journalMeta = getJournalMetadata(paper.venue);
 
-    // Add SSCI/CAS badges
+    // Add all classification badges
     if (journalMeta.ssci) badges.push("SSCI");
-    if (journalMeta.casZone) badges.push(`中科院${journalMeta.casZone}`);
     if (journalMeta.sjrQuartile) badges.push(journalMeta.sjrQuartile);
+    if (journalMeta.absRating) badges.push(`ABS ${journalMeta.absRating}`);
+    if (journalMeta.casZone) badges.push(`中科院${journalMeta.casZone}`);
 
     return {
       ...paper,
