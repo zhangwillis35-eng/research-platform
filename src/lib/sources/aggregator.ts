@@ -3,12 +3,14 @@ import { searchSemanticScholar } from "./semantic-scholar";
 import { searchOpenAlex } from "./openalex";
 import { searchGoogleScholar } from "./google-scholar";
 import { getJournalRanking, getRankingBadges } from "./journal-rankings";
+import { getJournalMetadata } from "./journal-metadata";
 import { batchFindOpenAccess } from "./unpaywall";
 
+// Google Scholar is PRIMARY, others supplement
 const DEFAULT_SOURCES: Array<UnifiedPaper["source"]> = [
-  "semantic_scholar",
-  "openalex",
-  "google_scholar",
+  "google_scholar",  // Primary: best coverage, most relevant
+  "semantic_scholar", // Supplement: citation data, open access PDFs
+  "openalex",         // Supplement: journal metrics, full metadata
 ];
 
 export async function searchAllSources(
@@ -58,9 +60,17 @@ function enrichPapers(papers: UnifiedPaper[]): UnifiedPaper[] {
     const ranking = getJournalRanking(paper.venue);
     const badges = getRankingBadges(paper.venue);
 
+    const journalMeta = getJournalMetadata(paper.venue);
+
+    // Add SSCI/CAS badges
+    if (journalMeta.ssci) badges.push("SSCI");
+    if (journalMeta.casZone) badges.push(`中科院${journalMeta.casZone}`);
+    if (journalMeta.sjrQuartile) badges.push(journalMeta.sjrQuartile);
+
     return {
       ...paper,
       journalRanking: { ...ranking, badges },
+      journalMeta,
       connectedPapersUrl: paper.doi
         ? `https://www.connectedpapers.com/api/redirect/doi/${encodeURIComponent(paper.doi)}`
         : paper.title

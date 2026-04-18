@@ -36,6 +36,14 @@ interface JournalBadges {
   badges: string[];
 }
 
+interface JournalMeta {
+  impactFactor?: number;
+  sjrQuartile?: string;
+  ssci: boolean;
+  sci: boolean;
+  casZone?: string;
+}
+
 interface Paper {
   title: string;
   abstract?: string;
@@ -49,6 +57,7 @@ interface Paper {
   unpaywallUrl?: string;
   connectedPapersUrl?: string;
   journalRanking?: JournalBadges;
+  journalMeta?: JournalMeta;
 }
 
 interface SearchMeta {
@@ -75,6 +84,16 @@ const rankingColors: Record<string, string> = {
   UTD24: "bg-red-600 text-white",
   FT50: "bg-amber-500 text-white",
   "ABS 4*": "bg-purple-600 text-white",
+  SSCI: "bg-blue-600 text-white",
+  SCI: "bg-cyan-600 text-white",
+  Q1: "bg-emerald-600 text-white",
+  Q2: "bg-lime-600 text-white",
+  Q3: "bg-yellow-600 text-white",
+  Q4: "bg-gray-500 text-white",
+  "中科院一区": "bg-red-700 text-white",
+  "中科院二区": "bg-orange-600 text-white",
+  "中科院三区": "bg-sky-600 text-white",
+  "中科院四区": "bg-gray-400 text-white",
 };
 
 function sortPapers(papers: Paper[], sortBy: SortBy): Paper[] {
@@ -641,21 +660,23 @@ export default function PaperSearchPage() {
                         Obsidian
                       </Button>
                     </div>
-                    {/* Right: badges */}
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    {/* Right: metadata + badges */}
+                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                      {paper.journalMeta?.impactFactor != null && (
+                        <span className="text-[10px] font-mono text-teal font-bold whitespace-nowrap">
+                          IF {paper.journalMeta.impactFactor.toFixed(1)}
+                        </span>
+                      )}
                       {paper.journalRanking?.badges?.map((badge) => (
                         <Badge
                           key={badge}
-                          className={`text-[10px] px-1.5 py-0 font-bold leading-tight ${rankingColors[badge] ?? ""}`}
+                          className={`text-[9px] px-1 py-0 font-bold leading-tight ${rankingColors[badge] ?? "bg-gray-400 text-white"}`}
                         >
                           {badge}
                         </Badge>
                       ))}
-                      <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${sourceColors[paper.source] ?? ""}`}>
-                        {sourceLabels[paper.source] ?? paper.source}
-                      </Badge>
-                      <span className="text-[11px] text-muted-foreground tabular-nums whitespace-nowrap">
-                        引用 {paper.citationCount.toLocaleString()}
+                      <span className="text-[10px] text-muted-foreground tabular-nums whitespace-nowrap">
+                        {paper.citationCount.toLocaleString()} 引用
                       </span>
                     </div>
                   </div>

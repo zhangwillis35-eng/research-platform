@@ -10,6 +10,15 @@ export interface JournalBadges {
   badges: string[]; // ["UTD24", "FT50", "ABS 4*"]
 }
 
+export interface JournalMeta {
+  impactFactor?: number;
+  hIndex?: number;
+  sjrQuartile?: "Q1" | "Q2" | "Q3" | "Q4";
+  ssci: boolean;
+  sci: boolean;
+  casZone?: "一区" | "二区" | "三区" | "四区";
+}
+
 export interface UnifiedPaper {
   title: string;
   abstract?: string;
@@ -27,6 +36,7 @@ export interface UnifiedPaper {
   rawMetadata?: Record<string, unknown>;
   // Enhanced fields
   journalRanking?: JournalBadges;
+  journalMeta?: JournalMeta;
   connectedPapersUrl?: string;
   unpaywallUrl?: string;
 }

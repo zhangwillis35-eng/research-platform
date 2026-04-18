@@ -16,7 +16,8 @@ export async function searchGoogleScholar(
     engine: "google_scholar",
     q: query,
     api_key: apiKey,
-    num: String(limit),
+    num: String(Math.min(limit, 20)), // GS max 20 per page
+    hl: "en",
   });
 
   if (yearFrom != null) params.set("as_ylo", String(yearFrom));
@@ -32,54 +33,75 @@ export async function searchGoogleScholar(
 
   const papers: UnifiedPaper[] = (data.organic_results ?? []).map(
     (r: Record<string, unknown>) => {
-      const info = (r.publication_info as { summary?: string }) ?? {};
-      const authorNames = parseAuthorString(info.summary);
+      const pubInfo = r.publication_info as {
+        summary?: string;
+        authors?: Array<{ name: string; author_id?: string }>;
+      } | undefined;
+
+      const inlineLinks = r.inline_links as {
+        cited_by?: { total?: number; link?: string };
+        related_pages_link?: string;
+      } | undefined;
+
+      const resources = r.resources as Array<{
+        title?: string;
+        file_format?: string;
+        link?: string;
+      }> | undefined;
+
+      // Extract authors — prefer structured data, fallback to summary parsing
+      const authors = pubInfo?.authors?.length
+        ? pubInfo.authors.map((a) => ({ name: a.name, authorId: a.author_id }))
+        : parseAuthorString(pubInfo?.summary).map((name) => ({ name }));
+
+      // Extract venue (journal name) from summary: "Authors - Journal Name, Year - Publisher"
+      const venue = extractVenue(pubInfo?.summary);
+      const year = extractYear(pubInfo?.summary);
+      const publisher = extractPublisher(pubInfo?.summary);
+
+      // Find PDF link
+      const pdfResource = resources?.find(
+        (res) => res.file_format === "PDF" || res.link?.endsWith(".pdf")
+      );
 
       return {
         title: r.title as string,
         abstract: r.snippet as string | undefined,
-        authors: authorNames.map((name) => ({ name })),
-        year: extractYear(info.summary),
-        venue: extractVenue(info.summary),
-        citationCount:
-          (
-            r.inline_links as {
-              cited_by?: { total?: number };
-            }
-          )?.cited_by?.total ?? 0,
+        authors,
+        year,
+        venue,
+        citationCount: inlineLinks?.cited_by?.total ?? 0,
         referenceCount: 0,
-        doi: undefined,
+        doi: extractDOI(r.link as string | undefined),
         externalId: r.result_id as string,
         source: "google_scholar" as const,
-        pdfUrl: (
-          r.resources as Array<{ link?: string; file_format?: string }>
-        )?.find((res) => res.file_format === "PDF")?.link,
-        openAccessPdf: (
-          r.resources as Array<{ link?: string; file_format?: string }>
-        )?.find((res) => res.file_format === "PDF")?.link,
+        pdfUrl: pdfResource?.link ?? (r.link as string | undefined),
+        openAccessPdf: pdfResource?.link,
         fieldsOfStudy: undefined,
-        rawMetadata: r,
+        rawMetadata: {
+          ...r,
+          _publisher: publisher,
+          _googleScholarUrl: inlineLinks?.cited_by?.link,
+        },
       };
     }
   );
 
   return {
     papers,
-    total:
-      (data.search_information?.total_results as number) ?? papers.length,
+    total: (data.search_information?.total_results as number) ?? papers.length,
     source: "google_scholar",
   };
 }
 
 function parseAuthorString(summary?: string): string[] {
   if (!summary) return [];
-  // Format: "Author1, Author2 - Journal, Year"
   const authorPart = summary.split(" - ")[0];
   if (!authorPart) return [];
   return authorPart
     .split(",")
     .map((s) => s.trim())
-    .filter((s) => s && !/^\d{4}$/.test(s));
+    .filter((s) => s && !/^\d{4}$/.test(s) && s.length < 40);
 }
 
 function extractYear(summary?: string): number | undefined {
@@ -90,6 +112,27 @@ function extractYear(summary?: string): number | undefined {
 
 function extractVenue(summary?: string): string | undefined {
   if (!summary) return undefined;
+  // Format: "Author1, Author2 - Journal Name, Year - Publisher"
   const parts = summary.split(" - ");
-  return parts.length > 1 ? parts[1]?.split(",")[0]?.trim() : undefined;
+  if (parts.length < 2) return undefined;
+  // Second part is "Journal Name, Year" or just "Journal Name"
+  const journalPart = parts[1];
+  // Remove year from the end
+  const cleaned = journalPart?.replace(/,?\s*\d{4}\s*$/, "").trim();
+  return cleaned || undefined;
+}
+
+function extractPublisher(summary?: string): string | undefined {
+  if (!summary) return undefined;
+  const parts = summary.split(" - ");
+  return parts.length >= 3 ? parts[2]?.trim() : undefined;
+}
+
+function extractDOI(link?: string): string | undefined {
+  if (!link) return undefined;
+  // Extract DOI from common academic URLs
+  const doiMatch = link.match(/doi\.org\/(.+?)(?:\?|$)/);
+  if (doiMatch) return doiMatch[1];
+  // ScienceDirect PII to approximate (no DOI extraction possible)
+  return undefined;
 }
