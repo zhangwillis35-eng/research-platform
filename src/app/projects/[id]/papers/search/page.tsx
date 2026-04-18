@@ -66,7 +66,13 @@ interface SearchMeta {
 }
 
 type SortBy = "citations" | "year_desc" | "year_asc" | "relevance";
-type SearchMode = "precision" | "broad" | "both";
+
+interface SearchPlan {
+  keyTerms: string[];
+  synonyms: Record<string, string[]>;
+  precisionQueries: string[];
+  broadQueries: string[];
+}
 
 const sourceLabels: Record<string, string> = {
   semantic_scholar: "Semantic Scholar",
@@ -121,10 +127,8 @@ export default function PaperSearchPage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortBy>("citations");
-  const [searchMode, setSearchMode] = useState<SearchMode>("both");
   const [filterRanking, setFilterRanking] = useState<string>("all");
-  const [deepSearching, setDeepSearching] = useState(false);
-  const [researchPlan, setResearchPlan] = useState<{ mainQuestion: string; subQuestions: string[]; perspectives: string[] } | null>(null);
+  const [searchPlan, setSearchPlan] = useState<SearchPlan | null>(null);
   const [selectedPapers, setSelectedPapers] = useState<Set<number>>(new Set());
 
   function togglePaper(index: number) {
@@ -178,92 +182,44 @@ export default function PaperSearchPage() {
     setLoading(true);
     setError(null);
     setAnalysisResult(null);
+    setSearchPlan(null);
 
     try {
-      if (searchMode === "both") {
-        // Run precision + broad search in parallel
-        const [precisionRes, broadRes] = await Promise.all([
-          fetch("/api/papers/search", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              query: `"${query}"`, // exact phrase for precision
-              limit: 20,
-            }),
-          }),
-          fetch("/api/papers/search", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              query, // natural language for broad
-              limit: 30,
-            }),
-          }),
-        ]);
+      // Use smart search: AI extracts keywords + generates synonyms
+      const res = await fetch("/api/research/smart-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, provider: aiProvider, limit: 20 }),
+      });
 
-        const precisionData = precisionRes.ok ? await precisionRes.json() : { papers: [], meta: { total: 0, sources: [] } };
-        const broadData = broadRes.ok ? await broadRes.json() : { papers: [], meta: { total: 0, sources: [] } };
-
-        // Merge and deduplicate
-        const allPapers = [...precisionData.papers, ...broadData.papers];
-        const seen = new Map<string, Paper>();
-        for (const p of allPapers) {
-          const key = p.doi?.toLowerCase() || p.title?.toLowerCase().slice(0, 80);
-          if (!seen.has(key)) seen.set(key, p);
-        }
-        const merged = Array.from(seen.values());
-        setPapers(merged);
-        setMeta({
-          total: merged.length,
-          sources: broadData.meta?.sources ?? [],
-        });
-      } else {
-        const searchQuery = searchMode === "precision" ? `"${query}"` : query;
-        const res = await fetch("/api/papers/search", {
+      if (!res.ok) {
+        // Fallback to basic search if smart search fails
+        const fallbackRes = await fetch("/api/papers/search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: searchQuery, limit: 30 }),
+          body: JSON.stringify({ query, limit: 30 }),
         });
-
-        if (!res.ok) throw new Error("Search failed");
-        const data = await res.json();
-        setPapers(data.papers);
-        setMeta(data.meta);
+        if (!fallbackRes.ok) throw new Error("Search failed");
+        const fallbackData = await fallbackRes.json();
+        setPapers(fallbackData.papers);
+        setMeta(fallbackData.meta);
+        return;
       }
+
+      const data = await res.json();
+      setPapers(data.papers);
+      setSearchPlan(data.plan);
+      setMeta({
+        total: data.stats.total,
+        sources: Object.entries(data.stats.byQuery).map(([source, count]) => ({
+          source,
+          count: count as number,
+        })),
+      });
     } catch (err) {
       setError(String(err));
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function handleDeepSearch() {
-    if (!query.trim()) return;
-    setDeepSearching(true);
-    setError(null);
-    setResearchPlan(null);
-    setAnalysisResult(null);
-
-    try {
-      const res = await fetch("/api/research/deep-search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: query, provider: aiProvider }),
-      });
-      if (!res.ok) throw new Error("Deep search failed");
-      const data = await res.json();
-      setPapers(data.papers);
-      setResearchPlan(data.plan);
-      setMeta({
-        total: data.stats.afterDedup,
-        sources: [
-          { source: "deep_search", count: data.stats.afterDedup },
-        ],
-      });
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setDeepSearching(false);
     }
   }
 
@@ -365,51 +321,59 @@ export default function PaperSearchPage() {
         <AIProviderSelect value={aiProvider} onChange={setAiProvider} />
       </div>
 
-      {/* Search Bar + Mode */}
-      <form onSubmit={handleSearch} className="space-y-3">
-        <div className="flex gap-3">
-          <Input
-            placeholder="输入研究主题，如 digital transformation organizational resilience"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="flex-1"
-          />
-          <Button type="submit" disabled={loading || deepSearching} className="bg-teal text-teal-foreground hover:bg-teal/90">
-            {loading ? "搜索中..." : "搜索"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleDeepSearch}
-            disabled={loading || deepSearching || !query.trim()}
-          >
-            {deepSearching ? "深度研究中..." : "深度研究"}
-          </Button>
-        </div>
-        <div className="flex items-center gap-4 text-sm">
-          <span className="text-muted-foreground">检索模式：</span>
-          <div className="flex gap-1">
-            {[
-              { value: "both" as const, label: "精准+广度" },
-              { value: "precision" as const, label: "精准检索" },
-              { value: "broad" as const, label: "广度检索" },
-            ].map((mode) => (
-              <button
-                key={mode.value}
-                type="button"
-                onClick={() => setSearchMode(mode.value)}
-                className={`px-3 py-1 rounded-md transition-colors ${
-                  searchMode === mode.value
-                    ? "bg-teal/10 text-teal font-medium"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {mode.label}
-              </button>
-            ))}
-          </div>
-        </div>
+      {/* Search Bar */}
+      <form onSubmit={handleSearch} className="flex gap-3">
+        <Input
+          placeholder="输入研究主题（中英文均可），如：AI washing 与企业信息披露"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="flex-1"
+        />
+        <Button type="submit" disabled={loading} className="bg-teal text-teal-foreground hover:bg-teal/90">
+          {loading ? "智能搜索中..." : "智能搜索"}
+        </Button>
       </form>
+
+      {/* Search Plan Display */}
+      {searchPlan && (
+        <Card className="border-teal/20 bg-teal/[0.02]">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-sm text-teal">检索策略</CardTitle>
+              <span className="text-[10px] text-muted-foreground">AI 自动提取关键词 + 同义词扩展</span>
+            </div>
+
+            {/* Key terms + synonyms */}
+            <div className="space-y-2">
+              {searchPlan.keyTerms.map((term) => (
+                <div key={term} className="flex items-start gap-2 text-xs">
+                  <Badge className="bg-teal text-teal-foreground text-[10px] shrink-0">{term}</Badge>
+                  {searchPlan.synonyms[term]?.length > 0 && (
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span className="text-muted-foreground">同义词:</span>
+                      {searchPlan.synonyms[term].map((syn) => (
+                        <Badge key={syn} variant="secondary" className="text-[10px]">{syn}</Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Actual queries sent */}
+            <div className="border-t border-border/50 pt-2 space-y-1">
+              <p className="text-[10px] text-muted-foreground font-medium">精准检索式：</p>
+              {searchPlan.precisionQueries.map((q, i) => (
+                <p key={i} className="text-[11px] font-mono text-foreground/80 pl-2">{q}</p>
+              ))}
+              <p className="text-[10px] text-muted-foreground font-medium mt-1">广度检索式（含同义词）：</p>
+              {searchPlan.broadQueries.map((q, i) => (
+                <p key={i} className="text-[11px] font-mono text-foreground/80 pl-2 break-all">{q}</p>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Controls bar */}
       {meta && (
@@ -472,33 +436,6 @@ export default function PaperSearchPage() {
             </Button>
           </div>
         </div>
-      )}
-
-      {/* Research Plan (from deep search) */}
-      {researchPlan && (
-        <Card className="border-teal/20 bg-teal/[0.02]">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm text-teal">深度研究计划</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <p className="font-medium">{researchPlan.mainQuestion}</p>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">子问题：</p>
-              {researchPlan.subQuestions.map((q, i) => (
-                <p key={i} className="text-xs text-muted-foreground">
-                  {i + 1}. {q}
-                </p>
-              ))}
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {researchPlan.perspectives.map((p) => (
-                <Badge key={p} variant="secondary" className="text-[10px]">
-                  {p}
-                </Badge>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
       )}
 
       {/* AI Analysis Result */}
