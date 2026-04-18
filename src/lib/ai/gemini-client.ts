@@ -22,7 +22,7 @@ export async function callGemini(options: AIRequestOptions): Promise<AIResponse>
     }));
 
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: "gemini-3.1-pro-preview",
     contents,
     config: {
       systemInstruction: systemPrompt || undefined,
@@ -37,7 +37,7 @@ export async function callGemini(options: AIRequestOptions): Promise<AIResponse>
   return {
     content,
     provider: "gemini",
-    model: "gemini-2.5-flash",
+    model: "gemini-3.1-pro-preview",
     usage: response.usageMetadata
       ? {
           inputTokens: response.usageMetadata.promptTokenCount ?? 0,
@@ -61,7 +61,7 @@ export async function* streamGemini(
     }));
 
   const response = await ai.models.generateContentStream({
-    model: "gemini-2.5-flash",
+    model: "gemini-3.1-pro-preview",
     contents,
     config: {
       systemInstruction: systemPrompt || undefined,
@@ -82,6 +82,6 @@ export async function* streamGemini(
   return {
     content: fullText,
     provider: "gemini",
-    model: "gemini-2.5-flash",
+    model: "gemini-3.1-pro-preview",
   };
 }

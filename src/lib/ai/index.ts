@@ -13,18 +13,18 @@ export const AI_PROVIDERS: {
 }[] = [
   {
     id: "gemini",
-    name: "Gemini 2.5 Flash",
-    description: "Google Gemini，免费额度充足，响应快",
+    name: "Gemini 3.1 Pro",
+    description: "Google Gemini，最新预览版，能力强劲",
   },
   {
     id: "chatgpt",
-    name: "GPT-4o Mini",
-    description: "OpenAI ChatGPT，综合能力强",
+    name: "GPT-5",
+    description: "OpenAI 最新旗舰模型",
   },
   {
     id: "deepseek",
-    name: "DeepSeek Chat",
-    description: "DeepSeek，中文理解优秀，性价比高",
+    name: "DeepSeek Reasoning",
+    description: "DeepSeek 推理模型，深度思考能力强",
   },
   {
     id: "claude",

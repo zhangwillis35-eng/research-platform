@@ -13,20 +13,20 @@ export type AIProvider = "claude" | "gemini" | "deepseek" | "chatgpt";
 const providers = [
   {
     id: "gemini" as const,
-    name: "Gemini 2.5 Flash",
-    tag: "免费",
+    name: "Gemini 3.1 Pro",
+    tag: "Google",
     tagColor: "text-green-600",
   },
   {
     id: "chatgpt" as const,
-    name: "GPT-4o Mini",
+    name: "GPT-5",
     tag: "OpenAI",
     tagColor: "text-emerald-600",
   },
   {
     id: "deepseek" as const,
-    name: "DeepSeek Chat",
-    tag: "低价",
+    name: "DeepSeek Reasoning",
+    tag: "推理",
     tagColor: "text-blue-600",
   },
   {

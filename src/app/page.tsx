@@ -127,9 +127,9 @@ export default function HomePage() {
             </p>
             <div className="grid sm:grid-cols-4 gap-6">
               {[
-                { name: "Gemini 2.5 Flash", tag: "免费" },
-                { name: "GPT-4o Mini", tag: "OpenAI" },
-                { name: "DeepSeek Chat", tag: "低价" },
+                { name: "Gemini 3.1 Pro", tag: "Google" },
+                { name: "GPT-5", tag: "OpenAI" },
+                { name: "DeepSeek Reasoning", tag: "推理" },
                 { name: "Claude Sonnet 4", tag: "Anthropic" },
               ].map((m) => (
                 <div key={m.name} className="flex items-baseline gap-2">

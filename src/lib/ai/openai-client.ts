@@ -26,7 +26,7 @@ export async function callOpenAI(options: AIRequestOptions): Promise<AIResponse>
   }
 
   const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "gpt-5",
     messages,
     temperature: options.temperature ?? 0.3,
     max_tokens: options.maxTokens ?? 4096,
@@ -66,7 +66,7 @@ export async function* streamOpenAI(
   }
 
   const stream = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "gpt-5",
     messages,
     temperature: options.temperature ?? 0.3,
     max_tokens: options.maxTokens ?? 4096,
@@ -85,6 +85,6 @@ export async function* streamOpenAI(
   return {
     content: fullText,
     provider: "chatgpt",
-    model: "gpt-4o-mini",
+    model: "gpt-5",
   };
 }

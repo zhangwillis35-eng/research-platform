@@ -256,9 +256,9 @@ export default function PaperSearchPage() {
               <Badge variant="secondary" className="text-xs ml-auto">
                 {
                   {
-                    gemini: "Gemini 2.5 Flash",
-                    chatgpt: "GPT-4o Mini",
-                    deepseek: "DeepSeek Chat",
+                    gemini: "Gemini 3.1 Pro",
+                    chatgpt: "GPT-5",
+                    deepseek: "DeepSeek Reasoning",
                     claude: "Claude Sonnet 4",
                   }[aiProvider]
                 }

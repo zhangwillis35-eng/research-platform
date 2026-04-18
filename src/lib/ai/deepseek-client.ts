@@ -29,11 +29,9 @@ export async function callDeepSeek(options: AIRequestOptions): Promise<AIRespons
   }
 
   const response = await openai.chat.completions.create({
-    model: "deepseek-chat",
+    model: "deepseek-reasoner",
     messages,
-    temperature: options.temperature ?? 0.3,
-    max_tokens: options.maxTokens ?? 4096,
-    response_format: options.jsonMode ? { type: "json_object" } : undefined,
+    max_tokens: options.maxTokens ?? 8192,
   });
 
   const content = response.choices[0]?.message?.content ?? "";
@@ -69,10 +67,9 @@ export async function* streamDeepSeek(
   }
 
   const stream = await openai.chat.completions.create({
-    model: "deepseek-chat",
+    model: "deepseek-reasoner",
     messages,
-    temperature: options.temperature ?? 0.3,
-    max_tokens: options.maxTokens ?? 4096,
+    max_tokens: options.maxTokens ?? 8192,
     stream: true,
   });
 
@@ -88,6 +85,6 @@ export async function* streamDeepSeek(
   return {
     content: fullText,
     provider: "deepseek",
-    model: "deepseek-chat",
+    model: "deepseek-reasoner",
   };
 }
