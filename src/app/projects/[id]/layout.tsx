@@ -8,6 +8,7 @@ const navItems = [
   { label: "知识图谱", href: "/graph", icon: "◈" },
   { label: "研究想法", href: "/ideas/generate", icon: "✦" },
   { label: "理论整合", href: "/theories/integrate", icon: "⬡" },
+  { label: "设置", href: "/settings", icon: "⚙" },
 ];
 
 export default async function ProjectLayout({
