@@ -370,6 +370,42 @@ export default function PaperSearchPage() {
               {searchPlan.broadQueries.map((q, i) => (
                 <p key={i} className="text-[11px] font-mono text-foreground/80 pl-2 break-all">{q}</p>
               ))}
+              {/* Quick links to other databases */}
+              <div className="flex items-center gap-2 pt-2 border-t border-border/30 mt-2">
+                <span className="text-[10px] text-muted-foreground">在其他平台搜索：</span>
+                <a
+                  href={`https://kns.cnki.net/kns8s/search?classid=WD0FTY92&korder=SU&kw=${encodeURIComponent(searchPlan.keyTerms.join(" "))}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-orange-600 hover:underline font-medium"
+                >
+                  知网 CNKI
+                </a>
+                <a
+                  href={`https://scholar.google.com/scholar?q=${encodeURIComponent(searchPlan.precisionQueries.join(" "))}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-blue-600 hover:underline font-medium"
+                >
+                  Google Scholar
+                </a>
+                <a
+                  href={`https://www.webofscience.com/wos/alldb/basic-search?q=${encodeURIComponent(searchPlan.keyTerms.join(" "))}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-purple-600 hover:underline font-medium"
+                >
+                  Web of Science
+                </a>
+                <a
+                  href={`https://www.scopus.com/results/results.uri?sort=r-f&src=s&sid=scholarflow&sot=a&sdt=a&sl=30&s=TITLE-ABS-KEY(${encodeURIComponent(searchPlan.keyTerms.join(" AND "))})`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-teal hover:underline font-medium"
+                >
+                  Scopus
+                </a>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -576,6 +612,9 @@ export default function PaperSearchPage() {
                       )}
                       <a href={`https://scholar.google.com/scholar?q=${encodeURIComponent(paper.title)}`} target="_blank" rel="noopener noreferrer">
                         <Button size="sm" variant="ghost" className="h-6 text-[11px] px-2">Scholar</Button>
+                      </a>
+                      <a href={`https://kns.cnki.net/kns8s/search?classid=WD0FTY92&korder=SU&kw=${encodeURIComponent(paper.title)}`} target="_blank" rel="noopener noreferrer">
+                        <Button size="sm" variant="ghost" className="h-6 text-[11px] px-2 text-orange-600">知网</Button>
                       </a>
                       <Button
                         size="sm"
