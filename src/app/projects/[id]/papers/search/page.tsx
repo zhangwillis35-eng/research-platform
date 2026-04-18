@@ -106,6 +106,51 @@ export default function PaperSearchPage() {
   const [filterRanking, setFilterRanking] = useState<string>("all");
   const [deepSearching, setDeepSearching] = useState(false);
   const [researchPlan, setResearchPlan] = useState<{ mainQuestion: string; subQuestions: string[]; perspectives: string[] } | null>(null);
+  const [selectedPapers, setSelectedPapers] = useState<Set<number>>(new Set());
+
+  function togglePaper(index: number) {
+    setSelectedPapers((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }
+
+  function selectAll() {
+    if (selectedPapers.size === displayedPapers.length) {
+      setSelectedPapers(new Set());
+    } else {
+      setSelectedPapers(new Set(displayedPapers.map((_, i) => i)));
+    }
+  }
+
+  function exportForNotebookLM() {
+    const selected = displayedPapers.filter((_, i) => selectedPapers.has(i));
+    const exportData = {
+      papers: selected.map((p) => ({
+        title: p.title,
+        doi: p.doi,
+        openAccessPdf: p.openAccessPdf,
+        unpaywallUrl: p.unpaywallUrl,
+        venue: p.venue,
+        year: p.year,
+        rankings: p.journalRanking?.badges,
+      })),
+      urls: selected
+        .map((p) => p.openAccessPdf || p.unpaywallUrl || (p.doi ? `https://doi.org/${p.doi}` : null))
+        .filter(Boolean),
+    };
+
+    // Download as JSON
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `scholarflow-papers-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -490,16 +535,48 @@ export default function PaperSearchPage() {
         </div>
       )}
 
+      {/* Selection bar */}
+      {!loading && displayedPapers.length > 0 && selectedPapers.size > 0 && (
+        <div className="flex items-center gap-3 p-3 bg-teal/5 border border-teal/20 rounded-lg text-sm">
+          <span className="font-medium text-teal">
+            已选 {selectedPapers.size} 篇
+          </span>
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={exportForNotebookLM}>
+            导出并上传到 NotebookLM
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSelectedPapers(new Set())}>
+            清除选择
+          </Button>
+        </div>
+      )}
+
       {/* Results */}
       {!loading && displayedPapers.length > 0 && (
         <div className="space-y-2">
+          {/* Select all */}
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={selectedPapers.size === displayedPapers.length && displayedPapers.length > 0}
+              onChange={selectAll}
+              className="accent-teal"
+            />
+            <span>全选</span>
+          </div>
           {displayedPapers.map((paper, i) => (
             <div
               key={i}
               className="group border border-border/50 rounded-lg p-4 hover:border-teal/20 transition-all duration-150 bg-card"
             >
               {/* Title row */}
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={selectedPapers.has(i)}
+                  onChange={() => togglePaper(i)}
+                  className="accent-teal mt-1 shrink-0"
+                />
+                <div className="flex items-start justify-between gap-3 flex-1 min-w-0">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-medium text-[15px] leading-snug group-hover:text-teal transition-colors">
@@ -628,6 +705,7 @@ export default function PaperSearchPage() {
                 >
                   → Obsidian
                 </Button>
+              </div>
               </div>
             </div>
           ))}
