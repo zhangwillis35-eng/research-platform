@@ -12,12 +12,26 @@ import type { AIProvider } from "@/lib/ai";
 import { searchAllSources } from "@/lib/sources/aggregator";
 import type { UnifiedPaper } from "@/lib/sources/types";
 
+export interface SearchFilters {
+  minABS?: "1" | "2" | "3" | "4" | "4*";
+  minCASZone?: "一区" | "二区" | "三区" | "四区";
+  requireSSCI?: boolean;
+  requireSCI?: boolean;
+  minIF?: number;
+  minCitations?: number;
+  yearFrom?: number;
+  yearTo?: number;
+  requireUTD24?: boolean;
+  requireFT50?: boolean;
+}
+
 export interface SmartSearchPlan {
   translatedInput?: string;
   keyTerms: string[];
   synonyms: Record<string, string[]>;
   precisionQueries: string[];
   broadQueries: string[];
+  filters: SearchFilters;
 }
 
 export interface SmartSearchResult {
@@ -25,6 +39,7 @@ export interface SmartSearchResult {
   papers: UnifiedPaper[];
   stats: {
     total: number;
+    totalBeforeFilter: number;
     byQuery: Record<string, number>;
     durationMs: number;
   };
@@ -44,22 +59,39 @@ STEP 3 — SYNONYMS: For each key term, list 2-4 English synonyms actually used 
 
 STEP 4 — BUILD QUERIES: Construct precision and broad search queries.
 
+STEP 5 — EXTRACT FILTERS: If the user specifies quality requirements, extract them as filters. These are NOT search terms.
+Examples:
+- "ABS3星以上" → filters.minABS = "3"
+- "SSCI期刊" → filters.requireSSCI = true
+- "中科院一区" → filters.minCASZone = "一区"
+- "影响因子5以上" → filters.minIF = 5
+- "引用100以上" → filters.minCitations = 100
+- "UTD24期刊" → filters.requireUTD24 = true
+- "FT50" → filters.requireFT50 = true
+- "2020年以后" → filters.yearFrom = 2020
+
 Output STRICT JSON only:
 {
-  "translatedInput": "the full English translation of user input",
+  "translatedInput": "the full English translation (search part only, not filters)",
   "keyTerms": ["AI washing"],
   "synonyms": {
     "AI washing": ["AI greenwashing", "artificial intelligence washing", "AI hype", "AI fraud"]
   },
   "precisionQueries": ["\"AI washing\""],
-  "broadQueries": ["\"AI washing\" OR \"AI greenwashing\" OR \"artificial intelligence washing\" OR \"AI hype\""]
+  "broadQueries": ["\"AI washing\" OR \"AI greenwashing\" OR \"artificial intelligence washing\" OR \"AI hype\""],
+  "filters": {
+    "minABS": "3",
+    "requireSSCI": true
+  }
 }
 
 RULES:
 - keyTerms = complete English academic phrases, NEVER single letters or broken words
 - precisionQueries = each keyTerm wrapped in double quotes
 - broadQueries = synonyms connected with OR; different concept groups connected with AND
-- If only one concept, broadQuery = all synonyms joined with OR`;
+- If only one concept, broadQuery = all synonyms joined with OR
+- filters: only include fields the user explicitly mentioned. If no filters mentioned, return empty object {}
+- SEPARATE search terms from quality requirements. "ABS3星以上" is a FILTER, not a search term`;
 
 export async function buildSmartSearchPlan(
   input: string,
@@ -97,6 +129,7 @@ export async function buildSmartSearchPlan(
       synonyms: {},
       precisionQueries: finalTerms.map((t) => `"${t}"`),
       broadQueries: [finalTerms.join(" ")],
+      filters: {},
     };
   }
 }
@@ -154,15 +187,69 @@ export async function smartSearch(
     }
   }
 
-  const papers = Array.from(seen.values()).sort(
+  let papers = Array.from(seen.values()).sort(
     (a, b) => b.citationCount - a.citationCount
   );
+
+  // Step 6: Apply filters from user's quality requirements
+  const f = plan.filters;
+  const totalBeforeFilter = papers.length;
+
+  if (f && Object.keys(f).length > 0) {
+    papers = papers.filter((p) => {
+      const meta = p.journalMeta;
+      const ranking = p.journalRanking;
+
+      // ABS filter
+      if (f.minABS && meta?.absRating) {
+        const absOrder = ["1", "2", "3", "4", "4*"];
+        const paperLevel = absOrder.indexOf(meta.absRating);
+        const minLevel = absOrder.indexOf(f.minABS);
+        if (paperLevel < minLevel) return false;
+      } else if (f.minABS && !meta?.absRating) {
+        return false; // No ABS rating = excluded when ABS filter is set
+      }
+
+      // SSCI filter
+      if (f.requireSSCI && !meta?.ssci) return false;
+
+      // SCI filter
+      if (f.requireSCI && !meta?.sci) return false;
+
+      // CAS zone filter
+      if (f.minCASZone && meta?.casZone) {
+        const zoneOrder = ["四区", "三区", "二区", "一区"];
+        const paperZone = zoneOrder.indexOf(meta.casZone);
+        const minZone = zoneOrder.indexOf(f.minCASZone);
+        if (paperZone < minZone) return false;
+      } else if (f.minCASZone && !meta?.casZone) {
+        return false;
+      }
+
+      // IF filter
+      if (f.minIF && (meta?.impactFactor ?? 0) < f.minIF) return false;
+
+      // Citation filter
+      if (f.minCitations && p.citationCount < f.minCitations) return false;
+
+      // Year filter
+      if (f.yearFrom && (p.year ?? 0) < f.yearFrom) return false;
+      if (f.yearTo && (p.year ?? 9999) > f.yearTo) return false;
+
+      // UTD24 / FT50
+      if (f.requireUTD24 && !ranking?.utd24) return false;
+      if (f.requireFT50 && !ranking?.ft50) return false;
+
+      return true;
+    });
+  }
 
   return {
     plan,
     papers,
     stats: {
       total: papers.length,
+      totalBeforeFilter,
       byQuery,
       durationMs: Date.now() - startTime,
     },

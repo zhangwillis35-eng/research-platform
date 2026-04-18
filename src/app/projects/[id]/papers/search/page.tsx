@@ -68,12 +68,26 @@ interface SearchMeta {
 
 type SortBy = "citations" | "year_desc" | "year_asc" | "relevance";
 
+interface SearchFilters {
+  minABS?: string;
+  minCASZone?: string;
+  requireSSCI?: boolean;
+  requireSCI?: boolean;
+  minIF?: number;
+  minCitations?: number;
+  yearFrom?: number;
+  yearTo?: number;
+  requireUTD24?: boolean;
+  requireFT50?: boolean;
+}
+
 interface SearchPlan {
   translatedInput?: string;
   keyTerms: string[];
   synonyms: Record<string, string[]>;
   precisionQueries: string[];
   broadQueries: string[];
+  filters: SearchFilters;
 }
 
 const sourceLabels: Record<string, string> = {
@@ -383,6 +397,42 @@ export default function PaperSearchPage() {
               {searchPlan.broadQueries.map((q, i) => (
                 <p key={i} className="text-[11px] font-mono text-foreground/80 pl-2 break-all">{q}</p>
               ))}
+              {/* Active filters */}
+              {searchPlan.filters && Object.keys(searchPlan.filters).length > 0 && (
+                <div className="pt-2 border-t border-border/30 mt-1">
+                  <p className="text-[10px] text-muted-foreground font-medium mb-1">自动筛选条件（从你的描述中提取）：</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {searchPlan.filters.minABS && (
+                      <Badge className="bg-purple-600 text-white text-[10px]">ABS ≥ {searchPlan.filters.minABS}星</Badge>
+                    )}
+                    {searchPlan.filters.requireSSCI && (
+                      <Badge className="bg-blue-600 text-white text-[10px]">仅 SSCI</Badge>
+                    )}
+                    {searchPlan.filters.requireSCI && (
+                      <Badge className="bg-cyan-600 text-white text-[10px]">仅 SCI</Badge>
+                    )}
+                    {searchPlan.filters.minCASZone && (
+                      <Badge className="bg-red-700 text-white text-[10px]">中科院 ≥ {searchPlan.filters.minCASZone}</Badge>
+                    )}
+                    {searchPlan.filters.minIF && (
+                      <Badge className="bg-teal text-white text-[10px]">IF ≥ {searchPlan.filters.minIF}</Badge>
+                    )}
+                    {searchPlan.filters.minCitations && (
+                      <Badge className="bg-amber-600 text-white text-[10px]">引用 ≥ {searchPlan.filters.minCitations}</Badge>
+                    )}
+                    {searchPlan.filters.yearFrom && (
+                      <Badge variant="secondary" className="text-[10px]">{searchPlan.filters.yearFrom}年以后</Badge>
+                    )}
+                    {searchPlan.filters.requireUTD24 && (
+                      <Badge className="bg-red-600 text-white text-[10px]">仅 UTD24</Badge>
+                    )}
+                    {searchPlan.filters.requireFT50 && (
+                      <Badge className="bg-amber-500 text-white text-[10px]">仅 FT50</Badge>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Quick links to other databases */}
               <div className="flex items-center gap-2 pt-2 border-t border-border/30 mt-2">
                 <span className="text-[10px] text-muted-foreground">在其他平台搜索：</span>
@@ -430,7 +480,9 @@ export default function PaperSearchPage() {
           <div className="flex items-center gap-4 text-sm">
             <span className="text-muted-foreground">
               共 {displayedPapers.length} 篇
-              {filterRanking !== "all" && ` (筛选自 ${papers.length} 篇)`}
+              {(filterRanking !== "all" || (searchPlan?.filters && Object.keys(searchPlan.filters).length > 0)) &&
+                papers.length !== displayedPapers.length &&
+                ` (从 ${papers.length} 篇中筛选)`}
             </span>
             <div className="flex gap-1.5">
               {meta.sources.map((s) => (
