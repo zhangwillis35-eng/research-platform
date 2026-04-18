@@ -35,7 +35,7 @@ export interface NotebookLMStatus {
   error?: string;
 }
 
-const DEFAULT_PROXY_URL = "http://localhost:27124";
+const DEFAULT_PROXY_URL = "http://localhost:27125";
 
 // ─── Connection Check ────────────────────────────
 
