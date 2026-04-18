@@ -283,11 +283,14 @@ export default function PaperSearchPage() {
         const decoder = new TextDecoder();
         let result = "";
         if (reader) {
+          let sseBuffer = "";
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            const chunk = decoder.decode(value);
-            for (const line of chunk.split("\n")) {
+            sseBuffer += decoder.decode(value, { stream: true });
+            const lines = sseBuffer.split("\n");
+            sseBuffer = lines.pop() ?? "";
+            for (const line of lines) {
               if (line.startsWith("data: ")) {
                 try {
                   const data = JSON.parse(line.slice(6));

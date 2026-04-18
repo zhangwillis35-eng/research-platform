@@ -19,8 +19,8 @@ export async function searchGoogleScholar(
     num: String(limit),
   });
 
-  if (yearFrom) params.set("as_ylo", String(yearFrom));
-  if (yearTo) params.set("as_yhi", String(yearTo));
+  if (yearFrom != null) params.set("as_ylo", String(yearFrom));
+  if (yearTo != null) params.set("as_yhi", String(yearTo));
 
   const res = await fetch(`${BASE_URL}?${params}`);
 

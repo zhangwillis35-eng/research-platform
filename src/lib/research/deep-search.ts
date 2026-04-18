@@ -50,7 +50,7 @@ export async function deepSearch(
   const allPapers = searchResults.flatMap((r) => r.papers);
   const seen = new Map<string, UnifiedPaper>();
   for (const paper of allPapers) {
-    const key = paper.doi?.toLowerCase() || paper.title?.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 80);
+    const key = paper.doi?.toLowerCase() || paper.title?.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, "").slice(0, 80);
     if (!key) continue;
     const existing = seen.get(key);
     if (!existing || paper.citationCount > existing.citationCount) {

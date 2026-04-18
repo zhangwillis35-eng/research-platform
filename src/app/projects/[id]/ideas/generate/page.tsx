@@ -117,7 +117,7 @@ export default function IdeasGeneratePage() {
       const res = await fetch("/api/research/ideas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ papers, provider, withPeerReview: true }),
+        body: JSON.stringify({ papers, provider, withPeerReview: true, topic }),
       });
       if (!res.ok) throw new Error("想法生成失败");
       const data = await res.json();

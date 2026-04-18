@@ -15,7 +15,7 @@ export async function searchSemanticScholar(
     fields: FIELDS,
   });
 
-  if (yearFrom || yearTo) {
+  if (yearFrom != null || yearTo != null) {
     const from = yearFrom ?? "";
     const to = yearTo ?? "";
     params.set("year", `${from}-${to}`);

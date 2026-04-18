@@ -10,10 +10,14 @@ export async function POST(request: Request) {
       papers,
       provider = "gemini",
       withPeerReview = true,
+      topic,
+      notebookLM,
     } = body as {
       papers: UnifiedPaper[];
       provider?: AIProvider;
       withPeerReview?: boolean;
+      topic?: string;
+      notebookLM?: import("@/lib/integrations/notebooklm").NotebookLMConfig | null;
     };
 
     if (!papers?.length) {
@@ -23,7 +27,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await runIdeaPipeline(papers, provider, withPeerReview);
+    const result = await runIdeaPipeline(papers, provider, withPeerReview, notebookLM, topic);
 
     return NextResponse.json(result);
   } catch (error) {

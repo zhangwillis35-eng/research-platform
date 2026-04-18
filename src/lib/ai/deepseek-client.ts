@@ -42,8 +42,8 @@ export async function callDeepSeek(options: AIRequestOptions): Promise<AIRespons
     model: response.model,
     usage: response.usage
       ? {
-          inputTokens: response.usage.prompt_tokens,
-          outputTokens: response.usage.completion_tokens,
+          inputTokens: response.usage.prompt_tokens ?? 0,
+          outputTokens: response.usage.completion_tokens ?? 0,
         }
       : undefined,
   };

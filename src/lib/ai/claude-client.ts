@@ -29,7 +29,7 @@ export async function callClaude(options: AIRequestOptions): Promise<AIResponse>
   });
 
   const content =
-    response.content[0].type === "text" ? response.content[0].text : "";
+    response.content[0]?.type === "text" ? response.content[0].text : "";
 
   return {
     content,

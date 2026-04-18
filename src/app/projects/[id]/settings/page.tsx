@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +9,14 @@ import { Badge } from "@/components/ui/badge";
 export default function SettingsPage() {
   const [obsidianUrl, setObsidianUrl] = useState("http://127.0.0.1:27123");
   const [obsidianKey, setObsidianKey] = useState("");
+  const [nlmUrl, setNlmUrl] = useState("");
+
+  useEffect(() => {
+    setNlmUrl(localStorage.getItem("notebooklm_url") ?? "");
+    setObsidianKey(localStorage.getItem("obsidian_api_key") ?? "");
+    const savedUrl = localStorage.getItem("obsidian_base_url");
+    if (savedUrl) setObsidianUrl(savedUrl);
+  }, []);
   const [obsidianStatus, setObsidianStatus] = useState<{
     connected: boolean;
     vaultName?: string;
@@ -91,7 +99,10 @@ export default function SettingsPage() {
               </label>
               <Input
                 value={obsidianUrl}
-                onChange={(e) => setObsidianUrl(e.target.value)}
+                onChange={(e) => {
+                  setObsidianUrl(e.target.value);
+                  localStorage.setItem("obsidian_base_url", e.target.value);
+                }}
                 placeholder="http://127.0.0.1:27123"
               />
             </div>
@@ -102,7 +113,10 @@ export default function SettingsPage() {
               <Input
                 type="password"
                 value={obsidianKey}
-                onChange={(e) => setObsidianKey(e.target.value)}
+                onChange={(e) => {
+                  setObsidianKey(e.target.value);
+                  localStorage.setItem("obsidian_api_key", e.target.value);
+                }}
                 placeholder="在 Obsidian Local REST API 插件设置中找到"
               />
             </div>
@@ -183,10 +197,11 @@ export default function SettingsPage() {
             </label>
             <Input
               placeholder="https://notebooklm.google.com/notebook/..."
+              value={nlmUrl}
               onChange={(e) => {
+                setNlmUrl(e.target.value);
                 localStorage.setItem("notebooklm_url", e.target.value);
               }}
-              defaultValue={typeof window !== "undefined" ? localStorage.getItem("notebooklm_url") ?? "" : ""}
             />
           </div>
 

@@ -8,8 +8,8 @@ export async function searchOpenAlex(
   const { query, limit = 20, yearFrom, yearTo } = options;
 
   const filters: string[] = ["type:article"];
-  if (yearFrom) filters.push(`from_publication_date:${yearFrom}-01-01`);
-  if (yearTo) filters.push(`to_publication_date:${yearTo}-12-31`);
+  if (yearFrom != null) filters.push(`from_publication_date:${yearFrom}-01-01`);
+  if (yearTo != null) filters.push(`to_publication_date:${yearTo}-12-31`);
 
   const params = new URLSearchParams({
     search: query,

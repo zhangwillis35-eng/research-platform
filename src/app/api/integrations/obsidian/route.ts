@@ -45,7 +45,8 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: "Idea is required" }, { status: 400 });
         }
         const success = await pushIdeaToObsidian(config, idea, folder);
-        return NextResponse.json({ success, path: `${folder}/${idea.title.slice(0, 80)}.md` });
+        const filename = idea.title.replace(/[/\\:*?"<>|]/g, "_").slice(0, 80);
+        return NextResponse.json({ success, path: `${folder}/${filename}.md` });
       }
 
       case "push-paper": {
@@ -55,7 +56,8 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: "Paper is required" }, { status: 400 });
         }
         const success = await pushPaperToObsidian(config, paper, folder);
-        return NextResponse.json({ success, path: `${folder}/${paper.title.slice(0, 80)}.md` });
+        const filename = paper.title.replace(/[/\\:*?"<>|]/g, "_").slice(0, 80);
+        return NextResponse.json({ success, path: `${folder}/${filename}.md` });
       }
 
       case "pull-seeds": {
