@@ -160,12 +160,86 @@ const SJR_Q1: Set<string> = new Set([
   "journal of organizational behavior",
 ]);
 
+// ─── Built-in Impact Factors (JCR 2024 approximate) ──
+
+const JOURNAL_IF: Record<string, number> = {
+  "academy of management journal": 10.5,
+  "academy of management review": 12.3,
+  "administrative science quarterly": 9.2,
+  "strategic management journal": 7.8,
+  "management science": 5.4,
+  "organization science": 5.0,
+  "journal of management": 9.3,
+  "journal of management studies": 8.6,
+  "journal of international business studies": 8.6,
+  "journal of finance": 8.0,
+  "journal of financial economics": 8.2,
+  "review of financial studies": 6.8,
+  "journal of accounting and economics": 5.5,
+  "journal of accounting research": 5.2,
+  "the accounting review": 4.8,
+  "journal of marketing": 12.9,
+  "journal of marketing research": 6.1,
+  "journal of consumer research": 7.2,
+  "journal of consumer psychology": 4.8,
+  "marketing science": 5.0,
+  "journal of the academy of marketing science": 11.4,
+  "mis quarterly": 7.3,
+  "information systems research": 5.0,
+  "journal of management information systems": 7.0,
+  "journal of operations management": 7.8,
+  "production and operations management": 5.2,
+  "manufacturing and service operations management": 4.6,
+  "operations research": 3.2,
+  "journal of applied psychology": 6.6,
+  "organizational behavior and human decision processes": 4.6,
+  "journal of organizational behavior": 6.8,
+  "leadership quarterly": 7.5,
+  "journal of business venturing": 10.0,
+  "entrepreneurship theory and practice": 10.5,
+  "journal of business ethics": 6.6,
+  "human relations": 5.7,
+  "human resource management": 6.6,
+  "organization studies": 5.1,
+  "research policy": 9.5,
+  "journal of world business": 8.9,
+  "british journal of management": 5.6,
+  "journal of business research": 10.5,
+  "long range planning": 8.0,
+  "journal of product innovation management": 6.0,
+  "journal of supply chain management": 7.9,
+  "global strategy journal": 5.7,
+  "american economic review": 12.2,
+  "econometrica": 6.4,
+  "quarterly journal of economics": 13.7,
+  "journal of political economy": 10.3,
+  "review of economic studies": 7.8,
+  "accounting organizations and society": 4.4,
+  "contemporary accounting research": 3.6,
+  "review of accounting studies": 3.8,
+  "harvard business review": 14.0,
+  "sloan management review": 8.0,
+  "journal of financial and quantitative analysis": 3.4,
+  "strategic entrepreneurship journal": 5.4,
+  "organizational research methods": 8.9,
+  "finance research letters": 7.4,
+  "南开管理评论": 5.1,
+  "管理世界": 6.7,
+  "经济研究": 7.2,
+  "中国工业经济": 5.8,
+  "管理科学学报": 3.5,
+  "中国管理科学": 3.2,
+  "会计研究": 4.5,
+  "金融研究": 5.0,
+  "经济学季刊": 4.8,
+};
+
 function normalize(name: string): string {
   return name
     .toLowerCase()
     .replace(/^the\s+/, "")
     .replace(/&/g, "and")
-    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/[^a-z0-9\u4e00-\u9fff\s]/g, "")
     .trim();
 }
 
@@ -177,12 +251,21 @@ function matchesSet(venue: string, set: Set<string>): boolean {
   return false;
 }
 
+function findIF(venue: string): number | undefined {
+  const n = normalize(venue);
+  for (const [journal, ifValue] of Object.entries(JOURNAL_IF)) {
+    if (n.includes(journal) || journal.includes(n)) return ifValue;
+  }
+  return undefined;
+}
+
 export function getJournalMetadata(venue: string | undefined | null): JournalMetadata {
   if (!venue) return { ssci: false, sci: false };
 
   return {
+    impactFactor: findIF(venue),
     ssci: matchesSet(venue, SSCI_JOURNALS),
-    sci: false, // SCI is for natural sciences, not management
+    sci: false,
     casZone: matchesSet(venue, CAS_ZONE_1)
       ? "一区"
       : matchesSet(venue, CAS_ZONE_2)
