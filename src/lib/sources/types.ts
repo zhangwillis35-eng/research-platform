@@ -3,6 +3,13 @@ export interface Author {
   authorId?: string;
 }
 
+export interface JournalBadges {
+  ft50: boolean;
+  utd24: boolean;
+  abs4star: boolean;
+  badges: string[]; // ["UTD24", "FT50", "ABS 4*"]
+}
+
 export interface UnifiedPaper {
   title: string;
   abstract?: string;
@@ -18,6 +25,10 @@ export interface UnifiedPaper {
   openAccessPdf?: string;
   fieldsOfStudy?: string[];
   rawMetadata?: Record<string, unknown>;
+  // Enhanced fields
+  journalRanking?: JournalBadges;
+  connectedPapersUrl?: string;
+  unpaywallUrl?: string;
 }
 
 export interface SearchOptions {

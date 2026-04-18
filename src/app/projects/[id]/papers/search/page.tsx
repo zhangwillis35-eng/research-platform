@@ -14,12 +14,26 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   AIProviderSelect,
   type AIProvider,
 } from "@/components/ai-provider-select";
 
 interface Author {
   name: string;
+}
+
+interface JournalBadges {
+  ft50: boolean;
+  utd24: boolean;
+  abs4star: boolean;
+  badges: string[];
 }
 
 interface Paper {
@@ -32,12 +46,18 @@ interface Paper {
   doi?: string;
   source: string;
   openAccessPdf?: string;
+  unpaywallUrl?: string;
+  connectedPapersUrl?: string;
+  journalRanking?: JournalBadges;
 }
 
 interface SearchMeta {
   total: number;
   sources: Array<{ source: string; count: number }>;
 }
+
+type SortBy = "citations" | "year_desc" | "year_asc" | "relevance";
+type SearchMode = "precision" | "broad" | "both";
 
 const sourceLabels: Record<string, string> = {
   semantic_scholar: "Semantic Scholar",
@@ -51,6 +71,27 @@ const sourceColors: Record<string, string> = {
   google_scholar: "bg-orange-100 text-orange-800",
 };
 
+const rankingColors: Record<string, string> = {
+  UTD24: "bg-red-600 text-white",
+  FT50: "bg-amber-500 text-white",
+  "ABS 4*": "bg-purple-600 text-white",
+};
+
+function sortPapers(papers: Paper[], sortBy: SortBy): Paper[] {
+  const sorted = [...papers];
+  switch (sortBy) {
+    case "citations":
+      return sorted.sort((a, b) => b.citationCount - a.citationCount);
+    case "year_desc":
+      return sorted.sort((a, b) => (b.year ?? 0) - (a.year ?? 0));
+    case "year_asc":
+      return sorted.sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999));
+    case "relevance":
+    default:
+      return sorted; // keep original order (relevance from API)
+  }
+}
+
 export default function PaperSearchPage() {
   const [query, setQuery] = useState("");
   const [papers, setPapers] = useState<Paper[]>([]);
@@ -60,6 +101,9 @@ export default function PaperSearchPage() {
   const [aiProvider, setAiProvider] = useState<AIProvider>("gemini");
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<SortBy>("citations");
+  const [searchMode, setSearchMode] = useState<SearchMode>("both");
+  const [filterRanking, setFilterRanking] = useState<string>("all");
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -70,17 +114,56 @@ export default function PaperSearchPage() {
     setAnalysisResult(null);
 
     try {
-      const res = await fetch("/api/papers/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, limit: 30 }),
-      });
+      if (searchMode === "both") {
+        // Run precision + broad search in parallel
+        const [precisionRes, broadRes] = await Promise.all([
+          fetch("/api/papers/search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              query: `"${query}"`, // exact phrase for precision
+              limit: 20,
+            }),
+          }),
+          fetch("/api/papers/search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              query, // natural language for broad
+              limit: 30,
+            }),
+          }),
+        ]);
 
-      if (!res.ok) throw new Error("Search failed");
+        const precisionData = precisionRes.ok ? await precisionRes.json() : { papers: [], meta: { total: 0, sources: [] } };
+        const broadData = broadRes.ok ? await broadRes.json() : { papers: [], meta: { total: 0, sources: [] } };
 
-      const data = await res.json();
-      setPapers(data.papers);
-      setMeta(data.meta);
+        // Merge and deduplicate
+        const allPapers = [...precisionData.papers, ...broadData.papers];
+        const seen = new Map<string, Paper>();
+        for (const p of allPapers) {
+          const key = p.doi?.toLowerCase() || p.title?.toLowerCase().slice(0, 80);
+          if (!seen.has(key)) seen.set(key, p);
+        }
+        const merged = Array.from(seen.values());
+        setPapers(merged);
+        setMeta({
+          total: merged.length,
+          sources: broadData.meta?.sources ?? [],
+        });
+      } else {
+        const searchQuery = searchMode === "precision" ? `"${query}"` : query;
+        const res = await fetch("/api/papers/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: searchQuery, limit: 30 }),
+        });
+
+        if (!res.ok) throw new Error("Search failed");
+        const data = await res.json();
+        setPapers(data.papers);
+        setMeta(data.meta);
+      }
     } catch (err) {
       setError(String(err));
     } finally {
@@ -89,21 +172,20 @@ export default function PaperSearchPage() {
   }
 
   async function handleAnalyze(type: "variables" | "review" | "ideas") {
-    if (papers.length === 0) return;
+    if (displayedPapers.length === 0) return;
     setAnalyzing(true);
     setAnalysisResult(null);
 
-    const content = papers
+    const content = displayedPapers
       .slice(0, 15)
       .map(
         (p, i) =>
-          `[${i + 1}] ${p.title}\n${p.authors.map((a) => a.name).join(", ")} (${p.year ?? "N/A"})\n${p.abstract ?? "No abstract"}`
+          `[${i + 1}] ${p.title}\n${p.authors.map((a) => a.name).join(", ")} (${p.year ?? "N/A"})${p.venue ? ` — ${p.venue}` : ""}${p.journalRanking?.badges?.length ? ` [${p.journalRanking.badges.join(", ")}]` : ""}\n${p.abstract ?? "No abstract"}`
       )
       .join("\n\n---\n\n");
 
     try {
       if (type === "review") {
-        // Stream review generation
         const res = await fetch("/api/ai/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -114,24 +196,21 @@ export default function PaperSearchPage() {
 2. 时间演进脉络
 3. 研究Gap
 4. 未来方向
-用中文、学术写作风格。`,
+注意标注各文献的期刊等级（UTD24/FT50/ABS4*），用中文、学术写作风格。`,
             messages: [{ role: "user", content }],
           }),
         });
 
         if (!res.ok) throw new Error("Analysis failed");
-
         const reader = res.body?.getReader();
         const decoder = new TextDecoder();
         let result = "";
-
         if (reader) {
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
             const chunk = decoder.decode(value);
-            const lines = chunk.split("\n");
-            for (const line of lines) {
+            for (const line of chunk.split("\n")) {
               if (line.startsWith("data: ")) {
                 try {
                   const data = JSON.parse(line.slice(6));
@@ -139,9 +218,7 @@ export default function PaperSearchPage() {
                     result += data.text;
                     setAnalysisResult(result);
                   }
-                } catch {
-                  // skip parse errors
-                }
+                } catch { /* skip */ }
               }
             }
           }
@@ -152,9 +229,7 @@ export default function PaperSearchPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ provider: aiProvider, type, content }),
         });
-
         if (!res.ok) throw new Error("Analysis failed");
-
         const data = await res.json();
         setAnalysisResult(
           typeof data.result === "string"
@@ -169,74 +244,124 @@ export default function PaperSearchPage() {
     }
   }
 
+  // Apply sort and filter
+  let displayedPapers = sortPapers(papers, sortBy);
+  if (filterRanking !== "all") {
+    displayedPapers = displayedPapers.filter((p) =>
+      p.journalRanking?.badges?.includes(filterRanking)
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">文献检索</h1>
-          <p className="text-muted-foreground mt-1">
-            多源聚合搜索，自动去重整合
+          <h1 className="font-[family-name:var(--font-serif-sc)] text-2xl font-bold">
+            文献检索
+          </h1>
+          <p className="text-muted-foreground mt-1 text-sm">
+            多源聚合搜索 · 精准/广度双模式 · 期刊排名标注
           </p>
         </div>
         <AIProviderSelect value={aiProvider} onChange={setAiProvider} />
       </div>
 
-      {/* Search Bar */}
-      <form onSubmit={handleSearch} className="flex gap-3">
-        <Input
-          placeholder="输入研究主题，如 servant leadership and performance"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="flex-1"
-        />
-        <Button type="submit" disabled={loading}>
-          {loading ? "搜索中..." : "搜索"}
-        </Button>
+      {/* Search Bar + Mode */}
+      <form onSubmit={handleSearch} className="space-y-3">
+        <div className="flex gap-3">
+          <Input
+            placeholder="输入研究主题，如 digital transformation organizational resilience"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="flex-1"
+          />
+          <Button type="submit" disabled={loading} className="bg-teal text-teal-foreground hover:bg-teal/90">
+            {loading ? "搜索中..." : "搜索"}
+          </Button>
+        </div>
+        <div className="flex items-center gap-4 text-sm">
+          <span className="text-muted-foreground">检索模式：</span>
+          <div className="flex gap-1">
+            {[
+              { value: "both" as const, label: "精准+广度" },
+              { value: "precision" as const, label: "精准检索" },
+              { value: "broad" as const, label: "广度检索" },
+            ].map((mode) => (
+              <button
+                key={mode.value}
+                type="button"
+                onClick={() => setSearchMode(mode.value)}
+                className={`px-3 py-1 rounded-md transition-colors ${
+                  searchMode === mode.value
+                    ? "bg-teal/10 text-teal font-medium"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </form>
 
-      {/* Source Stats + AI Actions */}
+      {/* Controls bar */}
       {meta && (
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4 text-sm">
             <span className="text-muted-foreground">
-              共找到 {meta.total} 篇文献
+              共 {displayedPapers.length} 篇
+              {filterRanking !== "all" && ` (筛选自 ${papers.length} 篇)`}
             </span>
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
               {meta.sources.map((s) => (
                 <Badge
                   key={s.source}
                   variant="secondary"
-                  className={sourceColors[s.source]}
+                  className={`text-xs ${sourceColors[s.source] ?? ""}`}
                 >
                   {sourceLabels[s.source] ?? s.source}: {s.count}
                 </Badge>
               ))}
             </div>
           </div>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => handleAnalyze("variables")}
-              disabled={analyzing}
-            >
-              提取变量关系
+
+          <div className="flex items-center gap-3">
+            {/* Sort */}
+            <Select value={sortBy} onValueChange={(v) => v && setSortBy(v as SortBy)}>
+              <SelectTrigger className="w-[150px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="citations">按引用量排序</SelectItem>
+                <SelectItem value="year_desc">按年份（新→旧）</SelectItem>
+                <SelectItem value="year_asc">按年份（旧→新）</SelectItem>
+                <SelectItem value="relevance">按相关度排序</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Filter by ranking */}
+            <Select value={filterRanking} onValueChange={(v) => v && setFilterRanking(v)}>
+              <SelectTrigger className="w-[130px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部期刊</SelectItem>
+                <SelectItem value="UTD24">仅 UTD24</SelectItem>
+                <SelectItem value="FT50">仅 FT50</SelectItem>
+                <SelectItem value="ABS 4*">仅 ABS 4*</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* AI Actions */}
+            <Separator orientation="vertical" className="h-6" />
+            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => handleAnalyze("variables")} disabled={analyzing}>
+              提取变量
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => handleAnalyze("review")}
-              disabled={analyzing}
-            >
-              生成文献综述
+            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => handleAnalyze("review")} disabled={analyzing}>
+              生成综述
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => handleAnalyze("ideas")}
-              disabled={analyzing}
-            >
-              生成研究想法
+            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => handleAnalyze("ideas")} disabled={analyzing}>
+              生成想法
             </Button>
           </div>
         </div>
@@ -244,7 +369,7 @@ export default function PaperSearchPage() {
 
       {/* AI Analysis Result */}
       {(analysisResult || analyzing) && (
-        <Card className="border-primary/20">
+        <Card className="border-teal/20 bg-teal/[0.02]">
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               AI 分析结果
@@ -283,7 +408,7 @@ export default function PaperSearchPage() {
 
       {/* Loading */}
       {loading && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {[1, 2, 3].map((i) => (
             <Card key={i}>
               <CardHeader>
@@ -299,20 +424,23 @@ export default function PaperSearchPage() {
       )}
 
       {/* Results */}
-      {!loading && papers.length > 0 && (
-        <div className="space-y-3">
-          {papers.map((paper, i) => (
-            <Card
+      {!loading && displayedPapers.length > 0 && (
+        <div className="space-y-2">
+          {displayedPapers.map((paper, i) => (
+            <div
               key={i}
-              className="transition-colors hover:border-foreground/10"
+              className="group border border-border/50 rounded-lg p-4 hover:border-teal/20 transition-all duration-150 bg-card"
             >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <CardTitle className="text-base leading-snug">
+              {/* Title row */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-medium text-[15px] leading-snug group-hover:text-teal transition-colors">
                       {paper.title}
-                    </CardTitle>
-                    <CardDescription className="mt-1.5">
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                    <CardDescription className="text-xs">
                       {paper.authors
                         .slice(0, 3)
                         .map((a) => a.name)
@@ -322,62 +450,101 @@ export default function PaperSearchPage() {
                       {paper.venue && ` — ${paper.venue}`}
                     </CardDescription>
                   </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <Badge variant="outline" className="text-xs">
-                      引用 {paper.citationCount}
-                    </Badge>
-                    <Badge
-                      variant="secondary"
-                      className={`text-xs ${sourceColors[paper.source] ?? ""}`}
-                    >
-                      {sourceLabels[paper.source] ?? paper.source}
-                    </Badge>
-                  </div>
                 </div>
-              </CardHeader>
+                <div className="flex flex-col items-end gap-1.5 shrink-0">
+                  {/* Journal ranking badges */}
+                  {paper.journalRanking?.badges && paper.journalRanking.badges.length > 0 && (
+                    <div className="flex gap-1">
+                      {paper.journalRanking.badges.map((badge) => (
+                        <Badge
+                          key={badge}
+                          className={`text-[10px] px-1.5 py-0 font-bold ${rankingColors[badge] ?? "bg-gray-500 text-white"}`}
+                        >
+                          {badge}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    引用 {paper.citationCount.toLocaleString()}
+                  </span>
+                  <Badge
+                    variant="secondary"
+                    className={`text-[10px] ${sourceColors[paper.source] ?? ""}`}
+                  >
+                    {sourceLabels[paper.source] ?? paper.source}
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Abstract */}
               {paper.abstract && (
-                <CardContent className="pt-0">
-                  <p className="text-sm text-muted-foreground line-clamp-3">
-                    {paper.abstract}
-                  </p>
-                  <div className="flex gap-2 mt-3">
-                    <Button size="sm" variant="outline">
-                      添加到文献库
-                    </Button>
-                    {paper.openAccessPdf && (
-                      <a
-                        href={paper.openAccessPdf}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Button size="sm" variant="ghost">
-                          下载 PDF
-                        </Button>
-                      </a>
-                    )}
-                    {paper.doi && (
-                      <a
-                        href={`https://doi.org/${paper.doi}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Button size="sm" variant="ghost">
-                          DOI
-                        </Button>
-                      </a>
-                    )}
-                  </div>
-                </CardContent>
+                <p className="text-sm text-muted-foreground line-clamp-2 mt-2.5">
+                  {paper.abstract}
+                </p>
               )}
-            </Card>
+
+              {/* Actions */}
+              <div className="flex items-center gap-2 mt-3">
+                <Button size="sm" variant="outline" className="h-7 text-xs">
+                  添加到文献库
+                </Button>
+                {(paper.openAccessPdf || paper.unpaywallUrl) && (
+                  <a
+                    href={paper.openAccessPdf || paper.unpaywallUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Button size="sm" variant="ghost" className="h-7 text-xs text-green-600">
+                      PDF (Open Access)
+                    </Button>
+                  </a>
+                )}
+                {paper.doi && (
+                  <a
+                    href={`https://doi.org/${paper.doi}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Button size="sm" variant="ghost" className="h-7 text-xs">
+                      DOI
+                    </Button>
+                  </a>
+                )}
+                {paper.connectedPapersUrl && (
+                  <a
+                    href={paper.connectedPapersUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Button size="sm" variant="ghost" className="h-7 text-xs text-teal">
+                      Connected Papers
+                    </Button>
+                  </a>
+                )}
+                {paper.doi && (
+                  <a
+                    href={`https://scholar.google.com/scholar?q=${encodeURIComponent(paper.title)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Button size="sm" variant="ghost" className="h-7 text-xs">
+                      Google Scholar
+                    </Button>
+                  </a>
+                )}
+              </div>
+            </div>
           ))}
         </div>
       )}
 
       {/* Empty State */}
-      {!loading && papers.length === 0 && meta && (
+      {!loading && displayedPapers.length === 0 && meta && (
         <div className="text-center py-12 text-muted-foreground">
-          未找到相关文献，请尝试其他关键词
+          {filterRanking !== "all"
+            ? `无 ${filterRanking} 期刊文献，尝试切换筛选条件`
+            : "未找到相关文献，请尝试其他关键词"}
         </div>
       )}
     </div>

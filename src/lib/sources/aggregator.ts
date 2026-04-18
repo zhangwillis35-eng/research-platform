@@ -2,6 +2,8 @@ import type { UnifiedPaper, SearchOptions, SearchResult } from "./types";
 import { searchSemanticScholar } from "./semantic-scholar";
 import { searchOpenAlex } from "./openalex";
 import { searchGoogleScholar } from "./google-scholar";
+import { getJournalRanking, getRankingBadges } from "./journal-rankings";
+import { batchFindOpenAccess } from "./unpaywall";
 
 const DEFAULT_SOURCES: Array<UnifiedPaper["source"]> = [
   "semantic_scholar",
@@ -25,7 +27,47 @@ export async function searchAllSources(
   const allPapers = results.flatMap((r) => r.papers);
   const deduplicated = deduplicatePapers(allPapers);
 
-  return { papers: deduplicated, results };
+  // Enrich papers with journal rankings and tool links
+  const enriched = enrichPapers(deduplicated);
+
+  // Batch lookup Unpaywall for papers with DOIs but no PDF
+  const doisNeedingPdf = enriched
+    .filter((p) => p.doi && !p.openAccessPdf)
+    .map((p) => p.doi!);
+
+  if (doisNeedingPdf.length > 0) {
+    const unpaywallResults = await batchFindOpenAccess(
+      doisNeedingPdf.slice(0, 30) // limit to 30 for speed
+    );
+    for (const paper of enriched) {
+      if (paper.doi && unpaywallResults.has(paper.doi)) {
+        const oa = unpaywallResults.get(paper.doi)!;
+        if (oa.isOpenAccess && oa.oaUrl) {
+          paper.openAccessPdf = paper.openAccessPdf ?? oa.oaUrl;
+          paper.unpaywallUrl = oa.oaUrl;
+        }
+      }
+    }
+  }
+
+  return { papers: enriched, results };
+}
+
+function enrichPapers(papers: UnifiedPaper[]): UnifiedPaper[] {
+  return papers.map((paper) => {
+    const ranking = getJournalRanking(paper.venue);
+    const badges = getRankingBadges(paper.venue);
+
+    return {
+      ...paper,
+      journalRanking: { ...ranking, badges },
+      connectedPapersUrl: paper.doi
+        ? `https://www.connectedpapers.com/api/redirect/doi/${encodeURIComponent(paper.doi)}`
+        : paper.title
+          ? `https://www.connectedpapers.com/search?q=${encodeURIComponent(paper.title)}`
+          : undefined,
+    };
+  });
 }
 
 function searchBySource(
@@ -49,12 +91,10 @@ function deduplicatePapers(papers: UnifiedPaper[]): UnifiedPaper[] {
 
   for (const paper of papers) {
     const key = getDeduplicationKey(paper);
-
     const existing = seen.get(key);
     if (!existing) {
       seen.set(key, paper);
     } else {
-      // Keep the one with more metadata
       seen.set(key, mergePapers(existing, paper));
     }
   }
@@ -63,17 +103,14 @@ function deduplicatePapers(papers: UnifiedPaper[]): UnifiedPaper[] {
 }
 
 function getDeduplicationKey(paper: UnifiedPaper): string {
-  // Prefer DOI for deduplication
   if (paper.doi) return `doi:${paper.doi.toLowerCase()}`;
-
-  // Fallback to normalized title
   return `title:${normalizeTitle(paper.title)}`;
 }
 
 function normalizeTitle(title: string): string {
   return title
     .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fff]/g, "") // keep alphanumeric + Chinese
+    .replace(/[^a-z0-9\u4e00-\u9fff]/g, "")
     .slice(0, 100);
 }
 

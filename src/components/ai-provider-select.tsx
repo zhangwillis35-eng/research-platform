@@ -45,7 +45,7 @@ export function AIProviderSelect({
   onChange: (value: AIProvider) => void;
 }) {
   return (
-    <Select value={value} onValueChange={(v) => onChange(v as AIProvider)}>
+    <Select value={value} onValueChange={(v) => v && onChange(v as AIProvider)}>
       <SelectTrigger className="w-[220px]">
         <SelectValue placeholder="选择 AI 模型" />
       </SelectTrigger>
