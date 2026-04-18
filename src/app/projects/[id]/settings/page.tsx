@@ -27,18 +27,32 @@ export default function SettingsPage() {
   async function checkObsidian() {
     setChecking(true);
     try {
-      const res = await fetch("/api/integrations/obsidian", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "check",
-          config: { baseUrl: obsidianUrl, apiKey: obsidianKey },
-        }),
+      // Call Obsidian directly from the browser (not via Vercel server)
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+      if (obsidianKey) headers["Authorization"] = `Bearer ${obsidianKey}`;
+
+      const res = await fetch(`${obsidianUrl}/`, {
+        headers,
+        signal: AbortSignal.timeout(3000),
       });
-      const data = await res.json();
-      setObsidianStatus(data);
-    } catch {
-      setObsidianStatus({ connected: false, error: "请求失败" });
+
+      if (res.ok) {
+        const data = await res.json();
+        setObsidianStatus({
+          connected: true,
+          vaultName: data.service ?? "Obsidian Vault",
+        });
+      } else {
+        setObsidianStatus({
+          connected: false,
+          error: `Obsidian 返回 HTTP ${res.status}`,
+        });
+      }
+    } catch (err) {
+      const msg = err instanceof Error && err.name === "TimeoutError"
+        ? "连接超时 — 请确认 Obsidian 已启动且 Local REST API 插件已开启"
+        : "无法连接 — 请确认 Obsidian 正在运行，且 Local REST API 插件已启用（端口 27123）";
+      setObsidianStatus({ connected: false, error: msg });
     } finally {
       setChecking(false);
     }

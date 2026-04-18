@@ -685,25 +685,19 @@ export default function PaperSearchPage() {
                   variant="ghost"
                   className="h-7 text-xs text-purple-600"
                   onClick={() => {
-                    const apiKey = localStorage.getItem("obsidian_api_key");
-                    if (!apiKey) { alert("请先在项目设置中配置 Obsidian API Key"); return; }
-                    fetch("/api/integrations/obsidian", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        action: "push-paper",
-                        config: { apiKey },
-                        paper: {
-                          title: paper.title,
-                          authors: paper.authors.map((a) => a.name).join(", "),
-                          year: paper.year,
-                          venue: paper.venue,
-                          doi: paper.doi,
-                          abstract: paper.abstract,
-                          rankings: paper.journalRanking?.badges,
-                        },
-                      }),
-                    });
+                    // Push directly to Obsidian from browser
+                    const obsUrl = localStorage.getItem("obsidian_base_url") || "http://127.0.0.1:27123";
+                    const apiKey = localStorage.getItem("obsidian_api_key") || "";
+                    const filename = paper.title.replace(/[/\\:*?"<>|]/g, "_").slice(0, 80);
+                    const path = `ScholarFlow/Papers/${filename}.md`;
+                    const content = `---\ntitle: "${paper.title}"\nauthors: "${paper.authors.map((a) => a.name).join(", ")}"\nyear: ${paper.year ?? "unknown"}\nvenue: "${paper.venue ?? ""}"\ndoi: "${paper.doi ?? ""}"\ntags: [paper, literature]\n---\n\n# ${paper.title}\n\n**${paper.authors.map((a) => a.name).join(", ")}** (${paper.year ?? "N/A"})\n${paper.venue ?? ""}${paper.journalRanking?.badges?.length ? ` | ${paper.journalRanking.badges.join(" / ")}` : ""}\n${paper.doi ? `DOI: [${paper.doi}](https://doi.org/${paper.doi})` : ""}\n\n## 摘要\n${paper.abstract ?? "_No abstract_"}\n\n## 笔记\n_在此添加阅读笔记..._\n`;
+                    const hdrs: HeadersInit = { "Content-Type": "text/markdown" };
+                    if (apiKey) hdrs["Authorization"] = `Bearer ${apiKey}`;
+                    fetch(`${obsUrl}/vault/${encodeURIComponent(path)}`, {
+                      method: "PUT",
+                      headers: hdrs,
+                      body: content,
+                    }).then(() => alert("已推送到 Obsidian")).catch(() => alert("推送失败，请确认 Obsidian 已运行"));
                   }}
                 >
                   → Obsidian
