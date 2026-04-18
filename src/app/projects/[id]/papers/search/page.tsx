@@ -104,6 +104,8 @@ export default function PaperSearchPage() {
   const [sortBy, setSortBy] = useState<SortBy>("citations");
   const [searchMode, setSearchMode] = useState<SearchMode>("both");
   const [filterRanking, setFilterRanking] = useState<string>("all");
+  const [deepSearching, setDeepSearching] = useState(false);
+  const [researchPlan, setResearchPlan] = useState<{ mainQuestion: string; subQuestions: string[]; perspectives: string[] } | null>(null);
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -168,6 +170,36 @@ export default function PaperSearchPage() {
       setError(String(err));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleDeepSearch() {
+    if (!query.trim()) return;
+    setDeepSearching(true);
+    setError(null);
+    setResearchPlan(null);
+    setAnalysisResult(null);
+
+    try {
+      const res = await fetch("/api/research/deep-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: query, provider: aiProvider }),
+      });
+      if (!res.ok) throw new Error("Deep search failed");
+      const data = await res.json();
+      setPapers(data.papers);
+      setResearchPlan(data.plan);
+      setMeta({
+        total: data.stats.afterDedup,
+        sources: [
+          { source: "deep_search", count: data.stats.afterDedup },
+        ],
+      });
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setDeepSearching(false);
     }
   }
 
@@ -275,8 +307,16 @@ export default function PaperSearchPage() {
             onChange={(e) => setQuery(e.target.value)}
             className="flex-1"
           />
-          <Button type="submit" disabled={loading} className="bg-teal text-teal-foreground hover:bg-teal/90">
+          <Button type="submit" disabled={loading || deepSearching} className="bg-teal text-teal-foreground hover:bg-teal/90">
             {loading ? "搜索中..." : "搜索"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleDeepSearch}
+            disabled={loading || deepSearching || !query.trim()}
+          >
+            {deepSearching ? "深度研究中..." : "深度研究"}
           </Button>
         </div>
         <div className="flex items-center gap-4 text-sm">
@@ -365,6 +405,33 @@ export default function PaperSearchPage() {
             </Button>
           </div>
         </div>
+      )}
+
+      {/* Research Plan (from deep search) */}
+      {researchPlan && (
+        <Card className="border-teal/20 bg-teal/[0.02]">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm text-teal">深度研究计划</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p className="font-medium">{researchPlan.mainQuestion}</p>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">子问题：</p>
+              {researchPlan.subQuestions.map((q, i) => (
+                <p key={i} className="text-xs text-muted-foreground">
+                  {i + 1}. {q}
+                </p>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {researchPlan.perspectives.map((p) => (
+                <Badge key={p} variant="secondary" className="text-[10px]">
+                  {p}
+                </Badge>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* AI Analysis Result */}
@@ -533,6 +600,34 @@ export default function PaperSearchPage() {
                     </Button>
                   </a>
                 )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs text-purple-600"
+                  onClick={() => {
+                    const apiKey = localStorage.getItem("obsidian_api_key");
+                    if (!apiKey) { alert("请先在项目设置中配置 Obsidian API Key"); return; }
+                    fetch("/api/integrations/obsidian", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        action: "push-paper",
+                        config: { apiKey },
+                        paper: {
+                          title: paper.title,
+                          authors: paper.authors.map((a) => a.name).join(", "),
+                          year: paper.year,
+                          venue: paper.venue,
+                          doi: paper.doi,
+                          abstract: paper.abstract,
+                          rankings: paper.journalRanking?.badges,
+                        },
+                      }),
+                    });
+                  }}
+                >
+                  → Obsidian
+                </Button>
               </div>
             </div>
           ))}
