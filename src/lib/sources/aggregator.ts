@@ -45,7 +45,6 @@ export async function searchAllSources(
         const extra = oaMetrics.get(paper.venue)!;
         if (paper.journalMeta) {
           paper.journalMeta.impactFactor = paper.journalMeta.impactFactor ?? extra.impactFactor;
-          paper.journalMeta.hIndex = paper.journalMeta.hIndex ?? extra.hIndex;
         }
       }
     }
