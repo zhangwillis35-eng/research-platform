@@ -1,17 +1,29 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
-const mockProjects = [
-  {
-    id: "demo-1",
-    name: "AI Washing 与利益相关者关注",
-    domain: "公司治理",
-    description: "研究企业AI洗绿行为对利益相关者关注度的影响",
-    paperCount: 0,
-  },
-];
+interface Project {
+  id: string;
+  name: string;
+  domain?: string;
+  description?: string;
+  _count: { papers: number; ideas: number };
+}
 
 export default function ProjectsPage() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/projects?userId=default-user")
+      .then((r) => r.json())
+      .then((data) => setProjects(data.projects ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
   return (
     <div className="flex flex-col min-h-screen">
       <header className="border-b border-border/50 bg-background/80 backdrop-blur-lg">
@@ -37,37 +49,45 @@ export default function ProjectsPage() {
           我的研究项目
         </h1>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {mockProjects.map((p) => (
-            <Link key={p.id} href={`/projects/${p.id}`}>
-              <div className="group border border-border/50 rounded-lg p-5 hover:border-teal/30 hover:shadow-sm transition-all duration-200 bg-card">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs text-teal font-medium bg-teal/10 px-2 py-0.5 rounded">
-                    {p.domain}
-                  </span>
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {p.paperCount} 篇
-                  </span>
+        {loading ? (
+          <div className="text-sm text-muted-foreground">加载中...</div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {projects.map((p) => (
+              <Link key={p.id} href={`/projects/${p.id}`}>
+                <div className="group border border-border/50 rounded-lg p-5 hover:border-teal/30 hover:shadow-sm transition-all duration-200 bg-card">
+                  <div className="flex items-center justify-between mb-3">
+                    {p.domain && (
+                      <span className="text-xs text-teal font-medium bg-teal/10 px-2 py-0.5 rounded">
+                        {p.domain}
+                      </span>
+                    )}
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {p._count.papers} 篇文献 · {p._count.ideas} 个想法
+                    </span>
+                  </div>
+                  <h3 className="font-semibold text-base group-hover:text-teal transition-colors">
+                    {p.name}
+                  </h3>
+                  {p.description && (
+                    <p className="text-sm text-muted-foreground mt-1.5 line-clamp-2">
+                      {p.description}
+                    </p>
+                  )}
                 </div>
-                <h3 className="font-semibold text-base group-hover:text-teal transition-colors">
-                  {p.name}
-                </h3>
-                <p className="text-sm text-muted-foreground mt-1.5 line-clamp-2">
-                  {p.description}
-                </p>
+              </Link>
+            ))}
+
+            <Link href="/projects/new">
+              <div className="border border-dashed border-border/50 rounded-lg flex items-center justify-center min-h-[140px] hover:border-teal/40 transition-colors cursor-pointer group">
+                <div className="text-center text-muted-foreground group-hover:text-teal transition-colors">
+                  <span className="text-2xl block mb-1">+</span>
+                  <span className="text-sm">创建新项目</span>
+                </div>
               </div>
             </Link>
-          ))}
-
-          <Link href="/projects/new">
-            <div className="border border-dashed border-border/50 rounded-lg flex items-center justify-center min-h-[140px] hover:border-teal/40 transition-colors cursor-pointer group">
-              <div className="text-center text-muted-foreground group-hover:text-teal transition-colors">
-                <span className="text-2xl block mb-1">+</span>
-                <span className="text-sm">创建新项目</span>
-              </div>
-            </div>
-          </Link>
-        </div>
+          </div>
+        )}
       </main>
     </div>
   );
