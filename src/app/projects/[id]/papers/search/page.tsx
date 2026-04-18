@@ -68,6 +68,7 @@ interface SearchMeta {
 type SortBy = "citations" | "year_desc" | "year_asc" | "relevance";
 
 interface SearchPlan {
+  translatedInput?: string;
   keyTerms: string[];
   synonyms: Record<string, string[]>;
   precisionQueries: string[];
@@ -342,6 +343,13 @@ export default function PaperSearchPage() {
               <CardTitle className="text-sm text-teal">检索策略</CardTitle>
               <span className="text-[10px] text-muted-foreground">AI 自动提取关键词 + 同义词扩展</span>
             </div>
+
+            {/* Translation */}
+            {searchPlan.translatedInput && (
+              <p className="text-xs text-muted-foreground">
+                翻译: <span className="text-foreground font-medium">{searchPlan.translatedInput}</span>
+              </p>
+            )}
 
             {/* Key terms + synonyms */}
             <div className="space-y-2">

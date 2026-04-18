@@ -13,6 +13,7 @@ import { searchAllSources } from "@/lib/sources/aggregator";
 import type { UnifiedPaper } from "@/lib/sources/types";
 
 export interface SmartSearchPlan {
+  translatedInput?: string;
   keyTerms: string[];
   synonyms: Record<string, string[]>;
   precisionQueries: string[];
@@ -29,31 +30,36 @@ export interface SmartSearchResult {
   };
 }
 
-const EXTRACT_SYSTEM = `你是学术检索专家。用户会用自然语言描述研究兴趣，你需要：
+const EXTRACT_SYSTEM = `You are an academic literature search expert. Follow these steps IN ORDER:
 
-1. 提取 2-5 个核心英文学术关键词/短语
-2. 为每个关键词生成 2-4 个同义词或近义表达（英文学术用语）
-3. 生成 1-2 个广度检索式（用 OR 连接同义词）
+STEP 1 — TRANSLATE: If the user's input contains ANY Chinese, first translate the ENTIRE input into English. Remove filler words (帮我找, 有关, 的文章, 相关论文, 请搜索, etc.). Keep only the academic meaning.
+Example: "帮我找AI washing的文章" → "AI washing"
+Example: "数字化转型与组织韧性的关系" → "digital transformation and organizational resilience"
+Example: "ESG对企业创新的影响" → "ESG impact on corporate innovation"
 
-输出严格 JSON：
+STEP 2 — EXTRACT KEY TERMS: From the English translation, extract 1-4 core academic search terms. Each term must be a complete, meaningful academic phrase.
+NEVER break compound terms: "AI washing" is ONE term, not "AI" + "washing".
+
+STEP 3 — SYNONYMS: For each key term, list 2-4 English synonyms actually used in academic papers.
+
+STEP 4 — BUILD QUERIES: Construct precision and broad search queries.
+
+Output STRICT JSON only:
 {
-  "keyTerms": ["term1", "term2"],
+  "translatedInput": "the full English translation of user input",
+  "keyTerms": ["AI washing"],
   "synonyms": {
-    "term1": ["synonym1a", "synonym1b"],
-    "term2": ["synonym2a", "synonym2b"]
+    "AI washing": ["AI greenwashing", "artificial intelligence washing", "AI hype", "AI fraud"]
   },
-  "precisionQueries": ["\"term1\"", "\"term2\""],
-  "broadQueries": [
-    "(\"term1\" OR \"synonym1a\" OR \"synonym1b\") AND (\"term2\" OR \"synonym2a\")"
-  ]
+  "precisionQueries": ["\"AI washing\""],
+  "broadQueries": ["\"AI washing\" OR \"AI greenwashing\" OR \"artificial intelligence washing\" OR \"AI hype\""]
 }
 
-规则：
-- 关键词必须是英文学术术语，即使用户输入中文
-- 同义词要覆盖不同的表述方式（如 firm performance / corporate performance / organizational performance）
-- 精准查询每个关键词加引号
-- 广度查询用 OR 连接同义词组，用 AND 连接不同概念组
-- 如果用户只输入了一个概念，广度查询用 OR 连接所有同义词即可`;
+RULES:
+- keyTerms = complete English academic phrases, NEVER single letters or broken words
+- precisionQueries = each keyTerm wrapped in double quotes
+- broadQueries = synonyms connected with OR; different concept groups connected with AND
+- If only one concept, broadQuery = all synonyms joined with OR`;
 
 export async function buildSmartSearchPlan(
   input: string,
@@ -70,17 +76,27 @@ export async function buildSmartSearchPlan(
 
     return JSON.parse(response.content) as SmartSearchPlan;
   } catch {
-    // Fallback: treat input as-is
-    const terms = input
-      .split(/[,，、;；和与and or OR]/)
+    // Fallback: extract English phrases and meaningful Chinese terms
+    const cleaned = input
+      .replace(/帮我找|有关|的文章|的论文|相关|研究|关于|请|搜索/g, "")
+      .trim();
+
+    // Extract quoted phrases and English word groups
+    const englishPhrases = cleaned.match(/[a-zA-Z][\w\s-]+[a-zA-Z]/g) ?? [];
+    const chineseTerms = cleaned
+      .replace(/[a-zA-Z][\w\s-]+[a-zA-Z]/g, "")
+      .split(/[,，、;；和与或]/)
       .map((t) => t.trim())
-      .filter(Boolean);
+      .filter((t) => t.length >= 2);
+
+    const terms = [...englishPhrases, ...chineseTerms].filter(Boolean);
+    const finalTerms = terms.length > 0 ? terms : [cleaned || input];
 
     return {
-      keyTerms: terms.length > 0 ? terms : [input],
+      keyTerms: finalTerms,
       synonyms: {},
-      precisionQueries: terms.map((t) => `"${t}"`),
-      broadQueries: [input],
+      precisionQueries: finalTerms.map((t) => `"${t}"`),
+      broadQueries: [finalTerms.join(" ")],
     };
   }
 }
