@@ -128,7 +128,7 @@ export default function HomePage() {
             <div className="grid sm:grid-cols-4 gap-6">
               {[
                 { name: "Gemini 3.1 Pro", tag: "Google" },
-                { name: "GPT-5", tag: "OpenAI" },
+                { name: "GPT-4o", tag: "OpenAI" },
                 { name: "DeepSeek Reasoning", tag: "推理" },
                 { name: "Claude Sonnet 4", tag: "Anthropic" },
               ].map((m) => (

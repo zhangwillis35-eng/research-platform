@@ -94,7 +94,7 @@ export async function POST(request: Request) {
       const cookieStore = await cookies();
       cookieStore.set("user_id", user.id, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: false,
         sameSite: "lax",
         maxAge: 60 * 60 * 24 * 30,
         path: "/",
@@ -138,7 +138,7 @@ export async function POST(request: Request) {
       const cookieStore = await cookies();
       cookieStore.set("user_id", user.id, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: false,
         sameSite: "lax",
         maxAge: 60 * 60 * 24 * 30,
         path: "/",
