@@ -20,8 +20,9 @@ export async function searchOpenAlex(
   });
 
   // polite pool: add email for better rate limits
-  if (process.env.OPENALEX_EMAIL) {
-    params.set("mailto", process.env.OPENALEX_EMAIL);
+  const email = (await import("@/lib/env")).getEnv("OPENALEX_EMAIL");
+  if (email) {
+    params.set("mailto", email);
   }
 
   const res = await fetch(`${BASE_URL}/works?${params}`);

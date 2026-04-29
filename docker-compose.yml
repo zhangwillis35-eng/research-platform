@@ -1,0 +1,11 @@
+services:
+  app:
+    build: .
+    container_name: scholarflow
+    restart: always
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production

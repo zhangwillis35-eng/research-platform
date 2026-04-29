@@ -1,18 +1,42 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
-// GET /api/papers?projectId=xxx
+// GET /api/papers?projectId=xxx&source=catalog|weekly|fulltext
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const projectId = searchParams.get("projectId");
+  const source = searchParams.get("source"); // "catalog" | "weekly" | "fulltext"
 
   if (!projectId) {
     return NextResponse.json({ error: "projectId required" }, { status: 400 });
   }
 
+  // Build filter
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const where: any = { projectId };
+
+  if (source === "fulltext") {
+    // Only papers with uploaded PDF full text, excluding weekly digest
+    where.fullText = { not: null };
+    where.OR = [
+      { folder: null },
+      { folder: { not: { contains: "AI 前沿" } } },
+    ];
+  } else if (source === "catalog") {
+    // All non-weekly papers (folder is null OR folder doesn't contain "AI 前沿")
+    where.OR = [
+      { folder: null },
+      { folder: { not: { contains: "AI 前沿" } } },
+    ];
+  } else if (source === "weekly") {
+    where.folder = { contains: "AI 前沿" };
+  }
+
+  // Exclude pdfData from list queries (binary, too large)
   const papers = await prisma.paper.findMany({
-    where: { projectId },
+    where,
     orderBy: { citationCount: "desc" },
+    omit: { pdfData: true },
   });
 
   return NextResponse.json({ papers });

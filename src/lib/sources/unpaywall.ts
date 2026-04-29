@@ -1,5 +1,6 @@
+import { getEnv } from "@/lib/env";
 const BASE_URL = "https://api.unpaywall.org/v2";
-const EMAIL = process.env.OPENALEX_EMAIL || "scholarflow@research.app";
+const EMAIL = getEnv("OPENALEX_EMAIL") || "scholarflow@research.app";
 
 export interface UnpaywallResult {
   isOpenAccess: boolean;

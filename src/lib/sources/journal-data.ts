@@ -1266,6 +1266,7 @@ export const ABS_RATINGS: Record<string, string> = {
   "military psychology": "1",
   "mineral economics": "1",
   "mis quarterly executive": "2",
+  "mis quarterly": "4*",
   "mis quarterly: management information systems": "4*",
   "mit sloan management review": "3",
   "multinational business review": "3",

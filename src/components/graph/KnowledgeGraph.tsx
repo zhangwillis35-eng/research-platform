@@ -18,7 +18,7 @@ interface GraphEdge {
   source: string | GraphNode;
   target: string | GraphNode;
   type: "DIRECT" | "MEDIATION" | "MODERATION";
-  direction: "positive" | "negative" | "mixed";
+  direction: "positive" | "negative" | "mixed" | "nonsignificant";
   weight: number;
   papers: number[];
 }
@@ -41,6 +41,7 @@ const EDGE_COLORS: Record<string, string> = {
   positive: "#10b981",
   negative: "#ef4444",
   mixed: "#f59e0b",
+  nonsignificant: "#d1d5db",
 };
 
 export function KnowledgeGraph({ nodes, edges, onNodeClick }: KnowledgeGraphProps) {

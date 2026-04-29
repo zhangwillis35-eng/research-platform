@@ -1,6 +1,45 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
+// GET /api/papers/[id]?pdf=true — download stored PDF
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const { searchParams } = new URL(request.url);
+
+  if (searchParams.get("pdf") === "true") {
+    const paper = await prisma.paper.findUnique({
+      where: { id },
+      select: { pdfData: true, pdfFileName: true },
+    });
+
+    if (!paper?.pdfData) {
+      return NextResponse.json({ error: "No PDF stored" }, { status: 404 });
+    }
+
+    return new Response(paper.pdfData, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${paper.pdfFileName ?? "paper.pdf"}"`,
+      },
+    });
+  }
+
+  // Default: return paper metadata
+  const paper = await prisma.paper.findUnique({
+    where: { id },
+    select: {
+      id: true, title: true, abstract: true, authors: true, year: true,
+      venue: true, doi: true, citationCount: true, pdfFileName: true,
+      fullText: true, tags: true, folder: true, isSelected: true,
+    },
+  });
+
+  return NextResponse.json({ paper });
+}
+
 // DELETE /api/papers/[id]
 export async function DELETE(
   _request: Request,

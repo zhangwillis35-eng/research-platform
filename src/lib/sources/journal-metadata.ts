@@ -1,20 +1,50 @@
 /**
- * Complete journal metadata — 1635 ABS journals + 200+ IF journals.
- * Data from ABS Academic Journal Guide 2024 + OpenAlex.
+ * Complete journal metadata — Easyscholar-style multi-dimensional classification.
+ *
+ * Dimensions:
+ * - ABS (Chartered ABS Academic Journal Guide 2024) — 1635 journals
+ * - JCR 分区 (Journal Citation Reports Q1-Q4)
+ * - SJR 分区 (Scimago Q1-Q4, derived from ABS when unavailable)
+ * - 中科院分区 (一区/二区/三区/四区)
+ * - SSCI / SCI 索引
+ * - CSSCI 南大核心
+ * - 北大核心
+ * - CCF 等级 (A/B/C)
+ * - ABDC 等级 (A-star, A, B, C)
+ * - FMS 推荐期刊
+ * - Impact Factor
  */
 import { ABS_RATINGS, JOURNAL_IF } from "./journal-data";
+import {
+  CCF_RANKINGS,
+  CSSCI_JOURNALS,
+  PKU_CORE_JOURNALS,
+  JCR_QUARTILES,
+  ABDC_RANKINGS,
+  FMS_JOURNALS,
+  CAS_ZONE_3,
+  CAS_ZONE_4,
+  CONFERENCE_RANKINGS,
+  type ConferenceInfo,
+} from "./easyscholar-data";
 
 export interface JournalMetadata {
   impactFactor?: number;
   sjrQuartile?: "Q1" | "Q2" | "Q3" | "Q4";
+  jcrQuartile?: "Q1" | "Q2" | "Q3" | "Q4";
   absRating?: "4*" | "4" | "3" | "2" | "1";
+  abdcRating?: "A*" | "A" | "B" | "C";
+  ccfRating?: "A" | "B" | "C";
   ssci: boolean;
   sci: boolean;
+  cssci: boolean;
+  pkuCore: boolean;
+  fms: boolean;
   casZone?: "一区" | "二区" | "三区" | "四区";
+  conference?: ConferenceInfo;
 }
 
-// ─── 中科院分区 (management journals) ────────────
-
+// ─── 中科院分区 一区/二区 (top-tier management journals) ────
 const CAS_ZONE_1 = new Set([
   "academy of management journal", "academy of management review", "administrative science quarterly",
   "strategic management journal", "management science", "journal of finance", "journal of financial economics",
@@ -23,7 +53,6 @@ const CAS_ZONE_1 = new Set([
   "mis quarterly", "information systems research", "operations research", "organization science",
   "journal of applied psychology", "american economic review", "econometrica", "quarterly journal of economics",
   "journal of political economy", "review of economic studies",
-  // Top science journals
   "nature", "science", "cell", "the lancet", "new england journal of medicine",
 ]);
 
@@ -37,7 +66,6 @@ const CAS_ZONE_2 = new Set([
   "research policy", "human relations", "journal of organizational behavior", "leadership quarterly",
   "organization studies", "journal of world business", "british journal of management",
   "human resource management", "journal of business research", "journal of consumer psychology",
-  // Science journals
   "nature medicine", "nature materials", "nature nanotechnology", "nature methods",
   "advanced materials", "energy & environmental science", "chemical reviews",
 ]);
@@ -55,19 +83,32 @@ function normalize(name: string): string {
 
 function findInRecord<T>(venue: string, map: Record<string, T>): T | undefined {
   const n = normalize(venue);
+  if (!n || n.length < 2) return undefined;
   if (map[n] !== undefined) return map[n];
-  // Try substring match for partial names
+  // Substring match — strict: require 80% length similarity to avoid false positives
+  // e.g. "information systems frontiers" must NOT match "information systems research"
   for (const [key, value] of Object.entries(map)) {
-    if (n.includes(key) || key.includes(n)) return value;
+    if (key.length < 8 || n.length < 8) continue;
+    const shorter = Math.min(key.length, n.length);
+    const longer = Math.max(key.length, n.length);
+    if (shorter / longer < 0.8) continue;
+    if (n === key) return value;
+    // Only match if one fully contains the other AND they're very similar length
+    if ((n.includes(key) || key.includes(n)) && shorter / longer >= 0.85) return value;
   }
   return undefined;
 }
 
 function matchesSet(venue: string, set: Set<string>): boolean {
   const n = normalize(venue);
+  if (!n || n.length < 2) return false;
   if (set.has(n)) return true;
   for (const j of set) {
-    if (n.includes(j) || j.includes(n)) return true;
+    if (j.length < 8 || n.length < 8) continue;
+    const shorter = Math.min(j.length, n.length);
+    const longer = Math.max(j.length, n.length);
+    if (shorter / longer < 0.8) continue;
+    if ((n.includes(j) || j.includes(n)) && shorter / longer >= 0.85) return true;
   }
   return false;
 }
@@ -75,36 +116,59 @@ function matchesSet(venue: string, set: Set<string>): boolean {
 // ─── Main function ───────────────────────────────
 
 export function getJournalMetadata(venue: string | undefined | null): JournalMetadata {
-  if (!venue) return { ssci: false, sci: false };
+  if (!venue) return { ssci: false, sci: false, cssci: false, pkuCore: false, fms: false };
 
   const absRatingStr = findInRecord(venue, ABS_RATINGS);
   const absRating = absRatingStr as JournalMetadata["absRating"];
   const impactFactor = findInRecord(venue, JOURNAL_IF);
 
-  // SSCI = any journal in ABS list (business/social science)
-  const ssci = !!absRatingStr;
+  // JCR quartile (from explicit data)
+  const jcrQuartile = findInRecord(venue, JCR_QUARTILES);
 
-  // CAS zones
-  const casZone = matchesSet(venue, CAS_ZONE_1)
-    ? "一区" as const
-    : matchesSet(venue, CAS_ZONE_2)
-      ? "二区" as const
-      : undefined;
+  // ABDC rating
+  const abdcRating = findInRecord(venue, ABDC_RANKINGS);
 
-  // Derive SJR from ABS (rough but useful)
+  // CCF rating
+  const ccfRating = findInRecord(venue, CCF_RANKINGS);
+
+  // SSCI: journal must have BOTH ABS rating AND JCR quartile (= indexed in Web of Science SSCI)
+  // ABS alone is NOT sufficient — ABS lists some journals that aren't SSCI-indexed
+  // JCR alone is NOT sufficient — some JCR journals are SCI (natural science), not SSCI
+  const ssci = !!absRatingStr && !!jcrQuartile;
+
+  // CSSCI (南大核心)
+  const cssci = matchesSet(venue, CSSCI_JOURNALS);
+
+  // 北大核心
+  const pkuCore = matchesSet(venue, PKU_CORE_JOURNALS);
+
+  // FMS 推荐
+  const fms = matchesSet(venue, FMS_JOURNALS);
+
+  // CAS zones (四级)
+  let casZone: JournalMetadata["casZone"];
+  if (matchesSet(venue, CAS_ZONE_1)) casZone = "一区";
+  else if (matchesSet(venue, CAS_ZONE_2)) casZone = "二区";
+  else if (matchesSet(venue, CAS_ZONE_3)) casZone = "三区";
+  else if (matchesSet(venue, CAS_ZONE_4)) casZone = "四区";
+
+  // SJR quartile: only show when we have actual JCR data, don't derive from ABS
+  // Previously derived from ABS which produced false SJR badges
   let sjrQuartile: JournalMetadata["sjrQuartile"];
-  if (absRating === "4*" || absRating === "4") sjrQuartile = "Q1";
-  else if (absRating === "3") sjrQuartile = "Q1";
-  else if (absRating === "2") sjrQuartile = "Q2";
-  else if (absRating === "1") sjrQuartile = "Q3";
-  // For non-ABS journals with high IF, assume Q1
-  else if (impactFactor && impactFactor > 10) sjrQuartile = "Q1";
-  else if (impactFactor && impactFactor > 5) sjrQuartile = "Q2";
+  if (impactFactor && impactFactor > 10) sjrQuartile = "Q1";
+  else if (impactFactor && impactFactor > 5) sjrQuartile = "Q1";
+  else if (impactFactor && impactFactor > 3) sjrQuartile = "Q2";
 
-  // SCI for natural science journals (detected by IF but not in ABS)
-  const sci = !ssci && !!impactFactor && impactFactor > 3;
+  // SCI for natural science journals (detected by IF + JCR but not in ABS)
+  const sci = !absRatingStr && !!jcrQuartile;
 
-  return { impactFactor, absRating, ssci, sci, casZone, sjrQuartile };
+  // Conference detection
+  const conference = findInRecord(venue, CONFERENCE_RANKINGS);
+
+  return {
+    impactFactor, absRating, jcrQuartile, abdcRating, ccfRating,
+    ssci, sci, cssci, pkuCore, fms, casZone, sjrQuartile, conference,
+  };
 }
 
 // ─── OpenAlex fallback for truly unknown journals ──

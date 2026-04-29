@@ -38,7 +38,7 @@ export default function HomePage() {
             <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center">
               <span className="text-primary-foreground text-xs font-bold">S</span>
             </div>
-            <span className="font-[family-name:var(--font-serif-sc)] text-lg font-bold tracking-tight">
+            <span className="font-heading text-lg font-bold tracking-tight">
               ScholarFlow
             </span>
           </Link>
@@ -67,7 +67,7 @@ export default function HomePage() {
               <p className="text-sm font-medium text-teal tracking-wide uppercase mb-4">
                 AI-Powered Research Platform
               </p>
-              <h1 className="font-[family-name:var(--font-serif-sc)] text-4xl sm:text-5xl lg:text-6xl font-bold leading-[1.15] tracking-tight">
+              <h1 className="font-heading text-4xl sm:text-5xl lg:text-6xl font-bold leading-[1.15] tracking-tight">
                 让管理学研究
                 <br />
                 <span className="bg-gradient-to-r from-teal to-primary bg-clip-text text-transparent animate-shimmer">
@@ -102,7 +102,7 @@ export default function HomePage() {
                   key={f.number}
                   className="animate-fade-up group grid grid-cols-[auto_1fr] gap-8 py-8 first:pt-0 last:pb-0"
                 >
-                  <span className="text-5xl font-[family-name:var(--font-serif-sc)] font-bold text-border group-hover:text-teal/40 transition-colors duration-300">
+                  <span className="text-5xl font-heading font-bold text-border group-hover:text-teal/40 transition-colors duration-300">
                     {f.number}
                   </span>
                   <div className="pt-2">
@@ -145,7 +145,7 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="border-t py-8">
         <div className="max-w-6xl mx-auto px-6 flex items-center justify-between text-sm text-muted-foreground">
-          <span className="font-[family-name:var(--font-serif-sc)]">ScholarFlow</span>
+          <span className="font-heading">ScholarFlow</span>
           <span>Powered by Claude AI & NotebookLM</span>
         </div>
       </footer>

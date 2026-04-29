@@ -8,32 +8,60 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-export type AIProvider = "claude" | "gemini" | "deepseek" | "chatgpt";
+export type AIProvider = "claude" | "gemini" | "gemini-pro" | "gemini-flash" | "deepseek" | "deepseek-fast" | "deepseek-pro" | "chatgpt";
 
-const providers = [
+const providers: {
+  id: AIProvider;
+  name: string;
+  tag: string;
+  tagColor: string;
+  blocked?: boolean; // 大陆无法直连
+}[] = [
   {
-    id: "gemini" as const,
+    id: "deepseek-fast",
+    name: "DeepSeek V4 Flash",
+    tag: "最快",
+    tagColor: "text-blue-500",
+  },
+  {
+    id: "deepseek-pro",
+    name: "DeepSeek V4 Pro",
+    tag: "最强",
+    tagColor: "text-blue-700",
+  },
+  {
+    id: "gemini-pro",
     name: "Gemini 3.1 Pro",
-    tag: "Google",
-    tagColor: "text-green-600",
+    tag: "需代理",
+    tagColor: "text-red-400",
+    blocked: true,
   },
   {
-    id: "chatgpt" as const,
-    name: "GPT-5",
-    tag: "OpenAI",
-    tagColor: "text-emerald-600",
+    id: "gemini",
+    name: "Gemini 3.0 Flash",
+    tag: "需代理",
+    tagColor: "text-red-400",
+    blocked: true,
   },
   {
-    id: "deepseek" as const,
-    name: "DeepSeek Reasoning",
-    tag: "推理",
+    id: "chatgpt",
+    name: "GPT-4o",
+    tag: "需代理",
+    tagColor: "text-red-400",
+    blocked: true,
+  },
+  {
+    id: "deepseek",
+    name: "DeepSeek R1",
+    tag: "深度推理",
     tagColor: "text-blue-600",
   },
   {
-    id: "claude" as const,
+    id: "claude",
     name: "Claude Sonnet 4",
-    tag: "Anthropic",
-    tagColor: "text-orange-600",
+    tag: "需代理",
+    tagColor: "text-red-400",
+    blocked: true,
   },
 ];
 

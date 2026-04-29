@@ -32,7 +32,7 @@ export default function ProjectsPage() {
             <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center">
               <span className="text-primary-foreground text-[10px] font-bold">S</span>
             </div>
-            <span className="font-[family-name:var(--font-serif-sc)] text-sm font-bold">
+            <span className="font-heading text-sm font-bold">
               ScholarFlow
             </span>
           </Link>
@@ -45,7 +45,7 @@ export default function ProjectsPage() {
       </header>
 
       <main className="flex-1 max-w-6xl mx-auto w-full px-6 py-10">
-        <h1 className="font-[family-name:var(--font-serif-sc)] text-2xl font-bold mb-8">
+        <h1 className="font-heading text-2xl font-bold mb-8">
           我的研究项目
         </h1>
 

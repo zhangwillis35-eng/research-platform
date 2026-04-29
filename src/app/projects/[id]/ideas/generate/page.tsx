@@ -1,15 +1,33 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useParams } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AIProviderSelect,
   type AIProvider,
 } from "@/components/ai-provider-select";
+import { useAbort } from "@/hooks/use-abort";
+import { StopButton } from "@/components/stop-button";
+import { usePersistedState } from "@/hooks/use-persisted-state";
+
+interface Paper {
+  id: string;
+  title: string;
+  abstract?: string;
+  authors: { name: string }[];
+  year?: number;
+  venue?: string;
+  citationCount: number;
+  isSelected: boolean;
+  fullText?: string | null;
+  pdfFileName?: string | null;
+}
 
 interface Scores {
   novelty: number;
@@ -44,7 +62,7 @@ interface Dimensions {
   gaps: string[];
 }
 
-type Phase = "idle" | "searching" | "extracting" | "generating" | "done";
+type Phase = "idle" | "loading-nlm" | "extracting" | "generating" | "done";
 
 const verdictLabels: Record<string, { label: string; color: string }> = {
   strong_accept: { label: "强烈接收", color: "text-green-600" },
@@ -69,66 +87,119 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
 }
 
 export default function IdeasGeneratePage() {
-  const [topic, setTopic] = useState("");
-  const [provider, setProvider] = useState<AIProvider>("gemini");
+  const params = useParams();
+  const projectId = params.id as string;
+
+  const [provider, setProvider] = usePersistedState<AIProvider>(`ideas-${projectId}`, "aiProvider", "gemini");
   const [phase, setPhase] = useState<Phase>("idle");
-  const [dimensions, setDimensions] = useState<Dimensions | null>(null);
-  const [ideas, setIdeas] = useState<Idea[]>([]);
+  const [papers, setPapers] = useState<Paper[]>([]);
+  const [papersLoading, setPapersLoading] = useState(true);
+  const [analysisEngine, setAnalysisEngine] = useState<"storm" | "notebooklm">("storm");
+  const [dimensions, setDimensions] = usePersistedState<Dimensions | null>(`ideas-${projectId}`, "dimensions", null);
+  const [ideas, setIdeas] = usePersistedState<Idea[]>(`ideas-${projectId}`, "ideas", []);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [obsidianPushed, setObsidianPushed] = useState<Set<string>>(new Set());
+  const xAbort = useAbort();
 
-  async function handleGenerate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!topic.trim()) return;
+  // Load papers from project library
+  useEffect(() => {
+    setPapersLoading(true);
+    fetch(`/api/papers?projectId=${projectId}&source=fulltext`)
+      .then((r) => r.json())
+      .then((d) => setPapers(d.papers ?? []))
+      .catch(() => {})
+      .finally(() => setPapersLoading(false));
+  }, [projectId]);
 
+  const activePapers = papers;
+
+  async function handleGenerate() {
+    if (activePapers.length === 0) return;
+
+    const signal = xAbort.reset();
     setError(null);
     setDimensions(null);
     setIdeas([]);
     setExpandedId(null);
 
-    // Step 1: Deep search
-    setPhase("searching");
-    let papers;
-    try {
-      const res = await fetch("/api/research/deep-search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, provider }),
-      });
-      if (!res.ok) throw new Error("文献检索失败");
-      const data = await res.json();
-      papers = data.papers;
-    } catch (err) {
-      setError(String(err));
-      setPhase("idle");
-      return;
+    // Optional external engine analysis
+    let engineContext = "";
+    if (analysisEngine === "storm") {
+      setPhase("loading-nlm");
+      try {
+        const stormRes = await fetch("/api/integrations/storm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "analyze",
+            topic: "研究想法生成",
+            papers: activePapers.map((p) => ({ title: p.title, abstract: p.abstract })),
+          }),
+          signal,
+        });
+        if (stormRes.ok) {
+          const stormData = await stormRes.json();
+          if (stormData.combined) engineContext = stormData.combined;
+        }
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") { setPhase("idle"); return; }
+        /* continue without STORM */
+      }
+    }
+    if (analysisEngine === "notebooklm") {
+      setPhase("loading-nlm");
+      const notebookId = localStorage.getItem("notebooklm_notebook_id") || "";
+      if (notebookId) {
+        try {
+          const nlmRes = await fetch("/api/integrations/notebooklm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "analyze",
+              topic: "研究想法生成",
+              type: "ideas",
+              notebookId,
+            }),
+            signal,
+          });
+          if (nlmRes.ok) {
+            const nlmData = await nlmRes.json();
+            if (nlmData.combined) engineContext = nlmData.combined;
+          }
+        } catch (err) {
+          if (err instanceof Error && err.name === "AbortError") { setPhase("idle"); return; }
+          /* continue without NLM */
+        }
+      }
     }
 
-    if (!papers.length) {
-      setError("未找到相关文献");
-      setPhase("idle");
-      return;
-    }
-
-    // Step 2: Run idea pipeline
     setPhase("extracting");
     try {
       const res = await fetch("/api/research/ideas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ papers, provider, withPeerReview: true, topic }),
+        body: JSON.stringify({
+          papers: activePapers.map((p) => ({
+            ...p,
+            fullText: p.fullText?.slice(0, 5000),
+          })),
+          provider,
+          withPeerReview: true,
+          engineContext: engineContext || undefined,
+        }),
+        signal,
       });
       if (!res.ok) throw new Error("想法生成失败");
       const data = await res.json();
       setDimensions(data.dimensions);
       setPhase("generating");
 
-      // Small delay for UI feedback
       await new Promise((r) => setTimeout(r, 300));
       setIdeas(data.ideas);
       setPhase("done");
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") { setPhase("idle"); return; }
       setError(String(err));
       setPhase("idle");
     }
@@ -164,58 +235,97 @@ export default function IdeasGeneratePage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-[family-name:var(--font-serif-sc)] text-2xl font-bold">
+          <h1 className="font-heading text-2xl font-bold">
             研究想法生成
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            六步管道 · 理论×情境×方法 · 模拟同行评审
+            基于文献库 · 理论×情境×方法 · 模拟同行评审
           </p>
         </div>
         <AIProviderSelect value={provider} onChange={setProvider} />
       </div>
 
-      {/* Input */}
-      <form onSubmit={handleGenerate} className="flex gap-3">
-        <Input
-          placeholder="输入研究方向，如：ESG与企业创新"
-          value={topic}
-          onChange={(e) => setTopic(e.target.value)}
-          className="flex-1"
-          disabled={phase !== "idle" && phase !== "done"}
-        />
+      {/* Paper source panel */}
+      <Card className="border-teal/20 bg-teal/[0.02]">
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-teal">数据来源：项目文献库</span>
+              {papersLoading ? (
+                <Skeleton className="h-5 w-20" />
+              ) : (
+                <Badge variant="secondary" className="text-[10px]">
+                  {papers.length} 篇文献{papers.filter((p) => p.isSelected).length > 0 &&
+                    ` · ${papers.filter((p) => p.isSelected).length} 篇核心`}
+                </Badge>
+              )}
+            </div>
+            <Link href={`/projects/${projectId}/papers/search`}>
+              <Button size="sm" variant="outline" className="h-7 text-xs">
+                去检索更多文献
+              </Button>
+            </Link>
+          </div>
+
+          {papers.length > 0 && (
+            <div className="flex items-center gap-4 text-xs">
+              <select
+                value={analysisEngine}
+                onChange={(e) => setAnalysisEngine(e.target.value as "storm" | "notebooklm")}
+                className="h-7 px-2 text-xs border border-input rounded-md bg-background"
+              >
+                <option value="storm">STORM（内置）</option>
+                <option value="notebooklm">NotebookLM（外部）</option>
+              </select>
+              <span className="text-muted-foreground ml-auto">
+                将分析 {activePapers.length} 篇文献
+              </span>
+            </div>
+          )}
+
+          {papers.length === 0 && !papersLoading && (
+            <p className="text-xs text-amber-600">
+              暂无已上传原文的文献。请先在「文献库」中上传 PDF 文献。
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Generate button + progress */}
+      <div className="flex items-center gap-4">
         <Button
-          type="submit"
-          disabled={phase !== "idle" && phase !== "done"}
+          onClick={handleGenerate}
+          disabled={phase !== "idle" && phase !== "done" || activePapers.length === 0}
           className="bg-teal text-teal-foreground hover:bg-teal/90"
         >
-          生成想法
+          生成研究想法
         </Button>
-      </form>
+        <StopButton show={phase !== "idle" && phase !== "done"} onClick={xAbort.abort} />
 
-      {/* Progress */}
-      {phase !== "idle" && (
-        <div className="flex items-center gap-3 text-sm">
-          {(["searching", "extracting", "generating", "done"] as Phase[]).map((p, i) => (
-            <div key={p} className="flex items-center gap-2">
-              <div
-                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                  ["searching", "extracting", "generating", "done"].indexOf(phase) >= i
-                    ? "bg-teal text-teal-foreground"
-                    : "bg-border text-muted-foreground"
-                }`}
-              >
-                {i + 1}
+        {phase !== "idle" && (
+          <div className="flex items-center gap-3 text-sm">
+            {(["loading-nlm", "extracting", "generating", "done"] as Phase[]).map((p, i) => (
+              <div key={p} className="flex items-center gap-2">
+                <div
+                  className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                    ["loading-nlm", "extracting", "generating", "done"].indexOf(phase) >= i
+                      ? "bg-teal text-teal-foreground"
+                      : "bg-border text-muted-foreground"
+                  }`}
+                >
+                  {i + 1}
+                </div>
+                <span className={`hidden sm:inline ${
+                  phase === p ? "text-foreground" : "text-muted-foreground"
+                }`}>
+                  {["引擎分析", "提取维度", "生成想法", "完成"][i]}
+                </span>
+                {i < 3 && <span className="text-border">—</span>}
               </div>
-              <span className={`hidden sm:inline ${
-                phase === p ? "text-foreground" : "text-muted-foreground"
-              }`}>
-                {["检索文献", "提取维度", "生成想法", "完成"][i]}
-              </span>
-              {i < 3 && <span className="text-border">—</span>}
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
 
       {error && (
         <div className="p-4 bg-destructive/10 text-destructive rounded-lg text-sm">
@@ -268,7 +378,7 @@ export default function IdeasGeneratePage() {
       {ideas.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="font-[family-name:var(--font-serif-sc)] text-lg font-semibold">
+            <h2 className="font-heading text-lg font-semibold">
               生成的研究想法
             </h2>
             <span className="text-xs text-muted-foreground">
@@ -324,14 +434,12 @@ export default function IdeasGeneratePage() {
                   <>
                     <Separator />
                     <CardContent className="pt-4 space-y-4">
-                      {/* Scores */}
                       <div className="max-w-xs space-y-1.5">
                         <ScoreBar label="新颖性" value={idea.scores.novelty} />
                         <ScoreBar label="可行性" value={idea.scores.feasibility} />
                         <ScoreBar label="影响力" value={idea.scores.impact} />
                       </div>
 
-                      {/* Details */}
                       <div className="grid sm:grid-cols-2 gap-4 text-sm">
                         <div>
                           <p className="font-medium mb-1">核心假设</p>
@@ -343,7 +451,6 @@ export default function IdeasGeneratePage() {
                         </div>
                       </div>
 
-                      {/* Peer Review */}
                       {idea.peerReview && (
                         <div className="bg-muted/30 rounded-lg p-4 space-y-3">
                           <div className="flex items-center gap-2">
@@ -382,7 +489,6 @@ export default function IdeasGeneratePage() {
                         </div>
                       )}
 
-                      {/* Actions */}
                       <div className="flex gap-2">
                         <Button
                           size="sm"
@@ -420,13 +526,13 @@ export default function IdeasGeneratePage() {
       )}
 
       {/* Empty state */}
-      {phase === "idle" && ideas.length === 0 && (
-        <Card className="min-h-[300px] flex items-center justify-center">
+      {phase === "idle" && ideas.length === 0 && papers.length > 0 && (
+        <Card className="min-h-[200px] flex items-center justify-center">
           <CardContent className="text-center text-muted-foreground">
             <div className="text-4xl mb-4">💡</div>
-            <p className="font-medium">输入研究方向，AI 生成创新研究想法</p>
+            <p className="font-medium">点击「生成研究想法」，基于文献库中的 {activePapers.length} 篇文献生成</p>
             <p className="text-sm mt-2 max-w-md mx-auto">
-              六步管道：文献检索 → 维度提取(理论×情境×方法) → 组合生成 → 评分排序 → 模拟同行评审
+              流程：维度提取（理论×情境×方法）→ 组合生成 → 评分排序 → 模拟同行评审
             </p>
           </CardContent>
         </Card>

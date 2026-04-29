@@ -14,11 +14,18 @@ export interface JournalMeta {
   impactFactor?: number;
   hIndex?: number;
   sjrQuartile?: "Q1" | "Q2" | "Q3" | "Q4";
+  jcrQuartile?: "Q1" | "Q2" | "Q3" | "Q4";
   absRating?: "4*" | "4" | "3" | "2" | "1";
+  abdcRating?: "A*" | "A" | "B" | "C";
+  ccfRating?: "A" | "B" | "C";
   ssci: boolean;
   sci: boolean;
+  cssci: boolean;
+  pkuCore: boolean;
+  fms: boolean;
   casZone?: "一区" | "二区" | "三区" | "四区";
   isOpenAccess?: boolean;
+  conference?: { tier: "Top" | "A" | "B"; field: string; fullName: string };
 }
 
 export interface UnifiedPaper {

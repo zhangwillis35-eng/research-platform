@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/research/weekly-digest?secret=${CRON_SECRET}",
+      "schedule": "0 8 * * 1"
+    }
+  ]
+}

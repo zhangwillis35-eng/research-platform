@@ -42,7 +42,7 @@ export default function NewProjectPage() {
             <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center">
               <span className="text-primary-foreground text-[10px] font-bold">S</span>
             </div>
-            <span className="font-[family-name:var(--font-serif-sc)] text-sm font-bold">
+            <span className="font-heading text-sm font-bold">
               ScholarFlow
             </span>
           </Link>
@@ -52,7 +52,7 @@ export default function NewProjectPage() {
       <main className="flex-1 max-w-2xl mx-auto w-full px-6 py-10">
         <Card>
           <CardHeader>
-            <CardTitle className="font-[family-name:var(--font-serif-sc)]">
+            <CardTitle className="font-heading">
               创建研究项目
             </CardTitle>
           </CardHeader>

@@ -22,18 +22,18 @@ export async function POST(request: Request) {
 
     const response = await callAI({
       provider,
-      system: `你是管理学理论分析专家。从文献中识别所有使用的理论框架，并发现跨理论连接。
+      system: `You are a management theory analysis expert. Identify all theoretical frameworks used in the literature and discover cross-theory connections.
 
-输出严格 JSON：
+Output strict JSON. Use Chinese for all descriptive text fields:
 {
   "theories": [
     {
       "id": "theory-1",
-      "name": "理论名称",
+      "name": "theory name in Chinese",
       "nameEn": "English Name",
-      "coreConstructs": ["构念1", "构念2"],
-      "assumptions": ["假设1"],
-      "boundaries": ["边界条件1"],
+      "coreConstructs": ["construct 1 in Chinese", "construct 2"],
+      "assumptions": ["assumption in Chinese"],
+      "boundaries": ["boundary condition in Chinese"],
       "papers": [1, 3]
     }
   ],
@@ -41,17 +41,17 @@ export async function POST(request: Request) {
     {
       "from": "theory-1",
       "to": "theory-2",
-      "sharedConstructs": ["共享构念"],
-      "integrationPotential": "如何整合的说明",
+      "sharedConstructs": ["shared construct in Chinese"],
+      "integrationPotential": "integration explanation in Chinese",
       "strength": "strong|moderate|weak"
     }
   ],
   "framework": {
-    "title": "整合框架标题",
-    "description": "框架描述",
+    "title": "framework title in Chinese",
+    "description": "framework description in Chinese",
     "centralTheory": "theory-1",
     "layers": [
-      { "name": "层级名", "theories": ["theory-1"], "role": "该层的角色说明" }
+      { "name": "layer name in Chinese", "theories": ["theory-1"], "role": "role description in Chinese" }
     ]
   }
 }`,

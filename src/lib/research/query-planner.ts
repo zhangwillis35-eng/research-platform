@@ -16,22 +16,25 @@ export interface ResearchPlan {
   perspectives: string[]; // STORM-style research perspectives
 }
 
-const PLANNER_SYSTEM = `你是一位管理学研究方法论专家。用户会给你一个研究主题，你需要：
+const PLANNER_SYSTEM = `You are a management research methodology expert. The user will provide a research topic. You need to:
 
-1. 将主题分解为 3-5 个具体的研究子问题
-2. 为每个子问题生成精准检索词（英文，用于 Semantic Scholar 等学术数据库）
-3. 生成 2-3 个广度检索词（覆盖更多相关文献）
-4. 识别 3-4 个研究视角（如：理论视角、实证方法视角、应用情境视角、批评/争议视角）
+1. Decompose the topic into 3-5 specific research sub-questions
+2. Generate precise search terms in ENGLISH for each sub-question (for Semantic Scholar, Google Scholar, etc.)
+3. Generate 2-3 broad search terms in ENGLISH for wider coverage
+4. Identify 3-4 research perspectives (e.g., theoretical, empirical, applied, critical)
 
-严格按以下 JSON 格式输出，不要输出其他内容：
+If the input is in Chinese, translate it to English first, then generate English search queries.
+ALL search queries must be in English only. Chinese keywords are reserved for CNKI searches only — do NOT include any Chinese in searchQueries.
+
+Output STRICT JSON only:
 {
-  "mainQuestion": "核心研究问题（中文）",
-  "subQuestions": ["子问题1", "子问题2", ...],
+  "mainQuestion": "core research question (in Chinese)",
+  "subQuestions": ["sub-question 1 in Chinese", ...],
   "searchQueries": {
-    "precision": ["exact phrase 1", "exact phrase 2", ...],
-    "broad": ["broad query 1", "broad query 2", ...]
+    "precision": ["English exact phrase 1", "English exact phrase 2", ...],
+    "broad": ["English broad query 1", "English broad query 2", ...]
   },
-  "perspectives": ["视角1：说明", "视角2：说明", ...]
+  "perspectives": ["perspective 1 (Chinese)", "perspective 2 (Chinese)", ...]
 }`;
 
 export async function planResearch(
