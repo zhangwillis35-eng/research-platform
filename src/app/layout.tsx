@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import "@fontsource-variable/noto-serif-sc";
 import "./globals.css";
 
 const geistSans = localFont({
