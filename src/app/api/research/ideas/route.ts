@@ -17,13 +17,11 @@ export async function POST(request: Request) {
       provider = "deepseek-fast",
       withPeerReview = true,
       topic,
-      notebookLM,
     } = body as {
       papers: UnifiedPaper[];
       provider?: AIProvider;
       withPeerReview?: boolean;
       topic?: string;
-      notebookLM?: import("@/lib/integrations/notebooklm").NotebookLMConfig | null;
     };
 
     if (!papers?.length) {
@@ -33,7 +31,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await runIdeaPipeline(papers, provider, withPeerReview, notebookLM, topic);
+    const result = await runIdeaPipeline(papers, provider, withPeerReview, topic);
 
     return NextResponse.json(result);
   } catch (error) {

@@ -62,7 +62,7 @@ interface Dimensions {
   gaps: string[];
 }
 
-type Phase = "idle" | "loading-nlm" | "extracting" | "generating" | "done";
+type Phase = "idle" | "loading-storm" | "extracting" | "generating" | "done";
 
 const verdictLabels: Record<string, { label: string; color: string }> = {
   strong_accept: { label: "强烈接收", color: "text-green-600" },
@@ -94,7 +94,7 @@ export default function IdeasGeneratePage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [papers, setPapers] = useState<Paper[]>([]);
   const [papersLoading, setPapersLoading] = useState(true);
-  const [analysisEngine, setAnalysisEngine] = useState<"storm" | "notebooklm">("storm");
+  const [analysisEngine] = useState<"storm">("storm");
   const [dimensions, setDimensions] = usePersistedState<Dimensions | null>(`ideas-${projectId}`, "dimensions", null);
   const [ideas, setIdeas] = usePersistedState<Idea[]>(`ideas-${projectId}`, "ideas", []);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -126,7 +126,7 @@ export default function IdeasGeneratePage() {
     // Optional external engine analysis
     let engineContext = "";
     if (analysisEngine === "storm") {
-      setPhase("loading-nlm");
+      setPhase("loading-storm");
       try {
         const stormRes = await fetch("/api/integrations/storm", {
           method: "POST",
@@ -147,33 +147,6 @@ export default function IdeasGeneratePage() {
         /* continue without STORM */
       }
     }
-    if (analysisEngine === "notebooklm") {
-      setPhase("loading-nlm");
-      const notebookId = localStorage.getItem("notebooklm_notebook_id") || "";
-      if (notebookId) {
-        try {
-          const nlmRes = await fetch("/api/integrations/notebooklm", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "analyze",
-              topic: "研究想法生成",
-              type: "ideas",
-              notebookId,
-            }),
-            signal,
-          });
-          if (nlmRes.ok) {
-            const nlmData = await nlmRes.json();
-            if (nlmData.combined) engineContext = nlmData.combined;
-          }
-        } catch (err) {
-          if (err instanceof Error && err.name === "AbortError") { setPhase("idle"); return; }
-          /* continue without NLM */
-        }
-      }
-    }
-
     setPhase("extracting");
     try {
       const res = await fetch("/api/research/ideas", {
@@ -269,16 +242,8 @@ export default function IdeasGeneratePage() {
 
           {papers.length > 0 && (
             <div className="flex items-center gap-4 text-xs">
-              <select
-                value={analysisEngine}
-                onChange={(e) => setAnalysisEngine(e.target.value as "storm" | "notebooklm")}
-                className="h-7 px-2 text-xs border border-input rounded-md bg-background"
-              >
-                <option value="storm">STORM（内置）</option>
-                <option value="notebooklm">NotebookLM（外部）</option>
-              </select>
               <span className="text-muted-foreground ml-auto">
-                将分析 {activePapers.length} 篇文献
+                将分析 {activePapers.length} 篇文献（STORM 引擎）
               </span>
             </div>
           )}
@@ -304,11 +269,11 @@ export default function IdeasGeneratePage() {
 
         {phase !== "idle" && (
           <div className="flex items-center gap-3 text-sm">
-            {(["loading-nlm", "extracting", "generating", "done"] as Phase[]).map((p, i) => (
+            {(["loading-storm", "extracting", "generating", "done"] as Phase[]).map((p, i) => (
               <div key={p} className="flex items-center gap-2">
                 <div
                   className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                    ["loading-nlm", "extracting", "generating", "done"].indexOf(phase) >= i
+                    ["loading-storm", "extracting", "generating", "done"].indexOf(phase) >= i
                       ? "bg-teal text-teal-foreground"
                       : "bg-border text-muted-foreground"
                   }`}

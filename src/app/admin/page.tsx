@@ -2,6 +2,30 @@
 
 import { useState, useEffect, useCallback } from "react";
 
+// ─── Helpers ───────────────────────────────────
+/** Fill in missing days so the chart has a continuous 30-day series */
+function fillDailyGaps(
+  sparse: Array<{ date: string; count: number }>,
+  days = 30,
+): Array<{ date: string; count: number }> {
+  const map = new Map<string, number>();
+  for (const entry of sparse) {
+    // Prisma $queryRaw may return Date objects; JSON serialization turns them
+    // into ISO strings like "2026-04-15T00:00:00.000Z". Normalise to YYYY-MM-DD.
+    const key = new Date(entry.date).toISOString().slice(0, 10);
+    map.set(key, (map.get(key) ?? 0) + entry.count);
+  }
+
+  const result: Array<{ date: string; count: number }> = [];
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    result.push({ date: key, count: map.get(key) ?? 0 });
+  }
+  return result;
+}
+
 // ─── Types ──────────────────────────────────────
 interface Stats {
   overview: {
@@ -252,7 +276,15 @@ function Dashboard() {
 
   if (!stats) return null;
 
-  const { overview, recent, users, dailyActivity, apiLogs, pendingRegistrations, tokenUsage } = stats;
+  const { overview, recent, users, dailyActivity: rawDaily, apiLogs, pendingRegistrations, tokenUsage } = stats;
+
+  // Fill gaps so every day in the last 30 days is represented (even with 0)
+  const dailyActivity = {
+    searches: fillDailyGaps(rawDaily.searches),
+    chats: fillDailyGaps(rawDaily.chats),
+    papers: fillDailyGaps(rawDaily.papers),
+    users: fillDailyGaps(rawDaily.users),
+  };
 
   async function handleApprove(id: string) {
     const res = await fetch("/api/admin/stats", {

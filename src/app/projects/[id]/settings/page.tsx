@@ -9,7 +9,6 @@ import { Badge } from "@/components/ui/badge";
 export default function SettingsPage() {
   const [obsidianUrl, setObsidianUrl] = useState("http://127.0.0.1:27123");
   const [obsidianKey, setObsidianKey] = useState("");
-  const [nlmUrl, setNlmUrl] = useState("");
   const [zoteroKey, setZoteroKey] = useState("");
   const [zoteroUserId, setZoteroUserId] = useState("");
   const [zoteroStatus, setZoteroStatus] = useState<string | null>(null);
@@ -17,7 +16,6 @@ export default function SettingsPage() {
   const [proxyEnabled, setProxyEnabled] = useState(false);
 
   useEffect(() => {
-    setNlmUrl(localStorage.getItem("notebooklm_url") ?? "");
     setObsidianKey(localStorage.getItem("obsidian_api_key") ?? "");
     setZoteroKey(localStorage.getItem("zotero_api_key") ?? "");
     setZoteroUserId(localStorage.getItem("zotero_user_id") ?? "");
@@ -185,94 +183,6 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* NotebookLM Integration */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-3 text-lg">
-            <span className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-700 text-sm font-bold">
-              N
-            </span>
-            NotebookLM 集成
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            将核心文献 PDF 上传到 NotebookLM，平台自动调用 Gemini 进行基于全文的 RAG 深度分析。
-          </p>
-
-          <div className="bg-muted/50 rounded-lg p-4 text-sm space-y-2">
-            <p className="font-medium">使用流程：</p>
-            <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-              <li>在 <a href="https://notebooklm.google.com" target="_blank" rel="noopener noreferrer" className="text-teal underline">notebooklm.google.com</a> 创建新 Notebook <span className="text-red-400 text-xs">（大陆需代理）</span></li>
-              <li>上传研究相关的 PDF 文献（最多 50 篇）</li>
-              <li>点击右上角 &quot;Share&quot; → &quot;Anyone with the link&quot; → 复制链接</li>
-              <li>将链接粘贴到下方</li>
-              <li>在文献综述/想法生成页面开启 &quot;NotebookLM 增强&quot;</li>
-            </ol>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium mb-1.5 block">
-              NotebookLM Notebook URL
-            </label>
-            <Input
-              placeholder="https://notebooklm.google.com/notebook/..."
-              value={nlmUrl}
-              onChange={(e) => {
-                setNlmUrl(e.target.value);
-                localStorage.setItem("notebooklm_url", e.target.value);
-              }}
-            />
-          </div>
-
-          <div>
-            <label className="text-sm font-medium mb-1.5 block">
-              分析模式
-            </label>
-            <div className="flex gap-3 text-sm">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="nlm-mode" value="manual" defaultChecked className="accent-teal" />
-                <span>手动模式 <span className="text-muted-foreground">（平台生成问题，你在 NotebookLM 中提问）</span></span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="nlm-mode" value="auto" className="accent-teal" />
-                <span>自动模式 <span className="text-muted-foreground">（需要本地代理服务）</span></span>
-              </label>
-            </div>
-          </div>
-
-          <div className="border-t pt-4 space-y-2">
-            <p className="text-sm font-medium">NotebookLM 在流程中的作用：</p>
-            <div className="grid sm:grid-cols-2 gap-3 text-xs">
-              <div className="p-3 rounded-lg border border-border/50">
-                <p className="font-medium text-blue-600">文献综述</p>
-                <p className="text-muted-foreground mt-1">
-                  基于全文提取主要发现、矛盾结论、研究空白，比仅靠摘要更准确
-                </p>
-              </div>
-              <div className="p-3 rounded-lg border border-border/50">
-                <p className="font-medium text-blue-600">变量提取</p>
-                <p className="text-muted-foreground mt-1">
-                  从全文中提取 IV/DV/中介/调节，包括效应量、样本量等细节
-                </p>
-              </div>
-              <div className="p-3 rounded-lg border border-border/50">
-                <p className="font-medium text-blue-600">理论分析</p>
-                <p className="text-muted-foreground mt-1">
-                  识别各文献的理论框架、核心假设和边界条件
-                </p>
-              </div>
-              <div className="p-3 rounded-lg border border-border/50">
-                <p className="font-medium text-blue-600">想法生成</p>
-                <p className="text-muted-foreground mt-1">
-                  基于全文发现未被验证的情境和理论空白
-                </p>
-              </div>
-            </div>
-          </div>
         </CardContent>
       </Card>
 

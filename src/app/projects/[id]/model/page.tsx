@@ -109,7 +109,7 @@ export default function ConceptualModelPage() {
   const [aiProvider, setAiProvider] = usePersistedState<AIProvider>(`model-${projectId}`, "aiProvider", "gemini-pro");
   const [generating, setGenerating] = useState(false);
   const [hypothesisCount, setHypothesisCount] = useState(2);
-  const [analysisEngine, setAnalysisEngine] = useState<"storm" | "notebooklm">("storm");
+  const [analysisEngine] = useState<"storm">("storm");
   const [papers, setPapers] = useState<{ id: string; title: string; abstract?: string; authors: { name: string }[]; year?: number; venue?: string; citationCount: number; isSelected: boolean; fullText?: string | null; pdfFileName?: string | null }[]>([]);
   const [paperCount, setPaperCount] = useState(0);
   const reactFlowRef = useRef<HTMLDivElement>(null);
@@ -200,32 +200,6 @@ export default function ConceptualModelPage() {
           /* continue without STORM */
         }
       }
-      if (analysisEngine === "notebooklm") {
-        const notebookId = localStorage.getItem("notebooklm_notebook_id") || "";
-        if (notebookId) {
-          try {
-            const nlmRes = await fetch("/api/integrations/notebooklm", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                action: "analyze",
-                topic: "概念模型变量关系",
-                type: "variables",
-                notebookId,
-              }),
-              signal,
-            });
-            if (nlmRes.ok) {
-              const nlmData = await nlmRes.json();
-              if (nlmData.combined) engineInsights = "\n\n[NotebookLM 全文分析结果]\n" + nlmData.combined;
-            }
-          } catch (err) {
-            if (err instanceof Error && err.name === "AbortError") throw err;
-            /* continue without NLM */
-          }
-        }
-      }
-
       const paperContext = papers
         .slice(0, 10)
         .map(
@@ -415,15 +389,6 @@ ${paperContext || "（无文献，请基于常见管理学变量关系生成示�
           {generating ? "AI 生成中..." : "AI 自动生成模型"}
         </Button>
         <StopButton show={generating} onClick={xAbort.abort} />
-
-        <select
-          value={analysisEngine}
-          onChange={(e) => setAnalysisEngine(e.target.value as "storm" | "notebooklm")}
-          className="h-7 px-2 text-xs border border-input rounded-md bg-background"
-        >
-          <option value="storm">STORM（内置）</option>
-          <option value="notebooklm">NotebookLM（外部）</option>
-        </select>
 
         <div className="ml-auto flex items-center gap-2">
           <Badge variant="secondary" className="text-[10px]">

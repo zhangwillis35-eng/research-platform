@@ -70,8 +70,8 @@ export default function TheoriesIntegratePage() {
   const [loading, setLoading] = useState(false);
   const [papers, setPapers] = useState<Paper[]>([]);
   const [papersLoading, setPapersLoading] = useState(true);
-  const [analysisEngine, setAnalysisEngine] = useState<"storm" | "notebooklm">("storm");
-  const [nlmStatus, setNlmStatus] = useState<string | null>(null);
+  const [analysisEngine] = useState<"storm">("storm");
+  const [stormStatus, setStormStatus] = useState<string | null>(null);
   const [theories, setTheories] = usePersistedState<Theory[]>(`theories-${projectId}`, "theories", []);
   const [connections, setConnections] = usePersistedState<Connection[]>(`theories-${projectId}`, "connections", []);
   const [framework, setFramework] = usePersistedState<Framework | null>(`theories-${projectId}`, "framework", null);
@@ -104,9 +104,9 @@ export default function TheoriesIntegratePage() {
 
     try {
       // Optional: external engine analysis
-      let nlmContext = "";
+      let stormContext = "";
       if (analysisEngine === "storm") {
-        setNlmStatus("正在通过 STORM 进行理论框架深度分析...");
+        setStormStatus("正在通过 STORM 进行理论框架深度分析...");
         try {
           const stormRes = await fetch("/api/integrations/storm", {
             method: "POST",
@@ -120,45 +120,17 @@ export default function TheoriesIntegratePage() {
           });
           if (stormRes.ok) {
             const stormData = await stormRes.json();
-            if (stormData.combined) nlmContext = stormData.combined;
+            if (stormData.combined) stormContext = stormData.combined;
           }
         } catch (err) {
           if (err instanceof Error && err.name === "AbortError") throw err;
           /* continue without STORM */
         }
-        setNlmStatus(null);
+        setStormStatus(null);
       }
-      if (analysisEngine === "notebooklm") {
-        setNlmStatus("正在通过 NotebookLM 进行理论框架深度分析...");
-        const notebookId = localStorage.getItem("notebooklm_notebook_id") || "";
-        if (notebookId) {
-          try {
-            const nlmRes = await fetch("/api/integrations/notebooklm", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                action: "analyze",
-                topic: topic || "理论框架分析",
-                type: "theories",
-                notebookId,
-              }),
-              signal,
-            });
-            if (nlmRes.ok) {
-              const nlmData = await nlmRes.json();
-              if (nlmData.combined) nlmContext = nlmData.combined;
-            }
-          } catch (err) {
-            if (err instanceof Error && err.name === "AbortError") throw err;
-            /* continue without NLM */
-          }
-        }
-        setNlmStatus(null);
-      }
-
       const paperData = activePapers.slice(0, 20).map((p) => ({
         title: p.title,
-        abstract: p.abstract ? (nlmContext ? p.abstract + "\n\n[NotebookLM 补充分析]\n" + nlmContext : p.abstract) : nlmContext || undefined,
+        abstract: p.abstract ? (stormContext ? p.abstract + "\n\n[STORM 补充分析]\n" + stormContext : p.abstract) : stormContext || undefined,
         year: p.year,
         venue: p.venue,
         fullText: p.fullText?.slice(0, 5000),
@@ -231,16 +203,8 @@ export default function TheoriesIntegratePage() {
 
           {papers.length > 0 && (
             <div className="flex items-center gap-4 text-xs">
-              <select
-                value={analysisEngine}
-                onChange={(e) => setAnalysisEngine(e.target.value as "storm" | "notebooklm")}
-                className="h-7 px-2 text-xs border border-input rounded-md bg-background"
-              >
-                <option value="storm">STORM（内置）</option>
-                <option value="notebooklm">NotebookLM（外部）</option>
-              </select>
               <span className="text-muted-foreground ml-auto">
-                将分析 {activePapers.length} 篇文献
+                将分析 {activePapers.length} 篇文献（STORM 引擎）
               </span>
             </div>
           )}
@@ -266,7 +230,7 @@ export default function TheoriesIntegratePage() {
           disabled={loading || activePapers.length === 0}
           className="bg-teal text-teal-foreground hover:bg-teal/90"
         >
-          {loading ? (nlmStatus || "分析中...") : "分析理论"}
+          {loading ? (stormStatus || "分析中...") : "分析理论"}
         </Button>
         <StopButton show={loading} onClick={xAbort.abort} />
       </form>

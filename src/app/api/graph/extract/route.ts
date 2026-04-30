@@ -267,10 +267,10 @@ export async function POST(request: Request) {
     setAIContext(auth.id, "/api/graph/extract");
 
     const body = await request.json();
-    const { papers, provider = "deepseek-fast", nlmContext = "" } = body as {
+    const { papers, provider = "deepseek-fast", externalContext = "" } = body as {
       papers: Paper[];
       provider?: AIProvider;
-      nlmContext?: string;
+      externalContext?: string;
     };
 
     if (!papers?.length) {
@@ -282,11 +282,11 @@ export async function POST(request: Request) {
 
     // For small sets (≤8), use direct single-call path (no batching overhead)
     if (allPapers.length <= BATCH_SIZE) {
-      return handleDirect(allPapers, provider, nlmContext);
+      return handleDirect(allPapers, provider, externalContext);
     }
 
     // For larger sets, use SSE streaming with parallel sub-agents
-    return handleParallel(allPapers, provider, nlmContext);
+    return handleParallel(allPapers, provider, externalContext);
   } catch (error) {
     return NextResponse.json(
       { error: "Graph extraction failed", details: String(error) },
@@ -296,10 +296,10 @@ export async function POST(request: Request) {
 }
 
 /** Direct path for small paper sets — single AI call, no SSE */
-async function handleDirect(papers: Paper[], provider: AIProvider, nlmContext: string) {
+async function handleDirect(papers: Paper[], provider: AIProvider, externalContext: string) {
   const content = formatPapers(papers, 0);
-  const fullContent = nlmContext
-    ? `${content}\n\n===== NotebookLM 全文分析补充 =====\n${nlmContext}`
+  const fullContent = externalContext
+    ? `${content}\n\n===== 外部分析补充 =====\n${externalContext}`
     : content;
 
   // Step 1: Extract graph
@@ -358,7 +358,7 @@ async function handleDirect(papers: Paper[], provider: AIProvider, nlmContext: s
 }
 
 /** Parallel sub-agent path for larger sets — SSE streaming with progress */
-async function handleParallel(papers: Paper[], provider: AIProvider, nlmContext: string) {
+async function handleParallel(papers: Paper[], provider: AIProvider, externalContext: string) {
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -387,8 +387,8 @@ async function handleParallel(papers: Paper[], provider: AIProvider, nlmContext:
         batches,
         async (batch) => {
           const content = formatPapers(batch.papers, batch.offset);
-          const batchContent = batch.offset === 0 && nlmContext
-            ? `${content}\n\n===== NotebookLM 全文分析补充 =====\n${nlmContext.slice(0, 3000)}`
+          const batchContent = batch.offset === 0 && externalContext
+            ? `${content}\n\n===== 外部分析补充 =====\n${externalContext.slice(0, 3000)}`
             : content;
 
           const response = await callAI({

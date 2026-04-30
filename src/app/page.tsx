@@ -5,19 +5,19 @@ const features = [
   {
     title: "智能文献检索",
     description:
-      "多源聚合 Semantic Scholar、OpenAlex、Google Scholar，自动去重，按引用量排序",
+      "11 源聚合检索（Semantic Scholar、OpenAlex、Google Scholar、PubMed、DBLP、bioRxiv、CrossRef、arXiv、CORE、WoS、Unpaywall），GROBID 全文解析，SPECTER2 语义重排序",
     number: "01",
   },
   {
-    title: "AI 文献综述",
+    title: "STORM 文献综述",
     description:
-      "NotebookLM 全文 RAG 分析 + 四大模型结构化输出，生成有引用溯源的综述",
+      "Stanford STORM 引擎驱动的结构化综述生成，基于全文深度分析，自动引用溯源",
     number: "02",
   },
   {
     title: "变量关系图谱",
     description:
-      "从文献中自动提取 IV → Mediator → DV 关系，D3 力导向图可视化",
+      "从文献中自动提取 IV → Mediator → DV 关系，D3 力导向图可视化，支持子图筛选与导出",
     number: "03",
   },
   {
@@ -25,6 +25,18 @@ const features = [
     description:
       "理论 × 情境 × 方法 组合矩阵，AI 评估新颖性、可行性与学术贡献",
     number: "04",
+  },
+  {
+    title: "理论整合与概念模型",
+    description:
+      "跨理论框架融合，自动生成概念模型图，支持 Proposal 写作",
+    number: "05",
+  },
+  {
+    title: "文献管理与导出",
+    description:
+      "Zotero 集成，APA/MLA/Chicago/BibTeX 格式导出，Obsidian 推送，PDF 批量上传与解析",
+    number: "06",
   },
 ];
 
@@ -80,7 +92,7 @@ export default function HomePage() {
                 </span>
               </h1>
               <p className="mt-6 text-lg text-muted-foreground leading-relaxed max-w-xl">
-                从文献检索到理论整合，ScholarFlow 用 AI 双引擎赋能科研全流程。支持 Gemini、ChatGPT、DeepSeek、Claude 四大模型自由切换。
+                从文献检索到理论整合，ScholarFlow 用 11 源聚合检索 + STORM 深度分析赋能科研全流程。支持 DeepSeek V4、GPT-4o、Gemini、Claude 四大模型自由切换。
               </p>
               <div className="mt-10 flex items-center gap-4">
                 <Link href="/projects/new">
@@ -128,14 +140,15 @@ export default function HomePage() {
         <section className="bg-primary text-primary-foreground">
           <div className="max-w-6xl mx-auto px-6 py-12">
             <p className="text-sm uppercase tracking-wide text-primary-foreground/60 mb-6">
-              四大模型，自由切换
+              五大模型，自由切换
             </p>
-            <div className="grid sm:grid-cols-4 gap-6">
+            <div className="grid sm:grid-cols-5 gap-6">
               {[
-                { name: "Gemini 3.1 Pro", tag: "Google" },
+                { name: "DeepSeek V4 Flash", tag: "默认" },
+                { name: "DeepSeek R1", tag: "推理" },
                 { name: "GPT-4o", tag: "OpenAI" },
-                { name: "DeepSeek Reasoning", tag: "推理" },
                 { name: "Claude Sonnet 4", tag: "Anthropic" },
+                { name: "Gemini 3.x", tag: "Google" },
               ].map((m) => (
                 <div key={m.name} className="flex items-baseline gap-2">
                   <span className="text-lg font-medium">{m.name}</span>
@@ -155,7 +168,7 @@ export default function HomePage() {
             <Link href="/help" className="hover:text-foreground transition-colors">
               网络兼容性说明
             </Link>
-            <span>Powered by Claude AI & NotebookLM</span>
+            <span>Powered by Stanford STORM & DeepSeek</span>
           </div>
         </div>
       </footer>

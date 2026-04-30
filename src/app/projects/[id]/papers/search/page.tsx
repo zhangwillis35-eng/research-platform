@@ -567,33 +567,6 @@ ${fullTextContext}` : ""}`;
     }
   }
 
-  function exportForNotebookLM() {
-    const selected = displayedPapers.filter((_, i) => selectedPapers.has(i));
-    const exportData = {
-      papers: selected.map((p) => ({
-        title: p.title,
-        doi: p.doi,
-        openAccessPdf: p.openAccessPdf,
-        unpaywallUrl: p.unpaywallUrl,
-        venue: p.venue,
-        year: p.year,
-        rankings: p.journalRanking?.badges,
-      })),
-      urls: selected
-        .map((p) => p.openAccessPdf || p.unpaywallUrl || (p.doi ? `https://doi.org/${p.doi}` : null))
-        .filter(Boolean),
-    };
-
-    // Download as JSON
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `scholarflow-papers-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
   // Subscribe to background search manager — sync its state to React
   useEffect(() => {
     const unsubscribe = searchManager.subscribe((jobState: SearchJobState) => {
@@ -1146,9 +1119,31 @@ ${fullTextContext}` : ""}`;
                             className="opacity-0 group-hover:opacity-100 text-[10px] text-red-400 hover:text-red-600 transition-opacity"
                             onClick={(e) => {
                               e.stopPropagation();
-                              fetch(`/api/search-history?id=${h.id}`, { method: "DELETE" })
-                                .then(() => setSearchHistory((prev) => prev.filter((x) => x.id !== h.id)))
-                                .catch(() => {});
+                              const deletedQuery = h.query;
+                              // 1. Delete from DB (search history + associated chat history)
+                              Promise.all([
+                                fetch(`/api/search-history?id=${h.id}`, { method: "DELETE" }),
+                                fetch(`/api/chat-history?projectId=${projectId}&query=${encodeURIComponent(deletedQuery)}`, { method: "DELETE" }),
+                              ]).catch(() => {});
+                              // 2. Remove from local search history list
+                              setSearchHistory((prev) => prev.filter((x) => x.id !== h.id));
+                              // 3. If deleted query matches current active query, clear everything
+                              if (query === deletedQuery || query === h.translatedQuery) {
+                                setPapers([]);
+                                setChatMessages([]);
+                                setMeta(null);
+                                setSearchPlan(null);
+                                setSearchStats(null);
+                                setSearchOverview(null);
+                                setSearchProgress([]);
+                                setQuery("");
+                                setError(null);
+                                setAnalysisResult(null);
+                                setSelectedPapers(new Set());
+                                setSearchBatches([]);
+                                setPaperBatchMap(new Map());
+                                setFilterBatch("all");
+                              }
                             }}
                             title="删除"
                           >
@@ -1229,7 +1224,15 @@ ${fullTextContext}` : ""}`;
             {chatMessages.length > 0 && (
               <button
                 className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-                onClick={() => setChatMessages([])}
+                onClick={() => {
+                  setChatMessages([]);
+                  setPapers([]);
+                  setMeta(null);
+                  setSearchPlan(null);
+                  setSearchStats(null);
+                  setSearchOverview(null);
+                  setSearchProgress([]);
+                }}
               >
                 清空对话
               </button>
@@ -1671,9 +1674,6 @@ ${fullTextContext}` : ""}`;
             }}
           >
             批量添加到文献库
-          </Button>
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={exportForNotebookLM}>
-            导出并上传到 NotebookLM
           </Button>
           <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSelectedPapers(new Set())}>
             清除选择

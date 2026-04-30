@@ -129,8 +129,7 @@ export default function GraphPage() {
   const NS = `graph-${projectId}`;
   const [provider, setProvider] = usePersistedState<AIProvider>(NS, "provider", "deepseek-pro");
   const [papers, setPapers] = usePersistedState<Paper[]>(NS, "papers", []);
-  const [analysisEngine, setAnalysisEngine] = usePersistedState<"storm" | "notebooklm">(NS, "analysisEngine", "storm");
-  const [notebookId, setNotebookId] = usePersistedState<string>(NS, "notebookId", "");
+  const [analysisEngine] = usePersistedState<"storm">(NS, "analysisEngine", "storm");
   const [nodes, setNodes] = usePersistedState<GraphNode[]>(NS, "nodes", []);
   const [edges, setEdges] = usePersistedState<GraphEdge[]>(NS, "edges", []);
   const [metaSummary, setMetaSummary] = usePersistedState<MetaSummary | null>(NS, "metaSummary", null);
@@ -153,9 +152,6 @@ export default function GraphPage() {
       .then((d) => setPapers(d.papers ?? []))
       .catch(() => {})
       .finally(() => setPapersLoading(false));
-    // Load saved notebook ID
-    const saved = localStorage.getItem("notebooklm_notebook_id");
-    if (saved) setNotebookId(saved);
   }, [projectId]);
 
   const activePapers = papers;
@@ -203,29 +199,6 @@ export default function GraphPage() {
         } catch { /* continue */ }
       }
 
-      // NotebookLM — external service
-      if (analysisEngine === "notebooklm" && notebookId) {
-        setLoadingPhase("NotebookLM 全文深度分析...");
-        try {
-          const nlmRes = await fetch("/api/integrations/notebooklm", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "analyze",
-              topic: "变量关系提取与元分析",
-              type: "variables",
-              notebookId: notebookId,
-              paperCount: activePapers.length,
-            }),
-            signal,
-          });
-          if (nlmRes.ok) {
-            const nlmData = await nlmRes.json();
-            if (nlmData.combined) externalContext = nlmData.combined;
-          }
-        } catch { /* continue */ }
-      }
-
       setLoadingPhase("AI 元分析编码 + 领域全景生成...");
 
       const paperData = activePapers.slice(0, 50).map((p) => ({
@@ -239,7 +212,7 @@ export default function GraphPage() {
       const graphRes = await fetch("/api/graph/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ papers: paperData, provider, nlmContext: externalContext }),
+        body: JSON.stringify({ papers: paperData, provider, externalContext }),
         signal,
       });
       if (!graphRes.ok) throw new Error("分析失败");
@@ -344,31 +317,8 @@ export default function GraphPage() {
 
           {papers.length > 0 && (
             <div className="flex items-center gap-4 text-xs">
-              <select
-                value={analysisEngine}
-                onChange={(e) => setAnalysisEngine(e.target.value as "storm" | "notebooklm")}
-                className="h-7 px-2 text-xs border border-input rounded-md bg-background"
-              >
-                <option value="storm">STORM（内置）</option>
-                <option value="notebooklm">NotebookLM（外部）</option>
-              </select>
-              {analysisEngine === "notebooklm" && (
-                <input
-                  type="text"
-                  placeholder="粘贴 NotebookLM 链接或 ID"
-                  value={notebookId}
-                  onChange={(e) => {
-                    let val = e.target.value.trim();
-                    const urlMatch = val.match(/notebook\/([a-f0-9-]+)/);
-                    if (urlMatch) val = urlMatch[1];
-                    setNotebookId(val);
-                    localStorage.setItem("notebooklm_notebook_id", val);
-                  }}
-                  className="h-7 px-2 text-xs border border-input rounded-md bg-background w-64"
-                />
-              )}
               <span className="text-muted-foreground ml-auto">
-                将分析 {activePapers.length} 篇文献
+                将分析 {activePapers.length} 篇文献（STORM 引擎）
               </span>
             </div>
           )}

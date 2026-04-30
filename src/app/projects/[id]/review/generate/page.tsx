@@ -45,7 +45,7 @@ interface ReviewOutline {
   futureDirections: string[];
 }
 
-type Phase = "idle" | "notebooklm" | "outlining" | "writing" | "done";
+type Phase = "idle" | "outlining" | "writing" | "done";
 
 export default function ReviewGeneratePage() {
   const params = useParams();
@@ -57,13 +57,12 @@ export default function ReviewGeneratePage() {
   const [outline, setOutline] = usePersistedState<ReviewOutline | null>(NS, "outline", null);
   const [reviewText, setReviewText] = usePersistedState<string>(NS, "reviewText", "");
   const [papers, setPapers] = usePersistedState<Paper[]>(NS, "papers", []);
-  const [analysisEngine, setAnalysisEngine] = usePersistedState<"storm" | "notebooklm">(NS, "engine", "storm");
+  const [analysisEngine] = usePersistedState<"storm">(NS, "engine", "storm");
 
   // Transient state
   const [phase, setPhase] = useState<Phase>("idle");
   const [papersLoading, setPapersLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [nlmStatus, setNlmStatus] = useState<string | null>(null);
   const xAbort = useAbort();
 
   // Load papers with full text from project library
@@ -90,7 +89,6 @@ export default function ReviewGeneratePage() {
     // Optional: STORM pre-analysis
     if (analysisEngine === "storm") {
       setPhase("outlining");
-      setNlmStatus("STORM 文献深度分析中...");
       try {
         const stormRes = await fetch("/api/integrations/storm", {
           method: "POST",
@@ -107,17 +105,12 @@ export default function ReviewGeneratePage() {
         });
         if (stormRes.ok) {
           await stormRes.json();
-          setNlmStatus("STORM 分析完成");
         }
       } catch { /* continue */ }
     }
 
-    // Generate outline + stream review (with optional NotebookLM)
+    // Generate outline + stream review
     setPhase("outlining");
-    const nlmUrl = typeof window !== "undefined" ? localStorage.getItem("notebooklm_notebook_id") : null;
-    const notebookLM = analysisEngine === "notebooklm" && nlmUrl
-      ? { proxyUrl: "http://localhost:27126", notebookUrl: nlmUrl, mode: "auto" as const }
-      : null;
 
     const papersForReview = activePapers.map((p) => ({
       ...p,
@@ -128,7 +121,7 @@ export default function ReviewGeneratePage() {
       const reviewRes = await fetch("/api/research/review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, papers: papersForReview, provider, notebookLM }),
+        body: JSON.stringify({ topic, papers: papersForReview, provider }),
         signal,
       });
 
@@ -150,14 +143,7 @@ export default function ReviewGeneratePage() {
             if (!line.startsWith("data: ")) continue;
             try {
               const data = JSON.parse(line.slice(6));
-              if (data.type === "phase" && data.phase === "notebooklm") {
-                setPhase("notebooklm");
-                setNlmStatus(data.message);
-              } else if (data.type === "nlm_done") {
-                setNlmStatus("NotebookLM 分析完成");
-              } else if (data.type === "nlm_skip") {
-                setNlmStatus(data.reason);
-              } else if (data.type === "outline") {
+              if (data.type === "outline") {
                 setOutline(data.outline);
                 setPhase("writing");
               } else if (data.type === "text") {
@@ -179,7 +165,6 @@ export default function ReviewGeneratePage() {
 
   const phaseLabels: Record<Phase, string> = {
     idle: "",
-    notebooklm: nlmStatus ?? "正在通过 NotebookLM 分析全文...",
     outlining: "正在生成大纲...",
     writing: "正在撰写综述...",
     done: "综述生成完成",
@@ -256,24 +241,13 @@ export default function ReviewGeneratePage() {
           </Button>
           <StopButton show={phase !== "idle" && phase !== "done"} onClick={xAbort.abort} />
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-sm font-medium">分析引擎：</span>
-          <select
-            value={analysisEngine}
-            onChange={(e) => setAnalysisEngine(e.target.value as "storm" | "notebooklm")}
-            className="h-8 px-2 text-sm border border-input rounded-md bg-background"
-          >
-            <option value="storm">STORM（内置深度分析）</option>
-            <option value="notebooklm">NotebookLM（外部全文分析）</option>
-          </select>
-        </div>
       </form>
 
       {/* Progress */}
       {phase !== "idle" && (
         <div className="flex items-center gap-3 text-sm">
           <div className="flex gap-1">
-            {(["notebooklm", "outlining", "writing", "done"] as Phase[]).map((p, i, arr) => (
+            {(["outlining", "writing", "done"] as Phase[]).map((p, i, arr) => (
               <div
                 key={p}
                 className={`h-1.5 w-10 rounded-full transition-colors ${

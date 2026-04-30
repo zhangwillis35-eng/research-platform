@@ -226,7 +226,7 @@ async function enrichAbstracts(needAbstract: UnifiedPaper[]): Promise<void> {
   await Promise.all([
     // Pass 1: CrossRef (DOI-based)
     Promise.all(
-      needAbstract.filter((p) => p.doi).slice(0, 25).map(async (paper) => {
+      needAbstract.filter((p) => p.doi).slice(0, 40).map(async (paper) => {
         try {
           const res = await fetch(
             `https://api.crossref.org/works/${encodeURIComponent(paper.doi!)}`,
@@ -247,7 +247,7 @@ async function enrichAbstracts(needAbstract: UnifiedPaper[]): Promise<void> {
 
     // Pass 2: Semantic Scholar (DOI or title search) — with retry on 429
     Promise.all(
-      needAbstract.slice(0, 20).map(async (paper) => {
+      needAbstract.slice(0, 30).map(async (paper) => {
         try {
           const endpoint = paper.doi
             ? `https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURIComponent(paper.doi)}?fields=abstract,tldr`
@@ -273,7 +273,7 @@ async function enrichAbstracts(needAbstract: UnifiedPaper[]): Promise<void> {
 
     // Pass 3: OpenAlex (title search, inverted index)
     Promise.all(
-      needAbstract.slice(0, 15).map(async (paper) => {
+      needAbstract.slice(0, 25).map(async (paper) => {
         try {
           const params = new URLSearchParams({
             search: paper.title.slice(0, 120),
@@ -307,7 +307,7 @@ async function enrichAbstracts(needAbstract: UnifiedPaper[]): Promise<void> {
     Promise.all(
       needAbstract
         .filter((p) => p.doi && p.doi.startsWith("10.1007/")) // Springer DOIs only
-        .slice(0, 8)
+        .slice(0, 12)
         .map(async (paper) => {
           try {
             const res = await fetch(`https://link.springer.com/article/${paper.doi}`, {
@@ -344,7 +344,7 @@ async function enrichAbstracts(needAbstract: UnifiedPaper[]): Promise<void> {
   if (finalNeedAbstract.length > 0) {
     // Run with concurrency limit to avoid overwhelming external services
     const queue = [...finalNeedAbstract];
-    const CONCURRENCY = 3;
+    const CONCURRENCY = 5;
 
     async function worker() {
       while (queue.length > 0) {

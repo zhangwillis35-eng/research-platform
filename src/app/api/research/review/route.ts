@@ -1,12 +1,10 @@
 import {
   generateOutline,
   generateReviewStream,
-  runNotebookLMAnalysis,
 } from "@/lib/research/storm-review";
 import { setAIContext } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
 import type { UnifiedPaper } from "@/lib/sources/types";
-import type { NotebookLMConfig } from "@/lib/integrations/notebooklm";
 import { requireAuth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
@@ -21,13 +19,11 @@ export async function POST(request: Request) {
       papers,
       perspectives,
       provider = "deepseek-fast",
-      notebookLM,
     } = body as {
       topic: string;
       papers: UnifiedPaper[];
       perspectives?: string[];
       provider?: AIProvider;
-      notebookLM?: NotebookLMConfig | null;
     };
 
     if (!topic || !papers?.length) {
@@ -41,35 +37,6 @@ export async function POST(request: Request) {
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          // Phase 0: NotebookLM deep analysis (if configured)
-          let nlmInsights: string | undefined;
-          if (notebookLM) {
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ type: "phase", phase: "notebooklm", message: "正在通过 NotebookLM 分析全文..." })}\n\n`
-              )
-            );
-            try {
-              const nlmResult = await runNotebookLMAnalysis(
-                topic,
-                papers.length,
-                notebookLM
-              );
-              nlmInsights = nlmResult.reviewInsights + "\n\n" + nlmResult.variableInsights;
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ type: "nlm_done", insights: nlmInsights.slice(0, 500) + "..." })}\n\n`
-                )
-              );
-            } catch {
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ type: "nlm_skip", reason: "NotebookLM 不可用，使用摘要模式" })}\n\n`
-                )
-              );
-            }
-          }
-
           // Phase 1: Generate outline
           controller.enqueue(
             encoder.encode(
@@ -78,8 +45,7 @@ export async function POST(request: Request) {
           );
 
           const outline = await generateOutline(
-            { topic, papers, perspectives, provider },
-            nlmInsights
+            { topic, papers, perspectives, provider }
           );
 
           controller.enqueue(
@@ -95,7 +61,7 @@ export async function POST(request: Request) {
             )
           );
 
-          const stream = generateReviewStream(outline, papers, provider, nlmInsights);
+          const stream = generateReviewStream(outline, papers, provider);
           for await (const chunk of stream) {
             controller.enqueue(
               encoder.encode(
@@ -106,7 +72,7 @@ export async function POST(request: Request) {
 
           controller.enqueue(
             encoder.encode(
-              `data: ${JSON.stringify({ type: "done", hasNLM: !!nlmInsights })}\n\n`
+              `data: ${JSON.stringify({ type: "done" })}\n\n`
             )
           );
         } catch (err) {

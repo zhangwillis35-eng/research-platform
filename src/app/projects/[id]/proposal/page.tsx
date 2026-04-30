@@ -37,7 +37,7 @@ export default function ProposalPage() {
   const NS = `proposal-${projectId}`;
   const [aiProvider, setAiProvider] = usePersistedState<AIProvider>(NS, "provider", "deepseek-pro");
   const [papers, setPapers] = usePersistedState<Paper[]>(NS, "papers", []);
-  const [analysisEngine, setAnalysisEngine] = usePersistedState<"storm" | "notebooklm">(NS, "engine", "storm");
+  const [analysisEngine] = usePersistedState<"storm">(NS, "engine", "storm");
   const [proposalText, setProposalText] = usePersistedState<string>(NS, "proposalText", "");
   const [topic, setTopic] = usePersistedState<string>(NS, "topic", "");
   const [ideas, setIdeas] = usePersistedState<string>(NS, "ideas", "");
@@ -91,23 +91,6 @@ export default function ProposalPage() {
             if (data.article) externalContext = data.article;
           }
         } catch { /* continue */ }
-      } else if (analysisEngine === "notebooklm") {
-        setLoadingPhase("NotebookLM 全文深度分析...");
-        const notebookId = localStorage.getItem("notebooklm_notebook_id") || "";
-        if (notebookId) {
-          try {
-            const nlmRes = await fetch("/api/integrations/notebooklm", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "analyze", topic, type: "review", notebookId }),
-              signal,
-            });
-            if (nlmRes.ok) {
-              const data = await nlmRes.json();
-              if (data.combined) externalContext = data.combined;
-            }
-          } catch { /* continue */ }
-        }
       }
 
       setLoadingPhase("AI 撰写 Proposal...");
@@ -257,16 +240,8 @@ export default function ProposalPage() {
 
           {papers.length > 0 && (
             <div className="flex items-center gap-4 text-xs">
-              <select
-                value={analysisEngine}
-                onChange={(e) => setAnalysisEngine(e.target.value as "storm" | "notebooklm")}
-                className="h-7 px-2 text-xs border border-input rounded-md bg-background"
-              >
-                <option value="storm">STORM（内置）</option>
-                <option value="notebooklm">NotebookLM（外部）</option>
-              </select>
               <span className="text-muted-foreground ml-auto">
-                将引用 {activePapers.length} 篇文献
+                将引用 {activePapers.length} 篇文献（STORM 引擎）
               </span>
             </div>
           )}

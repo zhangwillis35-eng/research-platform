@@ -320,8 +320,8 @@ export async function smartSearch(
   // Free sources: all queries in parallel
   // For unlimited mode (limit >= 999), use more queries for broader coverage
   const isUnlimited = limit >= 999;
-  const precisionQueries = plan.precisionQueries.slice(0, isUnlimited ? 10 : 5);
-  const broadQueries = plan.broadQueries.slice(0, isUnlimited ? 5 : 3);
+  const precisionQueries = plan.precisionQueries.slice(0, isUnlimited ? 15 : 8);
+  const broadQueries = plan.broadQueries.slice(0, isUnlimited ? 8 : 5);
 
   // Merge queries for Google Scholar (1 SerpAPI call each)
   const gsPrecisionQuery = precisionQueries.join(" OR ");
