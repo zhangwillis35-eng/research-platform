@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db";
 import { deletePdf } from "@/lib/oss";
 import { getSessionUser } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/projects — returns projects owned by the logged-in user
 export async function GET() {
   const user = await getSessionUser();
