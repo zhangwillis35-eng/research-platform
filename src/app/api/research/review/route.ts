@@ -6,9 +6,13 @@ import {
 import type { AIProvider } from "@/lib/ai";
 import type { UnifiedPaper } from "@/lib/sources/types";
 import type { NotebookLMConfig } from "@/lib/integrations/notebooklm";
+import { requireAuth } from "@/lib/auth";
+import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAuth();
+    if (auth instanceof NextResponse) return auth;
     const body = await request.json();
     const {
       topic,

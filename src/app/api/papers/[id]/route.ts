@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getSignedUrl } from "@/lib/oss";
 
@@ -8,6 +9,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const { searchParams } = new URL(request.url);
 
   if (searchParams.get("pdf") === "true") {
@@ -60,6 +65,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   await prisma.paper.delete({ where: { id } });
   return NextResponse.json({ success: true });
 }
@@ -70,6 +79,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const body = await request.json();
 
   const paper = await prisma.paper.update({

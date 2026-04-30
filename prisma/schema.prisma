@@ -290,3 +290,28 @@ model SearchHistory {
 
   @@index([projectId, createdAt])
 }
+
+// ─── API Request Log (for admin dashboard) ─────
+
+model ApiLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  method    String   // GET, POST, DELETE, PUT
+  path      String   // /api/papers/search
+  status    Int      // HTTP status code
+  duration  Int      // ms
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([path, createdAt])
+}
+
+// ─── Admin Session ─────────────────────────────
+
+model AdminSession {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+}

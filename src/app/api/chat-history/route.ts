@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireProjectAccess } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
 // GET — load chat messages for a project + query
@@ -10,6 +11,9 @@ export async function GET(request: Request) {
   if (!projectId || !query) {
     return NextResponse.json({ error: "projectId and query required" }, { status: 400 });
   }
+
+  const auth = await requireProjectAccess(projectId);
+  if (auth instanceof NextResponse) return auth;
 
   const record = await prisma.chatHistory.findUnique({
     where: { projectId_query: { projectId, query } },
@@ -26,6 +30,9 @@ export async function POST(request: Request) {
     if (!projectId || !query) {
       return NextResponse.json({ error: "projectId and query required" }, { status: 400 });
     }
+
+    const auth = await requireProjectAccess(projectId);
+    if (auth instanceof NextResponse) return auth;
 
     const record = await prisma.chatHistory.upsert({
       where: { projectId_query: { projectId, query } },
@@ -51,6 +58,9 @@ export async function DELETE(request: Request) {
   if (!projectId || !query) {
     return NextResponse.json({ error: "projectId and query required" }, { status: 400 });
   }
+
+  const auth = await requireProjectAccess(projectId);
+  if (auth instanceof NextResponse) return auth;
 
   // Delete chat history and associated search history together
   await Promise.all([

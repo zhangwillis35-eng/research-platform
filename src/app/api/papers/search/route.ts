@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 import { searchAllSources } from "@/lib/sources/aggregator";
 import type { SearchOptions, UnifiedPaper } from "@/lib/sources/types";
 
 export async function POST(request: Request) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
 

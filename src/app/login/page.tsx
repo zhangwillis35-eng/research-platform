@@ -11,10 +11,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Eye, EyeOff, ArrowLeft, Check, Mail } from "lucide-react";
+import { Eye, EyeOff, ArrowLeft } from "lucide-react";
 
 type Mode = "login" | "register";
-type RegisterStep = "info" | "pending" | "invite";
 
 // ─── Password visibility toggle ─────────────────
 function PasswordInput({
@@ -47,51 +46,6 @@ function PasswordInput({
       >
         {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
       </button>
-    </div>
-  );
-}
-
-// ─── Step indicator ──────────────────────────────
-function StepIndicator({ current }: { current: number }) {
-  const steps = ["填写信息", "等待审批", "输入邀请码"];
-  return (
-    <div className="flex items-center justify-center gap-1 mb-6">
-      {steps.map((label, i) => {
-        const step = i + 1;
-        const isActive = step === current;
-        const isDone = step < current;
-        return (
-          <div key={label} className="flex items-center gap-1">
-            {i > 0 && (
-              <div
-                className={`w-8 h-px transition-colors duration-300 ${
-                  isDone ? "bg-teal" : "bg-border"
-                }`}
-              />
-            )}
-            <div className="flex flex-col items-center gap-1">
-              <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium transition-all duration-300 ${
-                  isDone
-                    ? "bg-teal text-teal-foreground"
-                    : isActive
-                    ? "bg-teal/15 text-teal border-2 border-teal"
-                    : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {isDone ? <Check className="w-3.5 h-3.5" /> : step}
-              </div>
-              <span
-                className={`text-[10px] transition-colors duration-300 ${
-                  isActive ? "text-teal font-medium" : "text-muted-foreground"
-                }`}
-              >
-                {label}
-              </span>
-            </div>
-          </div>
-        );
-      })}
     </div>
   );
 }
@@ -142,13 +96,10 @@ export default function LoginPage() {
   const [loginPassword, setLoginPassword] = useState("");
 
   // Register state
-  const [regStep, setRegStep] = useState<RegisterStep>("info");
   const [regName, setRegName] = useState("");
   const [regEmail, setRegEmail] = useState("");
   const [regPassword, setRegPassword] = useState("");
   const [regPasswordConfirm, setRegPasswordConfirm] = useState("");
-  const [inviteCode, setInviteCode] = useState("");
-  const [devInviteCode, setDevInviteCode] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -174,11 +125,6 @@ export default function LoginPage() {
   function switchMode(m: Mode) {
     setMode(m);
     setError("");
-    if (m === "register") {
-      setRegStep("info");
-      setDevInviteCode(null);
-      setInviteCode("");
-    }
   }
 
   // ─── Login ──────────────────────────────────────
@@ -203,8 +149,8 @@ export default function LoginPage() {
     }
   }
 
-  // ─── Register Step 1: Submit info ──────────────
-  async function handleRequestRegister(e: React.FormEvent) {
+  // ─── Register ─────────────────────────────────
+  async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
     if (regPassword.length < 6) {
       setError("密码至少 6 位");
@@ -221,7 +167,7 @@ export default function LoginPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "request-register",
+          action: "register",
           name: regName,
           email: regEmail,
           password: regPassword,
@@ -232,37 +178,7 @@ export default function LoginPage() {
         setError(data.error);
         return;
       }
-      if (data.devInviteCode) setDevInviteCode(data.devInviteCode);
-      setRegStep("pending");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // ─── Register Step 3: Verify invite code ───────
-  async function handleVerifyInvite(e: React.FormEvent) {
-    e.preventDefault();
-    if (!inviteCode.trim()) {
-      setError("请输入邀请码");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "verify-invite",
-          email: regEmail,
-          inviteCode,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error);
-        return;
-      }
+      // Registration auto-logs in — go to projects
       router.push("/projects");
     } finally {
       setLoading(false);
@@ -276,8 +192,6 @@ export default function LoginPage() {
       </div>
     );
   }
-
-  const stepNumber = regStep === "info" ? 1 : regStep === "pending" ? 2 : 3;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-6">
@@ -297,22 +211,16 @@ export default function LoginPage() {
             </div>
           </div>
           <CardTitle className="font-heading text-2xl">
-            {mode === "login" && "登录 ScholarFlow"}
-            {mode === "register" && regStep === "info" && "注册 ScholarFlow"}
-            {mode === "register" && regStep === "pending" && "申请已提交"}
-            {mode === "register" && regStep === "invite" && "输入邀请码"}
+            {mode === "login" ? "登录 ScholarFlow" : "注册 ScholarFlow"}
           </CardTitle>
           <p className="text-sm text-muted-foreground mt-2">
-            {mode === "login" && "使用邮箱和密码登录"}
-            {mode === "register" && regStep === "info" && "填写注册信息，提交后等待管理员审批"}
-            {mode === "register" && regStep === "pending" && "管理员审批后会将邀请码发送到你的邮箱"}
-            {mode === "register" && regStep === "invite" && "输入管理员发送的邀请码完成注册"}
+            {mode === "login"
+              ? "使用邮箱和密码登录"
+              : "创建账号，开始你的学术研究之旅"}
           </p>
         </CardHeader>
 
         <CardContent>
-          {mode === "register" && <StepIndicator current={stepNumber} />}
-
           {error && (
             <div className="mb-4 text-sm text-red-500 bg-red-50 dark:bg-red-950/30 rounded-md px-3 py-2">
               {error}
@@ -356,25 +264,15 @@ export default function LoginPage() {
                   onClick={() => switchMode("register")}
                   className="text-teal hover:text-teal/80 font-medium"
                 >
-                  申请注册
-                </button>
-              </p>
-              <p className="text-center text-sm text-muted-foreground">
-                已有邀请码？{" "}
-                <button
-                  type="button"
-                  onClick={() => { switchMode("register"); setRegStep("invite"); }}
-                  className="text-teal hover:text-teal/80 font-medium"
-                >
-                  输入邀请码
+                  注册
                 </button>
               </p>
             </form>
           )}
 
-          {/* ═══ Register Step 1: Fill Info ═══ */}
-          {mode === "register" && regStep === "info" && (
-            <form onSubmit={handleRequestRegister} className="space-y-4">
+          {/* ═══ Register Form ═══ */}
+          {mode === "register" && (
+            <form onSubmit={handleRegister} className="space-y-4">
               <div>
                 <label className="text-sm font-medium mb-1.5 block">昵称</label>
                 <Input
@@ -425,7 +323,7 @@ export default function LoginPage() {
                 disabled={loading || !regName.trim() || !regEmail.trim() || !regPassword || !regPasswordConfirm}
                 className="w-full bg-teal text-teal-foreground hover:bg-teal/90"
               >
-                {loading ? "提交中..." : "提交注册申请"}
+                {loading ? "注册中..." : "注册"}
               </Button>
               <p className="text-center text-sm text-muted-foreground">
                 已有账号？{" "}
@@ -437,107 +335,6 @@ export default function LoginPage() {
                   去登录
                 </button>
               </p>
-            </form>
-          )}
-
-          {/* ═══ Register Step 2: Pending ═══ */}
-          {mode === "register" && regStep === "pending" && (
-            <div className="space-y-6 text-center">
-              {devInviteCode && (
-                <div className="text-sm text-amber-700 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 rounded-md px-3 py-2">
-                  [开发模式] 邀请码：<span className="font-mono font-bold">{devInviteCode}</span>
-                </div>
-              )}
-
-              <div className="flex justify-center">
-                <div className="w-16 h-16 rounded-full bg-teal/10 flex items-center justify-center">
-                  <Mail className="w-8 h-8 text-teal" />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-sm text-foreground">
-                  你的注册申请已提交，管理员将在审批后
-                </p>
-                <p className="text-sm text-foreground">
-                  将邀请码发送至 <span className="font-medium text-teal">{regEmail}</span>
-                </p>
-              </div>
-
-              <Button
-                onClick={() => setRegStep("invite")}
-                className="w-full bg-teal text-teal-foreground hover:bg-teal/90"
-              >
-                我已收到邀请码
-              </Button>
-              <button
-                type="button"
-                onClick={() => switchMode("login")}
-                className="w-full text-sm text-muted-foreground hover:text-foreground"
-              >
-                返回登录
-              </button>
-            </div>
-          )}
-
-          {/* ═══ Register Step 3: Enter Invite Code ═══ */}
-          {mode === "register" && regStep === "invite" && (
-            <form onSubmit={handleVerifyInvite} className="space-y-4">
-              {devInviteCode && (
-                <div className="text-sm text-amber-700 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 rounded-md px-3 py-2 text-center">
-                  [开发模式] 邀请码：<span className="font-mono font-bold">{devInviteCode}</span>
-                </div>
-              )}
-              <div>
-                <label className="text-sm font-medium mb-1.5 block">注册邮箱</label>
-                <Input
-                  type="email"
-                  placeholder="注册时填写的邮箱"
-                  value={regEmail}
-                  onChange={(e) => { setRegEmail(e.target.value); setError(""); }}
-                  required
-                  autoFocus={!regEmail}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium mb-1.5 block">邀请码</label>
-                <Input
-                  type="text"
-                  placeholder="请输入 8 位邀请码"
-                  value={inviteCode}
-                  onChange={(e) => {
-                    setInviteCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8));
-                    setError("");
-                  }}
-                  maxLength={8}
-                  className="text-center text-lg tracking-[0.3em] font-mono"
-                  required
-                  autoFocus={!!regEmail}
-                />
-              </div>
-              <Button
-                type="submit"
-                disabled={loading || !regEmail.trim() || inviteCode.length !== 8}
-                className="w-full bg-teal text-teal-foreground hover:bg-teal/90"
-              >
-                {loading ? "验证中..." : "完成注册"}
-              </Button>
-              <div className="flex items-center justify-between text-sm">
-                <button
-                  type="button"
-                  onClick={() => { setRegStep("info"); setError(""); }}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  重新申请
-                </button>
-                <button
-                  type="button"
-                  onClick={() => switchMode("login")}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  返回登录
-                </button>
-              </div>
             </form>
           )}
         </CardContent>

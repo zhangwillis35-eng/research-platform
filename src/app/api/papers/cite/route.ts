@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 import { formatCitation, type CitationStyle } from "@/lib/citation";
 
 const ALL_STYLES: CitationStyle[] = ["apa", "mla", "chicago", "gb-t-7714", "bibtex"];
 
 export async function POST(request: Request) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { paper, style = "apa", allStyles, papers } = body as {

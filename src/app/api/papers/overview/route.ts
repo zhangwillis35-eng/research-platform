@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 import { callAI } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai/types";
 
 export async function POST(request: Request) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { query, papers, provider = "gemini" } = await request.json();
 

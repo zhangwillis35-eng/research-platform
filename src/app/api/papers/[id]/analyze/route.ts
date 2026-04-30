@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { callAI } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai/types";
@@ -55,6 +56,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const { provider = "gemini" } = await request.json().catch(() => ({}));
 
   const paper = await prisma.paper.findUnique({ where: { id } });

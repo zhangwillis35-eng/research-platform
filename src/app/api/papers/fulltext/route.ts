@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 import { fetchFullText } from "@/lib/research/fulltext-fetcher";
 
 export async function POST(request: Request) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { doi, openAccessPdf, unpaywallUrl, title, usePlaywright } = body as {

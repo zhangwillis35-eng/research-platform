@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { callAI } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
+import { requireAuth } from "@/lib/auth";
 
 const ANALYSIS_PROMPTS: Record<string, string> = {
   variables: `你是管理学研究方法论专家。从以下论文摘要中提取所有变量关系。
@@ -84,6 +85,9 @@ const ANALYSIS_PROMPTS: Record<string, string> = {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAuth();
+    if (auth instanceof NextResponse) return auth;
+
     const body = await request.json();
     const {
       provider = "gemini",

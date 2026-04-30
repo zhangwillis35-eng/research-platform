@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAuth, requireProjectAccess } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
 // GET — list search history (lightweight, no papers)
@@ -10,6 +11,9 @@ export async function GET(request: Request) {
 
   // Get single full record
   if (id) {
+    const auth = await requireAuth();
+    if (auth instanceof NextResponse) return auth;
+
     const record = await prisma.searchHistory.findUnique({ where: { id } });
     if (!record) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ record });
@@ -18,6 +22,9 @@ export async function GET(request: Request) {
   if (!projectId) {
     return NextResponse.json({ error: "projectId required" }, { status: 400 });
   }
+
+  const auth = await requireProjectAccess(projectId);
+  if (auth instanceof NextResponse) return auth;
 
   // List — exclude heavy papers field for speed
   const history = await prisma.searchHistory.findMany({
@@ -52,6 +59,9 @@ export async function POST(request: Request) {
     if (!projectId || !query) {
       return NextResponse.json({ error: "projectId and query required" }, { status: 400 });
     }
+
+    const auth = await requireProjectAccess(projectId);
+    if (auth instanceof NextResponse) return auth;
 
     const record = await prisma.searchHistory.create({
       data: {
@@ -94,6 +104,9 @@ export async function DELETE(request: Request) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
 
   await prisma.searchHistory.delete({ where: { id } });
   return NextResponse.json({ success: true });

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { callAI } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
+import { requireAuth } from "@/lib/auth";
 
 interface Paper {
   title: string;
@@ -144,6 +145,9 @@ const LANDSCAPE_SYSTEM = `你是管理学领域的资深学者，擅长撰写系
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAuth();
+    if (auth instanceof NextResponse) return auth;
+
     const body = await request.json();
     const { papers, provider = "gemini", nlmContext = "" } = body as {
       papers: Paper[];

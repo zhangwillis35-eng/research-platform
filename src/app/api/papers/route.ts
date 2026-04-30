@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireProjectAccess } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
 // GET /api/papers?projectId=xxx&source=catalog|weekly|fulltext
@@ -10,6 +11,9 @@ export async function GET(request: Request) {
   if (!projectId) {
     return NextResponse.json({ error: "projectId required" }, { status: 400 });
   }
+
+  const auth = await requireProjectAccess(projectId);
+  if (auth instanceof NextResponse) return auth;
 
   // Build filter
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -51,6 +55,9 @@ export async function POST(request: Request) {
     if (!projectId || !paperData.title) {
       return NextResponse.json({ error: "projectId and title required" }, { status: 400 });
     }
+
+    const auth = await requireProjectAccess(projectId);
+    if (auth instanceof NextResponse) return auth;
 
     const paper = await prisma.paper.create({
       data: {

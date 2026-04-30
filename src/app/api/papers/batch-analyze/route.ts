@@ -1,3 +1,5 @@
+import { requireAuth } from "@/lib/auth";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { callAI } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
@@ -81,6 +83,9 @@ Return strict JSON (no markdown), respond in Chinese:
  * Returns SSE stream with per-paper progress events.
  */
 export async function POST(request: Request) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const body = await request.json();
   const { paperIds, provider, concurrency } = body as {
     paperIds?: string[];

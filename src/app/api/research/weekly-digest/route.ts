@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { callAI } from "@/lib/ai";
+import { requireProjectAccess } from "@/lib/auth";
 import { searchArxiv } from "@/lib/sources/arxiv";
 import { searchGoogleScholar } from "@/lib/sources/google-scholar";
 import type { UnifiedPaper } from "@/lib/sources/types";
@@ -376,6 +377,10 @@ export async function POST(request: Request) {
     if (!projectId) {
       return NextResponse.json({ error: "projectId required" }, { status: 400 });
     }
+
+    const auth = await requireProjectAccess(projectId);
+    if (auth instanceof NextResponse) return auth;
+
     const result = await runDigest(projectId, daysBack);
     return NextResponse.json(result);
   } catch (error) {

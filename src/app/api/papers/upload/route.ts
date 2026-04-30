@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireProjectAccess } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { extractText, getMeta } from "unpdf";
 import { uploadPdf, pdfKey } from "@/lib/oss";
@@ -24,6 +25,9 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    const auth = await requireProjectAccess(projectId);
+    if (auth instanceof NextResponse) return auth;
 
     if (!file.name.toLowerCase().endsWith(".pdf")) {
       return NextResponse.json(
