@@ -331,6 +331,9 @@ export async function smartSearch(
   const gsQueries = [gsPrecisionQuery, gsBroadQuery].filter(Boolean);
   const allQueries = [...precisionQueries, ...broadQueries];
 
+  // Use higher per-source limits for free APIs (S2/OpenAlex are free and have good data)
+  const freeLimit = Math.max(50, limit);
+
   onProgress?.("search", `并行检索 ${gsQueries.length + allQueries.length} 个查询...`);
   const [gsResults, freeResults] = await Promise.all([
     // Google Scholar: all queries in parallel
@@ -342,10 +345,10 @@ export async function smartSearch(
         }).catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
       )
     ),
-    // Free sources: all queries in parallel
+    // Free sources: all queries in parallel (higher limits for better coverage)
     Promise.all(
       allQueries.map((q) =>
-        searchAllSourcesRaw({ query: q, limit, yearFrom, yearTo, freeOnly: true }).catch(() => ({
+        searchAllSourcesRaw({ query: q, limit: freeLimit, yearFrom, yearTo, freeOnly: true }).catch(() => ({
           papers: [] as UnifiedPaper[],
           results: [] as SearchResult[],
         }))

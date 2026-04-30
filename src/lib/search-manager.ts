@@ -27,6 +27,8 @@ export interface SearchJobState {
   error: string | null;
   startedAt: number;
   completedAt: number | null;
+  /** Set to true after the result has been consumed by handleSearchResult */
+  consumed: boolean;
 }
 
 type Listener = (state: SearchJobState) => void;
@@ -72,6 +74,7 @@ class BackgroundSearchManager {
       error: null,
       startedAt: Date.now(),
       completedAt: null,
+      consumed: false,
     };
     this.notify();
     this.saveState();
@@ -199,6 +202,11 @@ class BackgroundSearchManager {
     return () => this.listeners.delete(listener);
   }
 
+  /** Mark the current result as consumed (prevents re-processing on remount) */
+  markConsumed() {
+    this.state.consumed = true;
+  }
+
   /** Reset to idle */
   reset() {
     this.abort();
@@ -209,6 +217,7 @@ class BackgroundSearchManager {
       error: null,
       startedAt: 0,
       completedAt: null,
+      consumed: false,
     };
     this.notify();
     this.saveState();
@@ -253,6 +262,7 @@ class BackgroundSearchManager {
       error: null,
       startedAt: 0,
       completedAt: null,
+      consumed: false,
     };
 
     if (typeof window === "undefined") return defaultState;

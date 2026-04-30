@@ -1,6 +1,6 @@
 import type { UnifiedPaper, SearchOptions, SearchResult } from "./types";
 import { searchSemanticScholar, batchLookupS2 } from "./semantic-scholar";
-import { searchOpenAlex } from "./openalex";
+import { searchOpenAlex, searchOpenAlexTopVenues } from "./openalex";
 import { searchGoogleScholar } from "./google-scholar";
 import { searchArxiv } from "./arxiv";
 import { searchCORE } from "./core";
@@ -51,7 +51,7 @@ export async function searchAllSourcesRaw(
     ),
   ];
 
-  // Extra sources (arXiv, CORE, WoS) — skip if only Google Scholar was requested
+  // Extra sources (arXiv, CORE, WoS, top-venue OpenAlex) — skip if only Google Scholar was requested
   if (!skipExtras) {
     const extraPromises = Promise.all([
       searchArxiv({ ...options, limit: Math.min(options.limit ?? 10, 10) }).catch(() => ({
@@ -61,6 +61,16 @@ export async function searchAllSourcesRaw(
         papers: [] as UnifiedPaper[], total: 0, source: "openalex" as const,
       })),
       searchWoS(options.query, Math.min(options.limit ?? 10, 10)).catch(() => ({
+        papers: [] as UnifiedPaper[], total: 0, source: "openalex" as const,
+      })),
+      // Targeted search for Nature/Science/top-tier journals
+      searchOpenAlexTopVenues(options.query, {
+        yearFrom: options.yearFrom,
+        yearTo: options.yearTo,
+        limit: 15,
+      }).then(papers => ({
+        papers, total: papers.length, source: "openalex" as const,
+      })).catch(() => ({
         papers: [] as UnifiedPaper[], total: 0, source: "openalex" as const,
       })),
     ]);

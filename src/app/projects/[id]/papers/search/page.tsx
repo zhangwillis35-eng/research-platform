@@ -365,12 +365,13 @@ export default function PaperSearchPage() {
 
   // Build context from current search results for the chat system prompt
   function buildPapersContext(): string {
-    const topPapers = displayedPapers.slice(0, 20);
-    if (topPapers.length === 0) return "";
-    return topPapers
+    // Include up to 50 papers with full abstracts for comprehensive context
+    const contextPapers = displayedPapers.slice(0, 50);
+    if (contextPapers.length === 0) return "";
+    return contextPapers
       .map(
         (p, i) =>
-          `[${i + 1}] ${p.title}\n作者: ${p.authors.slice(0, 3).map((a) => a.name).join(", ")}${p.authors.length > 3 ? " et al." : ""}\n年份: ${p.year ?? "N/A"} | 期刊: ${p.venue ?? "N/A"} | 引用: ${p.citationCount}${p.journalRanking?.badges?.length ? ` | 等级: ${p.journalRanking.badges.join(", ")}` : ""}${p.relevanceScore != null ? ` | 相关性: ${p.relevanceScore}/10` : ""}\n摘要: ${p.abstract ?? "无摘要"}`
+          `[${i + 1}] ${p.title}\n作者: ${p.authors.map((a) => a.name).join(", ")}\n年份: ${p.year ?? "N/A"} | 期刊: ${p.venue ?? "N/A"} | 引用: ${p.citationCount} | DOI: ${p.doi ?? "无"}${p.journalRanking?.badges?.length ? `\n期刊等级: ${p.journalRanking.badges.join(", ")}` : ""}${p.relevanceScore != null ? ` | 相关性: ${p.relevanceScore}/10` : ""}${p.openAccessPdf ? `\n全文PDF: ${p.openAccessPdf}` : ""}${p.hasFullText ? "\n[已获取全文]" : ""}\n摘要: ${p.abstract ?? "无摘要"}`
       )
       .join("\n\n---\n\n");
   }
@@ -399,20 +400,82 @@ export default function PaperSearchPage() {
     setChatMessages([...newMessages, { role: "assistant", content: "" }]);
 
     try {
+      // Detect paper references in user's latest message and auto-fetch full text
+      const latestUserMsg = newMessages.filter(m => m.role === "user").pop()?.content ?? "";
+      const refPattern = /\[(\d+(?:[,，]\s*\d+)*(?:\s*[-–]\s*\d+)?)\]|(?:第|文献|论文|paper\s*)(\d+)/gi;
+      const referencedIndices = new Set<number>();
+      let refMatch;
+      while ((refMatch = refPattern.exec(latestUserMsg)) !== null) {
+        const nums = (refMatch[1] || refMatch[2] || "").split(/[,，\s-–]+/).map(Number).filter(n => n > 0);
+        nums.forEach(n => referencedIndices.add(n - 1)); // 0-indexed
+      }
+
+      // Fetch full text for referenced papers that have DOI/PDF
+      let fullTextContext = "";
+      if (referencedIndices.size > 0 && referencedIndices.size <= 5) {
+        const fetchPromises = Array.from(referencedIndices)
+          .filter(i => i < displayedPapers.length)
+          .map(async (i) => {
+            const p = displayedPapers[i];
+            if (!p.doi && !p.openAccessPdf) return null;
+            try {
+              const res = await fetch("/api/papers/fulltext", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                signal: AbortSignal.timeout(10000),
+                body: JSON.stringify({ doi: p.doi, openAccessPdf: p.openAccessPdf, unpaywallUrl: p.unpaywallUrl, title: p.title }),
+              });
+              if (!res.ok) return null;
+              const data = await res.json();
+              if (data.available && data.text) {
+                return `\n\n### [${i + 1}] ${p.title} — 全文节选（${data.wordCount ?? "?"}词，来源: ${data.source}）\n${data.text.slice(0, 6000)}`;
+              }
+              return null;
+            } catch { return null; }
+          });
+        const results = await Promise.all(fetchPromises);
+        fullTextContext = results.filter(Boolean).join("");
+      }
+
       const papersContext = buildPapersContext();
-      const systemPrompt = `你是管理学文献分析助手。用户正在检索文献，当前检索主题为「${query}」。以下是检索到的文献列表：
+      // Build conversation summary for context reinforcement
+      const priorTopics = newMessages
+        .filter(m => m.role === "user")
+        .map(m => m.content)
+        .slice(-5)
+        .join("; ");
+      const systemPrompt = `你是管理学文献分析助手，具有完整的对话记忆能力。
+
+## 当前检索主题
+「${query}」
+
+## 对话上下文
+用户在本轮对话中已讨论: ${priorTopics || "（首次提问）"}
+
+## 文献数据库（共 ${displayedPapers.length} 篇，以下列出前 ${Math.min(displayedPapers.length, 50)} 篇完整信息）
 
 ${papersContext}
 
-请基于以上文献信息回答用户的问题。你可以：
-- 分析特定文献的研究方法、理论贡献、创新点
-- 比较多篇文献的异同
-- 总结某个主题的研究脉络
-- 发现研究空白和未来方向
-- 解释变量关系和理论框架
-- 评估文献质量和期刊等级
+## 你的能力
+- 深入分析特定文献的研究方法、理论贡献、创新点、研究设计
+- 比较多篇文献的异同（方法论、理论框架、数据来源、发现）
+- 总结某个主题或子领域的研究脉络和演进趋势
+- 发现研究空白和未来研究方向
+- 解释变量关系、理论框架和因果机制
+- 评估文献质量和期刊等级（UTD24、FT50、ABS、JCR等）
+- 对已有对话中讨论过的文献进行追问和深究
 
-用中文回答，保持学术风格，引用文献时用 [编号] 标注。`;
+## 重要规则
+- 用中文回答，保持学术风格
+- 引用文献时用 [编号] 标注，编号对应上方文献列表
+- 当用户追问某篇文献时，结合该文献的完整摘要、期刊信息、作者信息进行深度分析
+- 记住本轮对话的所有内容，用户追问时不要重复之前已回答的信息
+- 如果用户提到的内容与之前的对话相关，主动关联之前的讨论
+- 当有全文数据时，优先使用全文内容进行深度分析，而非仅依赖摘要${fullTextContext ? `
+
+## 已获取的全文内容
+以下是用户提到的文献的全文节选，请优先使用这些内容进行深度分析：
+${fullTextContext}` : ""}`;
 
       const res = await fetch("/api/ai/chat", {
         method: "POST",
@@ -540,8 +603,11 @@ ${papersContext}
       if (jobState.status === "searching") {
         setLoading(true);
         setProgressOpen(true);
-      } else if (jobState.status === "done" && jobState.result) {
+      } else if (jobState.status === "done" && jobState.result && !jobState.consumed) {
+        searchManager.markConsumed();
         handleSearchResult(jobState.result);
+        setLoading(false);
+      } else if (jobState.status === "done") {
         setLoading(false);
       } else if (jobState.status === "error") {
         setError(jobState.error ?? "搜索失败");
@@ -1185,9 +1251,9 @@ ${papersContext}
               </p>
               <div className="flex flex-wrap justify-center gap-2">
                 {searchMode ? [
-                  "在企业层面研究XAI或负责任AI的文章，ABS3星以上",
-                  "AI washing 与企业信息披露",
-                  "机器学习在金融风控中的应用，2020年以后",
+                  "ESG disclosure and corporate financial performance, ABS3星以上",
+                  "digital transformation and organizational resilience",
+                  "supply chain disruption risk management, 2020年以后",
                 ].map((suggestion) => (
                   <button
                     key={suggestion}
@@ -1276,7 +1342,7 @@ ${papersContext}
                 handleUnifiedSend();
               }
             }}
-            placeholder={searchMode ? "输入研究主题，如：AI washing 与企业信息披露，ABS3星以上" : "输入问题，对检索文献进行深入分析..."}
+            placeholder={searchMode ? "输入研究主题，如：ESG disclosure and firm performance，ABS3星以上" : "输入问题，对检索文献进行深入分析..."}
             rows={1}
             className="flex-1 resize-none rounded-lg border border-border/50 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-teal/50 placeholder:text-muted-foreground/60"
             style={{ minHeight: "38px", maxHeight: "120px" }}

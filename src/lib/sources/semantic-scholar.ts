@@ -50,7 +50,7 @@ export async function searchSemanticScholar(
 
   const params = new URLSearchParams({
     query,
-    limit: String(limit),
+    limit: String(Math.min(limit, 100)), // S2 supports up to 100
     fields: FIELDS,
   });
 

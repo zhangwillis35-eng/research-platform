@@ -63,6 +63,17 @@ export async function POST(request: Request) {
     const auth = await requireProjectAccess(projectId);
     if (auth instanceof NextResponse) return auth;
 
+    // Dedup: skip if same query was saved within last 2 minutes
+    const recent = await prisma.searchHistory.findFirst({
+      where: {
+        projectId,
+        query,
+        createdAt: { gte: new Date(Date.now() - 120_000) },
+      },
+      select: { id: true, query: true, translatedQuery: true, keyTerms: true, filters: true, paperCount: true, provider: true, createdAt: true },
+    });
+    if (recent) return NextResponse.json({ record: recent });
+
     const record = await prisma.searchHistory.create({
       data: {
         projectId,
