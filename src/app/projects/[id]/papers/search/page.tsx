@@ -546,6 +546,15 @@ ${papersContext}
       } else if (jobState.status === "error") {
         setError(jobState.error ?? "搜索失败");
         setLoading(false);
+        // Update "正在检索" message with error
+        setChatMessages(prev => {
+          const updated = [...prev];
+          const idx = updated.findLastIndex(m => typeof m.content === "string" && m.content.startsWith("正在检索"));
+          if (idx >= 0) {
+            updated[idx] = { role: "assistant", content: "检索未找到结果，请尝试调整关键词。" };
+          }
+          return updated;
+        });
       }
     });
     return unsubscribe;
@@ -588,10 +597,26 @@ ${papersContext}
     setPaperBatchMap(newMap);
     setSearchBatches(prev => [...prev, { id: batchId, query: searchQuery, count: data.papers.length, timestamp: new Date() }]);
 
-    // Generate AI overview — replace any existing placeholder first
+    // Update "正在检索" message with result count
+    setChatMessages(prev => {
+      const updated = [...prev];
+      const idx = updated.findLastIndex(m => typeof m.content === "string" && m.content.startsWith("正在检索"));
+      if (idx >= 0) {
+        updated[idx] = {
+          role: "assistant",
+          content: `检索完成！找到 ${data.papers.length} 篇相关文献，已添加到右侧列表。\n\n你可以继续检索其他主题，或关闭「学术检索」开关，基于已有文献进行深度问答分析。`,
+        };
+      }
+      return updated;
+    });
+
+    // Generate AI overview — clear old messages first, only one attempt per search
     if (data.papers?.length > 0) {
       setChatMessages(prev => [
-        ...prev.filter(m => m.content !== "正在深度分析检索结果..."),
+        ...prev.filter(m =>
+          m.content !== "正在深度分析检索结果..." &&
+          m.content !== "概览生成失败，请在问答模式中手动提问。"
+        ),
         { role: "assistant", content: "正在深度分析检索结果..." },
       ]);
       fetch("/api/papers/overview", {
@@ -623,12 +648,10 @@ ${papersContext}
           }
         })
         .catch(() => {
-          setChatMessages(prev => {
-            const updated = [...prev];
-            const idx = updated.findLastIndex(m => m.content === "正在深度分析检索结果...");
-            if (idx >= 0) updated[idx] = { role: "assistant", content: "概览生成失败，请在问答模式中手动提问。" };
-            return updated;
-          });
+          // Silently remove the placeholder instead of showing error repeatedly
+          setChatMessages(prev =>
+            prev.filter(m => m.content !== "正在深度分析检索结果...")
+          );
         });
     }
 
@@ -705,30 +728,13 @@ ${papersContext}
 
     if (searchMode) {
       // Search mode: perform literature search
+      // Results are handled asynchronously via searchManager.subscribe() → handleSearchResult()
+      // The "正在检索" message will be updated in handleSearchResult when results arrive
       setQuery(text);
       const searchingMsg = { role: "assistant" as const, content: `正在检索「${text}」...` };
-      const withSearching = [...updatedMessages, searchingMsg];
-      setChatMessages(withSearching);
+      setChatMessages([...updatedMessages, searchingMsg]);
 
-      const count = await handleSearchFromChat(text);
-
-      // Update the searching message with results
-      setChatMessages(prev => {
-        const updated = [...prev];
-        const lastAssistantIdx = updated.length - 1;
-        if (count && count > 0) {
-          updated[lastAssistantIdx] = {
-            role: "assistant",
-            content: `检索完成！找到 ${count} 篇相关文献，已添加到右侧列表。\n\n你可以继续检索其他主题，或关闭「学术检索」开关，基于已有文献进行深度问答分析。`,
-          };
-        } else {
-          updated[lastAssistantIdx] = {
-            role: "assistant",
-            content: "检索未找到结果，请尝试调整关键词。",
-          };
-        }
-        return updated;
-      });
+      await handleSearchFromChat(text);
     } else {
       // Q&A RAG mode: answer based on existing papers
       handleChatSend(updatedMessages);

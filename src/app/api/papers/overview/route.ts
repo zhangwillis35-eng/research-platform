@@ -9,7 +9,7 @@ export async function POST(request: Request) {
   setAIContext(auth.id, "/api/papers/overview");
 
   try {
-    const { query, papers, provider = "gemini" } = await request.json();
+    const { query, papers, provider = "deepseek-fast" } = await request.json();
 
     if (!papers?.length) {
       return NextResponse.json({ error: "No papers to analyze" }, { status: 400 });

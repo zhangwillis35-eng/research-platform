@@ -267,7 +267,7 @@ export async function POST(request: Request) {
     setAIContext(auth.id, "/api/graph/extract");
 
     const body = await request.json();
-    const { papers, provider = "gemini", nlmContext = "" } = body as {
+    const { papers, provider = "deepseek-fast", nlmContext = "" } = body as {
       papers: Paper[];
       provider?: AIProvider;
       nlmContext?: string;

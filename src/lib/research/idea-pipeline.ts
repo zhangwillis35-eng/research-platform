@@ -194,7 +194,7 @@ async function simulatePeerReview(
 // Full pipeline (enhanced with optional NotebookLM)
 export async function runIdeaPipeline(
   papers: UnifiedPaper[],
-  provider: AIProvider = "gemini",
+  provider: AIProvider = "deepseek-fast",
   withPeerReview: boolean = true,
   notebookLMConfig?: NotebookLMConfig | null,
   topic?: string

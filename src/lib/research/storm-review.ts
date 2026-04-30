@@ -67,7 +67,7 @@ export async function generateOutline(
     topic,
     papers,
     perspectives = ["理论视角", "实证方法视角", "应用情境视角", "批评与争议视角"],
-    provider = "gemini",
+    provider = "deepseek-fast",
   } = options;
 
   const paperSummaries = papers
@@ -126,7 +126,7 @@ paperRefs 中的数字对应文献编号 [1], [2] 等。确保每个发现都有
 export async function* generateReviewStream(
   outline: ReviewOutline,
   papers: UnifiedPaper[],
-  provider: AIProvider = "gemini",
+  provider: AIProvider = "deepseek-fast",
   nlmInsights?: string
 ): AsyncGenerator<string> {
   const paperList = papers

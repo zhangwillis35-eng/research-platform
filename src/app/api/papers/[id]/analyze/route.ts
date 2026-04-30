@@ -61,7 +61,7 @@ export async function POST(
   if (auth instanceof NextResponse) return auth;
   setAIContext(auth.id, "/api/papers/analyze");
 
-  const { provider = "gemini" } = await request.json().catch(() => ({}));
+  const { provider = "deepseek-fast" } = await request.json().catch(() => ({}));
 
   const paper = await prisma.paper.findUnique({ where: { id } });
   if (!paper) {

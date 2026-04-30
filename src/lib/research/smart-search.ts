@@ -184,7 +184,7 @@ RULES:
 
 export async function buildSmartSearchPlan(
   input: string,
-  provider: AIProvider = "gemini"
+  provider: AIProvider = "deepseek-fast"
 ): Promise<SmartSearchPlan> {
   try {
     console.log(`[smart-search] Calling AI provider: ${provider}`);
@@ -229,7 +229,7 @@ export async function buildSmartSearchPlan(
 
 export async function smartSearch(
   input: string,
-  provider: AIProvider = "gemini",
+  provider: AIProvider = "deepseek-fast",
   limit: number = 20,
   enableRelevanceScoring: boolean = true,
   onProgress?: (phase: string, detail: string) => void
@@ -445,11 +445,15 @@ export async function smartSearch(
     scoredPapers = papers.map((p) => ({ ...p, relevanceScore: undefined }));
   }
 
+  // Enforce user-requested limit on final output (unless unlimited mode)
+  const isLimited = limit < 999;
+  const finalPapers = isLimited ? scoredPapers.slice(0, limit) : scoredPapers;
+
   return {
     plan,
-    papers: scoredPapers,
+    papers: finalPapers,
     stats: {
-      total: scoredPapers.length,
+      total: finalPapers.length,
       totalBeforeFilter,
       totalBeforeRelevance,
       byQuery,

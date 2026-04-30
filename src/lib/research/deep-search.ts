@@ -24,7 +24,7 @@ export interface DeepSearchResult {
 
 export async function deepSearch(
   topic: string,
-  provider: AIProvider = "gemini"
+  provider: AIProvider = "deepseek-fast"
 ): Promise<DeepSearchResult> {
   const startTime = Date.now();
 

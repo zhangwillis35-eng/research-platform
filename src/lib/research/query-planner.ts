@@ -39,7 +39,7 @@ Output STRICT JSON only:
 
 export async function planResearch(
   topic: string,
-  provider: AIProvider = "gemini"
+  provider: AIProvider = "deepseek-fast"
 ): Promise<ResearchPlan> {
   const response = await callAI({
     provider,
