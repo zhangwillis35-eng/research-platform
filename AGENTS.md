@@ -16,6 +16,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
    ```
    **注意：** 用户的开发机是 Mac，`/opt/scholarflow` 目录在远程服务器上，不是本地。务必先提醒用户 SSH 登录，不要直接给出 `cd /opt/scholarflow` 命令。
 
+## 外部工具集成维护
+
+每当新增外部工具（API、服务、模型）时，**必须**同步更新 `src/app/projects/[id]/page.tsx` 中「外部工具集成」部分的列表，为每个工具用一句简短的话介绍其功能。确保用户在「项目概览」中能看到所有已接入的外部工具。
+
 ## 常见问题修复
 
 ### Turbopack 缓存损坏（页面报 Internal Server Error）
