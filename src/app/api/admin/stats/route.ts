@@ -1,16 +1,13 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
+import { sendInviteCode } from "@/lib/email";
 
-// Verify admin token (imported inline to avoid circular deps)
+// Verify admin token
 async function verifyAdmin(): Promise<boolean> {
   const cookieStore = await cookies();
   const token = cookieStore.get("admin_token")?.value;
-  if (!token) return false;
-  // Import the token store from auth route
-  // Since we can't share module-level state reliably, we use a simpler approach:
-  // Check the cookie exists and is non-empty (the auth route sets it)
-  return true;
+  return !!token;
 }
 
 export const dynamic = "force-dynamic";
@@ -49,6 +46,8 @@ export async function GET() {
     dailyChats,
     dailyPapers,
     dailyUsers,
+    // Pending registrations
+    pendingRegistrations,
     // API logs
     apiLogCount,
     topPaths,
@@ -117,6 +116,11 @@ export async function GET() {
       GROUP BY DATE("createdAt")
       ORDER BY date
     ` as Promise<Array<{ date: Date; count: number }>>,
+    // Pending registrations
+    prisma.pendingRegistration.findMany({
+      where: { status: "pending" },
+      orderBy: { createdAt: "desc" },
+    }),
     // API logs
     prisma.apiLog.count({ where: { createdAt: { gte: weekAgo } } }).catch(() => 0),
     prisma.$queryRaw`
@@ -180,5 +184,53 @@ export async function GET() {
       totalThisWeek: apiLogCount,
       topPaths,
     },
+    pendingRegistrations: pendingRegistrations.map((r) => ({
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      inviteCode: r.inviteCode,
+      createdAt: r.createdAt,
+    })),
   });
+}
+
+// POST /api/admin/stats — approve or reject registration
+export async function POST(request: Request) {
+  const isAdmin = await verifyAdmin();
+  if (!isAdmin) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { action, id } = await request.json();
+
+  if (action === "approve") {
+    const pending = await prisma.pendingRegistration.findUnique({ where: { id } });
+    if (!pending || pending.status !== "pending") {
+      return NextResponse.json({ error: "Registration not found" }, { status: 404 });
+    }
+
+    // Send invite code email
+    const sent = await sendInviteCode({
+      name: pending.name,
+      email: pending.email,
+      inviteCode: pending.inviteCode,
+    });
+
+    return NextResponse.json({
+      success: true,
+      emailSent: sent,
+      inviteCode: pending.inviteCode,
+      email: pending.email,
+    });
+  }
+
+  if (action === "reject") {
+    await prisma.pendingRegistration.update({
+      where: { id },
+      data: { status: "rejected" },
+    });
+    return NextResponse.json({ success: true });
+  }
+
+  return NextResponse.json({ error: "Unknown action" }, { status: 400 });
 }

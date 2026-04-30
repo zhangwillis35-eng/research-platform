@@ -1,10 +1,9 @@
 /**
- * Email service for sending registration notifications to admin.
+ * Email service — QQ Mail SMTP.
  *
- * Uses QQ Mail SMTP. Required env vars:
- *   SMTP_USER      — QQ邮箱地址 (e.g. 291950574@qq.com)
- *   SMTP_PASS      — QQ邮箱授权码 (非登录密码，在 设置→账户→POP3/SMTP 中获取)
- *   ADMIN_EMAIL    — 接收注册通知的管理员邮箱 (默认 291950574@qq.com)
+ * Required env vars:
+ *   SMTP_USER   — QQ邮箱地址
+ *   SMTP_PASS   — QQ邮箱授权码 (非登录密码)
  */
 
 import nodemailer from "nodemailer";
@@ -29,60 +28,50 @@ function getTransport() {
   return cachedTransport;
 }
 
-/** Send registration notification to admin */
-export async function notifyAdminNewRegistration(params: {
+/** Send invite code to user after admin approval */
+export async function sendInviteCode(params: {
   name: string;
   email: string;
   inviteCode: string;
 }): Promise<boolean> {
   const transport = getTransport();
-  const adminEmail = process.env.ADMIN_EMAIL || "291950574@qq.com";
   const senderEmail = process.env.SMTP_USER;
 
   if (!transport || !senderEmail) {
-    // Dev fallback: log to console
-    console.log(`\n========================================`);
-    console.log(`  [DEV] 新注册申请`);
-    console.log(`  姓名: ${params.name}`);
-    console.log(`  邮箱: ${params.email}`);
-    console.log(`  邀请码: ${params.inviteCode}`);
-    console.log(`========================================\n`);
-    return true;
+    console.warn("[Email] SMTP not configured, cannot send invite code");
+    return false;
   }
 
   try {
     await transport.sendMail({
       from: `"ScholarFlow" <${senderEmail}>`,
-      to: adminEmail,
-      subject: `[ScholarFlow] 新用户注册申请 — ${params.name}`,
+      to: params.email,
+      subject: `你的 ScholarFlow 邀请码`,
       html: `
         <div style="font-family: -apple-system, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px;">
-          <h2 style="color: #1a1a2e; margin-bottom: 24px;">新用户注册申请</h2>
-          <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-              <td style="padding: 8px 12px; color: #666; width: 80px;">昵称</td>
-              <td style="padding: 8px 12px; font-weight: 500;">${params.name}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 12px; color: #666;">邮箱</td>
-              <td style="padding: 8px 12px; font-weight: 500;">${params.email}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 12px; color: #666;">邀请码</td>
-              <td style="padding: 8px 12px; font-family: monospace; font-size: 18px; font-weight: bold; color: #0d9488; letter-spacing: 2px;">${params.inviteCode}</td>
-            </tr>
-          </table>
-          <p style="margin-top: 24px; color: #666; font-size: 14px;">
-            审批通过后，请将上述邀请码发送到用户邮箱 <strong>${params.email}</strong>。
+          <div style="text-align: center; margin-bottom: 24px;">
+            <div style="display: inline-block; width: 48px; height: 48px; border-radius: 12px; background: #0d9488; line-height: 48px; text-align: center; color: white; font-weight: bold; font-size: 20px;">S</div>
+          </div>
+          <h2 style="color: #1a1a2e; text-align: center; margin-bottom: 8px;">欢迎加入 ScholarFlow</h2>
+          <p style="color: #666; text-align: center; margin-bottom: 32px;">Hi ${params.name}，你的注册申请已通过审批</p>
+          <div style="background: #f0fdfa; border: 2px solid #0d948833; border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
+            <p style="color: #666; font-size: 14px; margin: 0 0 8px 0;">你的邀请码</p>
+            <p style="font-family: monospace; font-size: 32px; font-weight: bold; color: #0d9488; letter-spacing: 4px; margin: 0;">${params.inviteCode}</p>
+          </div>
+          <div style="text-align: center; margin-bottom: 24px;">
+            <a href="https://scholarflow-willis.cn/login" style="display: inline-block; background: #0d9488; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 500;">前往登录</a>
+          </div>
+          <p style="color: #999; font-size: 12px; text-align: center;">
+            在登录页点击「已有邀请码」，输入上方邀请码即可完成注册。
           </p>
           <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
-          <p style="color: #999; font-size: 12px;">ScholarFlow · AI Research Platform</p>
+          <p style="color: #bbb; font-size: 11px; text-align: center;">ScholarFlow · AI-Powered Research Platform</p>
         </div>
       `,
     });
     return true;
   } catch (err) {
-    console.error("[Email] Send failed:", err);
+    console.error("[Email] Send invite code failed:", err);
     return false;
   }
 }

@@ -49,6 +49,13 @@ interface Stats {
     totalThisWeek: number;
     topPaths: Array<{ path: string; count: number; avgDuration: number }>;
   };
+  pendingRegistrations: Array<{
+    id: string;
+    name: string;
+    email: string;
+    inviteCode: string;
+    createdAt: string;
+  }>;
 }
 
 // ─── Login Form ─────────────────────────────────
@@ -239,7 +246,34 @@ function Dashboard() {
 
   if (!stats) return null;
 
-  const { overview, recent, users, dailyActivity, apiLogs } = stats;
+  const { overview, recent, users, dailyActivity, apiLogs, pendingRegistrations } = stats;
+
+  async function handleApprove(id: string) {
+    const res = await fetch("/api/admin/stats", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "approve", id }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      if (data.emailSent) {
+        alert(`邀请码已发送至 ${data.email}`);
+      } else {
+        alert(`SMTP 未配置，请手动将邀请码发给用户：\n\n邮箱: ${data.email}\n邀请码: ${data.inviteCode}`);
+      }
+      fetchStats();
+    }
+  }
+
+  async function handleReject(id: string) {
+    if (!confirm("确认拒绝该注册申请？")) return;
+    await fetch("/api/admin/stats", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "reject", id }),
+    });
+    fetchStats();
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
@@ -282,6 +316,50 @@ function Dashboard() {
             <StatCard label="Total Chats" value={overview.totalChats} delta={recent.chats} />
           </div>
         </section>
+
+        {/* Pending Registrations */}
+        {pendingRegistrations.length > 0 && (
+          <section>
+            <h2 className="text-sm font-semibold text-amber-400 mb-4">
+              Pending Registrations ({pendingRegistrations.length})
+            </h2>
+            <div className="space-y-2">
+              {pendingRegistrations.map((r) => (
+                <div key={r.id} className="bg-zinc-900 border border-amber-900/50 rounded-xl px-4 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-8 h-8 rounded-full bg-amber-950 flex items-center justify-center text-sm font-medium text-amber-400">
+                      {r.name[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-white">{r.name}</p>
+                      <p className="text-xs text-zinc-500">{r.email}</p>
+                    </div>
+                    <span className="text-xs text-zinc-600">
+                      {new Date(r.createdAt).toLocaleString("zh-CN")}
+                    </span>
+                    <span className="text-xs font-mono text-zinc-600 bg-zinc-800 px-2 py-0.5 rounded">
+                      {r.inviteCode}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleApprove(r.id)}
+                      className="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
+                    >
+                      Approve & Send
+                    </button>
+                    <button
+                      onClick={() => handleReject(r.id)}
+                      className="px-3 py-1.5 text-xs font-medium bg-zinc-800 hover:bg-red-900 text-zinc-400 hover:text-red-400 rounded-lg transition-colors"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Activity Charts */}
         <section>
