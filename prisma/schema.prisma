@@ -22,15 +22,15 @@ model User {
   projects ResearchProject[]
 }
 
-model VerificationCode {
-  id        String   @id @default(cuid())
-  phone     String
-  code      String
-  expiresAt DateTime
-  used      Boolean  @default(false)
-  createdAt DateTime @default(now())
-
-  @@index([phone, code])
+model PendingRegistration {
+  id         String   @id @default(cuid())
+  name       String
+  email      String   @unique
+  password   String   // bcrypt hashed
+  inviteCode String   @unique
+  status     String   @default("pending") // pending | approved | rejected
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 model ResearchProject {
@@ -79,7 +79,8 @@ model Paper {
   aiAnalysis     String?  @db.Text // AI analysis: model, variables, methods, contribution
   fullText       String?  @db.Text // extracted full text from PDF upload
   pdfFileName    String? // original uploaded PDF filename
-  pdfData        Bytes? // raw PDF binary stored in Neon
+  pdfData        Bytes? // raw PDF binary (legacy, migrating to OSS)
+  pdfOssKey      String? // OSS object key for PDF
   tags           String[] @default([]) // user tags for organization
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt

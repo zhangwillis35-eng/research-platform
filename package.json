@@ -9,9 +9,6 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@alicloud/dysmsapi20170525": "^4.5.1",
-    "@alicloud/openapi-client": "^0.4.15",
-    "@alicloud/tea-util": "^1.4.11",
     "@anthropic-ai/sdk": "^0.90.0",
     "@base-ui/react": "^1.4.0",
     "@fontsource-variable/noto-serif-sc": "^5.2.10",
@@ -22,6 +19,7 @@
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.37.0",
     "@xyflow/react": "^12.10.2",
+    "ali-oss": "^6.23.0",
     "bcryptjs": "^3.0.3",
     "citation-js": "^0.7.22",
     "class-variance-authority": "^0.7.1",
@@ -31,6 +29,7 @@
     "geist": "^1.7.0",
     "lucide-react": "^1.8.0",
     "next": "16.2.4",
+    "nodemailer": "^8.0.7",
     "openai": "^6.34.0",
     "pg": "^8.20.0",
     "playwright": "^1.59.1",
@@ -47,9 +46,11 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/ali-oss": "^6.23.3",
     "@types/bcryptjs": "^2.4.6",
     "@types/d3": "^7.4.3",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

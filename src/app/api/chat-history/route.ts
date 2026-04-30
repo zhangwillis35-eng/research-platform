@@ -52,9 +52,11 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "projectId and query required" }, { status: 400 });
   }
 
-  await prisma.chatHistory.deleteMany({
-    where: { projectId, query },
-  });
+  // Delete chat history and associated search history together
+  await Promise.all([
+    prisma.chatHistory.deleteMany({ where: { projectId, query } }),
+    prisma.searchHistory.deleteMany({ where: { projectId, query } }),
+  ]);
 
   return NextResponse.json({ success: true });
 }

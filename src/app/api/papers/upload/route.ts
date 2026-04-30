@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { extractText, getMeta } from "unpdf";
+import { uploadPdf, pdfKey } from "@/lib/oss";
 
 /**
- * POST /api/papers/upload — Upload a PDF and extract text.
+ * POST /api/papers/upload — Upload a PDF, extract text, store in OSS.
  *
  * Accepts multipart/form-data with:
  *   - file: PDF file
@@ -60,17 +61,20 @@ export async function POST(request: Request) {
     );
     const extractedAbstract = abstractMatch?.[1]?.trim();
 
-    // Store raw PDF binary for download later
-    const pdfData = Buffer.from(arrayBuffer);
-
     if (paperId) {
-      // Attach fullText + PDF to existing paper
+      // Upload PDF to OSS
+      const key = pdfKey(projectId, paperId, file.name);
+      const ossKey = await uploadPdf(key, Buffer.from(arrayBuffer));
+
+      // Attach fullText + OSS key to existing paper
       const paper = await prisma.paper.update({
         where: { id: paperId },
         data: {
           fullText: fullText.trim(),
           pdfFileName: file.name,
-          pdfData,
+          pdfOssKey: ossKey,
+          // Keep pdfData as fallback if OSS upload failed
+          ...(ossKey ? { pdfData: null } : { pdfData: Buffer.from(arrayBuffer) }),
         },
       });
 
@@ -81,7 +85,7 @@ export async function POST(request: Request) {
       });
     }
 
-    // Create new paper from PDF
+    // Create new paper first to get ID
     const title = pdfTitle || file.name.replace(/\.pdf$/i, "");
     const authors = pdfAuthor
       ? pdfAuthor.split(/[,;，；]/).map((name: string) => ({ name: name.trim() }))
@@ -98,12 +102,23 @@ export async function POST(request: Request) {
         referenceCount: 0,
         fullText: fullText.trim(),
         pdfFileName: file.name,
-        pdfData,
       },
     });
 
+    // Upload PDF to OSS
+    const key = pdfKey(projectId, paper.id, file.name);
+    const ossKey = await uploadPdf(key, Buffer.from(arrayBuffer));
+
+    // Update paper with OSS key (or fallback to pdfData)
+    await prisma.paper.update({
+      where: { id: paper.id },
+      data: ossKey
+        ? { pdfOssKey: ossKey }
+        : { pdfData: Buffer.from(arrayBuffer) },
+    });
+
     return NextResponse.json({
-      paper,
+      paper: { ...paper, pdfOssKey: ossKey },
       textLength: fullText.length,
       wordCount: fullText.split(/\s+/).length,
     });

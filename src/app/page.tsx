@@ -48,6 +48,11 @@ export default function HomePage() {
                 我的项目
               </Button>
             </Link>
+            <Link href="/login">
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+                登录
+              </Button>
+            </Link>
             <Link href="/projects/new">
               <Button size="sm" className="bg-teal text-teal-foreground hover:bg-teal/90">
                 开始使用
@@ -146,7 +151,12 @@ export default function HomePage() {
       <footer className="border-t py-8">
         <div className="max-w-6xl mx-auto px-6 flex items-center justify-between text-sm text-muted-foreground">
           <span className="font-heading">ScholarFlow</span>
-          <span>Powered by Claude AI & NotebookLM</span>
+          <div className="flex items-center gap-4">
+            <Link href="/help" className="hover:text-foreground transition-colors">
+              网络兼容性说明
+            </Link>
+            <span>Powered by Claude AI & NotebookLM</span>
+          </div>
         </div>
       </footer>
     </div>

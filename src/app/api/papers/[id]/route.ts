@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { getSignedUrl } from "@/lib/oss";
 
 // GET /api/papers/[id]?pdf=true — download stored PDF
 export async function GET(
@@ -12,19 +13,32 @@ export async function GET(
   if (searchParams.get("pdf") === "true") {
     const paper = await prisma.paper.findUnique({
       where: { id },
-      select: { pdfData: true, pdfFileName: true },
+      select: { pdfData: true, pdfFileName: true, pdfOssKey: true },
     });
 
-    if (!paper?.pdfData) {
-      return NextResponse.json({ error: "No PDF stored" }, { status: 404 });
+    if (!paper) {
+      return NextResponse.json({ error: "Paper not found" }, { status: 404 });
     }
 
-    return new Response(paper.pdfData, {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${paper.pdfFileName ?? "paper.pdf"}"`,
-      },
-    });
+    // Prefer OSS → redirect to signed URL
+    if (paper.pdfOssKey) {
+      const url = getSignedUrl(paper.pdfOssKey);
+      if (url) {
+        return NextResponse.redirect(url);
+      }
+    }
+
+    // Fallback: serve from DB
+    if (paper.pdfData) {
+      return new Response(paper.pdfData, {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="${paper.pdfFileName ?? "paper.pdf"}"`,
+        },
+      });
+    }
+
+    return NextResponse.json({ error: "No PDF stored" }, { status: 404 });
   }
 
   // Default: return paper metadata
