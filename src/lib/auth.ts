@@ -4,7 +4,7 @@ import { prisma } from "./db";
 export interface SessionUser {
   id: string;
   name: string | null;
-  email: string;
+  email: string | null;
 }
 
 /**
