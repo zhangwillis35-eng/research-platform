@@ -46,13 +46,15 @@ function getBatchSize(paperCount: number): number {
 }
 const SCORING_DEFAULT_PROVIDER: AIProvider = "deepseek-fast";
 
-const SINGLE_SYSTEM = `You are a management research literature expert. Evaluate the paper's relevance to the user's query based on its title and abstract.
+const SINGLE_SYSTEM = `You are a management research literature expert. Evaluate the paper's relevance to the user's query.
+
+You are given the paper's title, abstract, and possibly CITATION CONTEXTS (sentences from OTHER papers that cite this paper — these reveal the paper's key contributions and findings even without the full text).
 
 Scoring (0-10): 9-10 exact match, 7-8 highly relevant, 5-6 moderately relevant, 3-4 marginally relevant, 0-2 irrelevant.
-Rules: Base analysis strictly on actual content provided (title + abstract). Never fabricate.
+Rules: Base analysis strictly on actual content provided. Use citation contexts to understand the paper's impact and findings. Never fabricate.
 
 Output a JSON object. Use Chinese for all text fields:
-{"score":8,"reason":"(1 sentence in Chinese)","keyMatch":["matched concepts"],"contribution":"(1 sentence in Chinese)","methodology":"(1 sentence in Chinese)","innovation":"(1 sentence in Chinese)","dataSource":"摘要"}`;
+{"score":8,"reason":"(1-2 sentences in Chinese)","keyMatch":["matched concepts"],"contribution":"(1-2 sentences in Chinese)","methodology":"(1 sentence in Chinese)","innovation":"(1 sentence in Chinese)","dataSource":"摘要+引用上下文"}`;
 
 const FULLTEXT_SYSTEM = `You are a management research literature expert. Evaluate the paper's relevance to the user's query based on its FULL TEXT content.
 
@@ -80,13 +82,15 @@ Rules: Base analysis strictly on actual content provided. Never fabricate. For f
 Output a JSON array, one element per paper. Use Chinese for all text fields:
 [{"index":0,"score":8,"reason":"(detailed in Chinese)","keyMatch":["concepts"],"contribution":"(specific in Chinese)","methodology":"(specific in Chinese)","innovation":"(Chinese)","dataSource":"全文 or 摘要"}]`;
 
-const BATCH_SYSTEM = `You are a management research literature expert. Evaluate multiple papers' relevance to the user's query based on their titles and abstracts.
+const BATCH_SYSTEM = `You are a management research literature expert. Evaluate multiple papers' relevance to the user's query.
+
+Each paper includes title, abstract, and possibly CITATION CONTEXTS (sentences from other papers citing this paper — these reveal contributions and findings even without full text).
 
 Scoring (0-10): 9-10 exact match, 7-8 highly relevant, 5-6 moderately relevant, 3-4 marginally relevant, 0-2 irrelevant.
-Rules: Base analysis strictly on actual content provided (title + abstract). Never fabricate.
+Rules: Base analysis on ALL provided content (abstract + citation contexts). Never fabricate.
 
 Output a JSON array, one element per paper. Use Chinese for all text fields:
-[{"index":0,"score":8,"reason":"(1 sentence in Chinese)","keyMatch":["concepts"],"contribution":"(1 sentence in Chinese)","methodology":"(1 sentence in Chinese)","innovation":"(1 sentence in Chinese)","dataSource":"摘要"}]`;
+[{"index":0,"score":8,"reason":"(1-2 sentences in Chinese)","keyMatch":["concepts"],"contribution":"(1-2 sentences in Chinese)","methodology":"(1 sentence in Chinese)","innovation":"(1 sentence in Chinese)","dataSource":"摘要+引用上下文"}]`;
 
 function buildSinglePrompt(
   paper: UnifiedPaper,
@@ -97,8 +101,14 @@ function buildSinglePrompt(
     ? `Query: "${userQuery}" (${translatedQuery})`
     : `Query: "${userQuery}"`;
 
-  // Always include abstract — papers without abstracts should have been enriched upstream
-  const paperText = `Title: ${paper.title}\nVenue: ${paper.venue ?? "Unknown"}\nAbstract: ${paper.abstract ?? "N/A"}`;
+  const ext = paper as any;
+  const ctxs = ext._citationContexts as string[] | undefined;
+  const tldr = ext._tldr as string | undefined;
+  let paperText = `Title: ${paper.title}\nVenue: ${paper.venue ?? "Unknown"}\nAbstract: ${paper.abstract ?? "N/A"}`;
+  if (tldr) paperText += `\nTL;DR: ${tldr}`;
+  if (ctxs && ctxs.length > 0) {
+    paperText += `\nCitation Contexts (what other papers say about this paper):\n${ctxs.slice(0, 5).map(c => `- "${c}"`).join("\n")}`;
+  }
 
   return `${queryDesc}\n\n${paperText}`;
 }
@@ -136,7 +146,15 @@ function buildBatchPrompt(
   const papersText = papers
     .map((p, i) => {
       const idx = offset + i;
-      return `[${idx}] Title: ${p.title}\nVenue: ${p.venue ?? "Unknown"}\nAbstract: ${p.abstract ?? "N/A"}`;
+      const ext = p as any;
+      const ctxs = ext._citationContexts as string[] | undefined;
+      const tldr = ext._tldr as string | undefined;
+      let text = `[${idx}] Title: ${p.title}\nVenue: ${p.venue ?? "Unknown"}\nAbstract: ${p.abstract ?? "N/A"}`;
+      if (tldr) text += `\nTL;DR: ${tldr}`;
+      if (ctxs && ctxs.length > 0) {
+        text += `\nCitation Contexts (what other papers say about this paper):\n${ctxs.slice(0, 5).map(c => `- "${c}"`).join("\n")}`;
+      }
+      return text;
     })
     .join("\n\n---\n\n");
 
@@ -183,8 +201,9 @@ function parseScore(s: Record<string, unknown>): RelevanceScore {
 }
 
 /**
- * Score relevance — abstract-only, no full-text fetching.
- * Uses batch mode for 50+ papers (8 per AI call) for speed at scale.
+ * Score relevance with citation context enrichment.
+ * For papers without full text, fetches S2 citation contexts to supplement abstracts.
+ * Uses batch mode for 20+ papers.
  */
 export async function scoreRelevance(
   papers: UnifiedPaper[],
@@ -197,6 +216,35 @@ export async function scoreRelevance(
   // Auto-downgrade to deepseek-fast for scoring
   const scoringProvider: AIProvider =
     provider === "deepseek" || provider === "deepseek-pro" ? "deepseek-fast" : provider;
+
+  // Enrich papers with S2 citation contexts (parallel, non-blocking)
+  // This gives us insight into what other papers say about each paper
+  try {
+    const { getExtendedPaperInfo } = await import("@/lib/sources/semantic-scholar");
+    const needContext = papers.filter(p =>
+      (p.doi || p.externalId) && !(p as any).fullText
+    ).slice(0, 40); // Top 40 papers without full text
+
+    if (needContext.length > 0) {
+      console.log(`[relevance-scorer] Fetching citation contexts for ${needContext.length} papers...`);
+      const contextPromises = needContext.map(async (paper) => {
+        const id = paper.externalId || paper.doi!;
+        const info = await getExtendedPaperInfo(id).catch(() => null);
+        if (info) {
+          const p = paper as any;
+          if (info.contexts.length > 0) {
+            p._citationContexts = info.contexts;
+          }
+          if (info.tldr && (!paper.abstract || info.tldr.length > paper.abstract.length * 0.5)) {
+            p._tldr = info.tldr;
+          }
+        }
+      });
+      await Promise.all(contextPromises);
+    }
+  } catch (err) {
+    console.error("[relevance-scorer] Citation context fetch failed:", err);
+  }
 
   const useBatchMode = papers.length >= BATCH_SCORING_THRESHOLD;
   const batchSize = getBatchSize(papers.length);

@@ -154,6 +154,62 @@ export async function getReferencedPapers(
   }
 }
 
+// ─── Get citation contexts (what other papers say ABOUT this paper) ─────
+
+export async function getCitationContexts(
+  paperId: string,
+  limit: number = 5
+): Promise<string[]> {
+  try {
+    const res = await fetchWithRetry(
+      `${BASE_URL}/paper/${paperId}/citations?fields=contexts,title&limit=${limit}`,
+      { headers: getHeaders() },
+      { maxRetries: 2, baseDelayMs: 1000, timeoutMs: 8000 }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    const contexts: string[] = [];
+    for (const item of (data.data ?? [])) {
+      const ctxs = item.contexts as string[] | undefined;
+      if (ctxs) {
+        for (const c of ctxs) {
+          if (c.length > 50) contexts.push(c);
+        }
+      }
+    }
+    return contexts.slice(0, 10); // Max 10 citation context sentences
+  } catch {
+    return [];
+  }
+}
+
+// ─── Get extended paper details (TLDR + contexts + references summary) ───
+
+export async function getExtendedPaperInfo(
+  identifier: string // DOI or S2 paper ID
+): Promise<{ tldr?: string; abstract?: string; contexts: string[] } | null> {
+  try {
+    const prefix = identifier.startsWith("10.") ? "DOI:" : "";
+    const res = await fetchWithRetry(
+      `${BASE_URL}/paper/${prefix}${encodeURIComponent(identifier)}?fields=abstract,tldr`,
+      { headers: getHeaders() },
+      { maxRetries: 2, baseDelayMs: 1000, timeoutMs: 8000 }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const paperId = data.paperId as string | undefined;
+    const tldr = (data.tldr as { text?: string })?.text;
+    const abstract = data.abstract as string | undefined;
+
+    // Fetch citation contexts in parallel
+    const contexts = paperId ? await getCitationContexts(paperId, 5) : [];
+
+    return { tldr, abstract, contexts };
+  } catch {
+    return null;
+  }
+}
+
 // ─── Get paper details by DOI ─────────────────
 
 export async function getPaperByDOI(doi: string): Promise<UnifiedPaper | null> {
