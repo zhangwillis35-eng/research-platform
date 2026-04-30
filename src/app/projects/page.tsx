@@ -163,6 +163,7 @@ export default function ProjectsPage() {
         {loading ? (
           <div className="text-sm text-muted-foreground">加载中...</div>
         ) : (
+          <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {projects.map((p) => (
               <div key={p.id} className="relative group border border-border/50 rounded-lg p-5 hover:border-teal/30 hover:shadow-sm transition-all duration-200 bg-card">
@@ -246,6 +247,7 @@ export default function ProjectsPage() {
               </div>
             </div>
           )}
+          </>
         )}
       </main>
     </div>
