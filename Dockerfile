@@ -39,6 +39,10 @@ COPY --from=builder /app/prisma ./prisma
 # Prisma 7 generated client location
 COPY --from=builder /app/src/generated ./src/generated
 
+# External packages not bundled by Next.js standalone
+COPY --from=builder /app/node_modules/nodemailer ./node_modules/nodemailer
+COPY --from=builder /app/node_modules/ali-oss ./node_modules/ali-oss
+
 USER nextjs
 
 EXPOSE 3000
