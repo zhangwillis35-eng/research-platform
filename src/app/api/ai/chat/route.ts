@@ -1,4 +1,4 @@
-import { streamAI } from "@/lib/ai";
+import { streamAI, setAIContext } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
 import { NextResponse } from "next/server";
@@ -7,6 +7,7 @@ export async function POST(request: Request) {
   try {
     const auth = await requireAuth();
     if (auth instanceof NextResponse) return auth;
+    setAIContext(auth.id, "/api/ai/chat");
     const body = await request.json();
     const {
       provider = "gemini",

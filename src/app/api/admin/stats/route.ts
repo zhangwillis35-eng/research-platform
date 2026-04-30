@@ -51,6 +51,11 @@ export async function GET() {
     // API logs
     apiLogCount,
     topPaths,
+    // Token usage
+    tokenByProvider,
+    tokenByUser,
+    tokenDaily,
+    tokenUserProvider,
   ] = await Promise.all([
     // Totals
     prisma.user.count(),
@@ -131,6 +136,49 @@ export async function GET() {
       ORDER BY count DESC
       LIMIT 20
     `.catch(() => []) as Promise<Array<{ path: string; count: number; avgDuration: number }>>,
+    // Token usage — by provider (all time)
+    prisma.$queryRaw`
+      SELECT provider, model,
+        SUM("inputTokens")::int as "totalInput",
+        SUM("outputTokens")::int as "totalOutput",
+        COUNT(*)::int as calls
+      FROM "TokenUsage"
+      GROUP BY provider, model
+      ORDER BY "totalInput" + "totalOutput" DESC
+    `.catch(() => []) as Promise<Array<{ provider: string; model: string; totalInput: number; totalOutput: number; calls: number }>>,
+    // Token usage — by user (all time)
+    prisma.$queryRaw`
+      SELECT t."userId", u.name, u.email,
+        SUM(t."inputTokens")::int as "totalInput",
+        SUM(t."outputTokens")::int as "totalOutput",
+        COUNT(*)::int as calls
+      FROM "TokenUsage" t
+      LEFT JOIN "User" u ON u.id = t."userId"
+      GROUP BY t."userId", u.name, u.email
+      ORDER BY "totalInput" + "totalOutput" DESC
+    `.catch(() => []) as Promise<Array<{ userId: string; name: string | null; email: string | null; totalInput: number; totalOutput: number; calls: number }>>,
+    // Token usage — daily (last 30 days)
+    prisma.$queryRaw`
+      SELECT DATE("createdAt") as date, provider,
+        SUM("inputTokens")::int as "totalInput",
+        SUM("outputTokens")::int as "totalOutput",
+        COUNT(*)::int as calls
+      FROM "TokenUsage"
+      WHERE "createdAt" >= ${monthAgo}
+      GROUP BY DATE("createdAt"), provider
+      ORDER BY date
+    `.catch(() => []) as Promise<Array<{ date: Date; provider: string; totalInput: number; totalOutput: number; calls: number }>>,
+    // Token usage — by user by provider (detailed)
+    prisma.$queryRaw`
+      SELECT t."userId", u.name, u.email, t.provider, t.model,
+        SUM(t."inputTokens")::int as "totalInput",
+        SUM(t."outputTokens")::int as "totalOutput",
+        COUNT(*)::int as calls
+      FROM "TokenUsage" t
+      LEFT JOIN "User" u ON u.id = t."userId"
+      GROUP BY t."userId", u.name, u.email, t.provider, t.model
+      ORDER BY u.name, "totalInput" + "totalOutput" DESC
+    `.catch(() => []) as Promise<Array<{ userId: string; name: string | null; email: string | null; provider: string; model: string; totalInput: number; totalOutput: number; calls: number }>>,
   ]);
 
   return NextResponse.json({
@@ -191,6 +239,12 @@ export async function GET() {
       inviteCode: r.inviteCode,
       createdAt: r.createdAt,
     })),
+    tokenUsage: {
+      byProvider: tokenByProvider,
+      byUser: tokenByUser,
+      daily: tokenDaily,
+      userProvider: tokenUserProvider,
+    },
   });
 }
 

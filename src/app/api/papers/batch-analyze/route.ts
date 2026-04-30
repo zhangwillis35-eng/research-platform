@@ -1,7 +1,7 @@
 import { requireAuth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { callAI } from "@/lib/ai";
+import { callAI, setAIContext } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
 import { concurrentPool } from "@/lib/concurrent-pool";
 import { batchFetchFullText } from "@/lib/research/fulltext-fetcher";
@@ -85,6 +85,7 @@ Return strict JSON (no markdown), respond in Chinese:
 export async function POST(request: Request) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+  setAIContext(auth.id, "/api/papers/batch-analyze");
 
   const body = await request.json();
   const { paperIds, provider, concurrency } = body as {

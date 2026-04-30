@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { callAI } from "@/lib/ai";
+import { callAI, setAIContext } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai/types";
 
 // Check if abstract looks truncated (snippet from Google Scholar, etc.)
@@ -59,6 +59,7 @@ export async function POST(
 
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
+  setAIContext(auth.id, "/api/papers/analyze");
 
   const { provider = "gemini" } = await request.json().catch(() => ({}));
 

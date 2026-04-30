@@ -5,7 +5,7 @@
  * Sections: Title, Introduction, Literature Review, Theoretical Framework,
  * Hypotheses, Methodology, Expected Contributions, References
  */
-import { streamAI } from "@/lib/ai";
+import { streamAI, setAIContext } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
 import type { UnifiedPaper } from "@/lib/sources/types";
 import { formatCitation } from "@/lib/citation";
@@ -62,6 +62,7 @@ export async function POST(request: Request) {
   try {
     const auth = await requireAuth();
     if (auth instanceof NextResponse) return auth;
+    setAIContext(auth.id, "/api/research/proposal");
 
     const body = await request.json();
     const { topic, papers, ideas, provider = "gemini-pro" } = body as {

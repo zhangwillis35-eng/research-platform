@@ -56,6 +56,12 @@ interface Stats {
     inviteCode: string;
     createdAt: string;
   }>;
+  tokenUsage: {
+    byProvider: Array<{ provider: string; model: string; totalInput: number; totalOutput: number; calls: number }>;
+    byUser: Array<{ userId: string; name: string | null; email: string | null; totalInput: number; totalOutput: number; calls: number }>;
+    daily: Array<{ date: string; provider: string; totalInput: number; totalOutput: number; calls: number }>;
+    userProvider: Array<{ userId: string; name: string | null; email: string | null; provider: string; model: string; totalInput: number; totalOutput: number; calls: number }>;
+  };
 }
 
 // ─── Login Form ─────────────────────────────────
@@ -246,7 +252,7 @@ function Dashboard() {
 
   if (!stats) return null;
 
-  const { overview, recent, users, dailyActivity, apiLogs, pendingRegistrations } = stats;
+  const { overview, recent, users, dailyActivity, apiLogs, pendingRegistrations, tokenUsage } = stats;
 
   async function handleApprove(id: string) {
     const res = await fetch("/api/admin/stats", {
@@ -371,6 +377,101 @@ function Dashboard() {
             <MiniChart data={dailyActivity.users} label="New Users" color="bg-purple-500" />
           </div>
         </section>
+
+        {/* Token Usage — By Provider */}
+        {tokenUsage.byProvider.length > 0 && (
+          <section>
+            <h2 className="text-sm font-semibold text-zinc-400 mb-4">LLM Token Usage — By Model</h2>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-800">
+                    <th className="text-left px-4 py-2 text-xs text-zinc-500 font-medium">Provider</th>
+                    <th className="text-left px-4 py-2 text-xs text-zinc-500 font-medium">Model</th>
+                    <th className="text-right px-4 py-2 text-xs text-zinc-500 font-medium">Calls</th>
+                    <th className="text-right px-4 py-2 text-xs text-zinc-500 font-medium">Input Tokens</th>
+                    <th className="text-right px-4 py-2 text-xs text-zinc-500 font-medium">Output Tokens</th>
+                    <th className="text-right px-4 py-2 text-xs text-zinc-500 font-medium">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tokenUsage.byProvider.map((p, i) => (
+                    <tr key={i} className="border-b border-zinc-800/50 last:border-0">
+                      <td className="px-4 py-2 text-zinc-300 font-medium">{p.provider}</td>
+                      <td className="px-4 py-2 font-mono text-xs text-zinc-400">{p.model}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-zinc-400">{p.calls.toLocaleString()}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-zinc-400">{p.totalInput.toLocaleString()}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-zinc-400">{p.totalOutput.toLocaleString()}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-white font-medium">{(p.totalInput + p.totalOutput).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                  <tr className="border-t border-zinc-700 bg-zinc-950/50">
+                    <td colSpan={2} className="px-4 py-2 text-zinc-300 font-medium">Total</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-zinc-300 font-medium">
+                      {tokenUsage.byProvider.reduce((s, p) => s + p.calls, 0).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums text-zinc-300 font-medium">
+                      {tokenUsage.byProvider.reduce((s, p) => s + p.totalInput, 0).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums text-zinc-300 font-medium">
+                      {tokenUsage.byProvider.reduce((s, p) => s + p.totalOutput, 0).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums text-emerald-400 font-bold">
+                      {tokenUsage.byProvider.reduce((s, p) => s + p.totalInput + p.totalOutput, 0).toLocaleString()}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {/* Token Usage — By User */}
+        {tokenUsage.byUser.length > 0 && (
+          <section>
+            <h2 className="text-sm font-semibold text-zinc-400 mb-4">LLM Token Usage — By User</h2>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-800">
+                    <th className="text-left px-4 py-2 text-xs text-zinc-500 font-medium">User</th>
+                    <th className="text-right px-4 py-2 text-xs text-zinc-500 font-medium">Calls</th>
+                    <th className="text-right px-4 py-2 text-xs text-zinc-500 font-medium">Input</th>
+                    <th className="text-right px-4 py-2 text-xs text-zinc-500 font-medium">Output</th>
+                    <th className="text-right px-4 py-2 text-xs text-zinc-500 font-medium">Total Tokens</th>
+                    <th className="text-left px-4 py-2 text-xs text-zinc-500 font-medium">Breakdown</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tokenUsage.byUser.map((u) => {
+                    const userBreakdown = tokenUsage.userProvider.filter((up) => up.userId === u.userId);
+                    return (
+                      <tr key={u.userId} className="border-b border-zinc-800/50 last:border-0">
+                        <td className="px-4 py-2">
+                          <p className="text-zinc-300 font-medium">{u.name ?? "Unnamed"}</p>
+                          <p className="text-xs text-zinc-600">{u.email}</p>
+                        </td>
+                        <td className="px-4 py-2 text-right tabular-nums text-zinc-400">{u.calls.toLocaleString()}</td>
+                        <td className="px-4 py-2 text-right tabular-nums text-zinc-400">{u.totalInput.toLocaleString()}</td>
+                        <td className="px-4 py-2 text-right tabular-nums text-zinc-400">{u.totalOutput.toLocaleString()}</td>
+                        <td className="px-4 py-2 text-right tabular-nums text-white font-medium">{(u.totalInput + u.totalOutput).toLocaleString()}</td>
+                        <td className="px-4 py-2">
+                          <div className="flex flex-wrap gap-1">
+                            {userBreakdown.map((b, i) => (
+                              <span key={i} className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded" title={`${b.model}: ${(b.totalInput + b.totalOutput).toLocaleString()} tokens`}>
+                                {b.provider} {(b.totalInput + b.totalOutput).toLocaleString()}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
 
         {/* API Logs */}
         {apiLogs.topPaths.length > 0 && (

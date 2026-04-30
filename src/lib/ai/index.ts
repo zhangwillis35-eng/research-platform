@@ -3,6 +3,7 @@ import { callClaude, streamClaude } from "./claude-client";
 import { callGemini, streamGemini } from "./gemini-client";
 import { callDeepSeek, streamDeepSeek } from "./deepseek-client";
 import { callOpenAI, streamOpenAI } from "./openai-client";
+import { logTokenUsage } from "../token-logger";
 
 export type { AIProvider, AIRequestOptions, AIResponse } from "./types";
 export { PROVIDER_MODELS } from "./types";
@@ -49,42 +50,85 @@ export const AI_PROVIDERS: {
   },
 ];
 
+/** Context for token tracking — set per-request */
+let _currentUserId: string | null = null;
+let _currentEndpoint: string | null = null;
+
+/** Set tracking context before AI calls in a request handler */
+export function setAIContext(userId: string, endpoint?: string) {
+  _currentUserId = userId;
+  _currentEndpoint = endpoint ?? null;
+}
+
+function trackUsage(response: AIResponse) {
+  if (_currentUserId && response.usage) {
+    logTokenUsage({
+      userId: _currentUserId,
+      provider: response.provider,
+      model: response.model,
+      inputTokens: response.usage.inputTokens,
+      outputTokens: response.usage.outputTokens,
+      endpoint: _currentEndpoint ?? undefined,
+    });
+  }
+}
+
 export async function callAI(options: AIRequestOptions): Promise<AIResponse> {
+  let response: AIResponse;
   switch (options.provider) {
     case "claude":
-      return callClaude(options);
+      response = await callClaude(options);
+      break;
     case "gemini":
     case "gemini-pro":
     case "gemini-flash":
-      return callGemini(options);
+      response = await callGemini(options);
+      break;
     case "deepseek":
     case "deepseek-fast":
     case "deepseek-pro":
-      return callDeepSeek(options);
+      response = await callDeepSeek(options);
+      break;
     case "chatgpt":
-      return callOpenAI(options);
+      response = await callOpenAI(options);
+      break;
     default:
       throw new Error(`Unknown provider: ${options.provider}`);
   }
+  trackUsage(response);
+  return response;
 }
 
 export async function* streamAI(
   options: AIRequestOptions
 ): AsyncGenerator<string, AIResponse> {
+  let gen: AsyncGenerator<string, AIResponse>;
   switch (options.provider) {
     case "claude":
-      return yield* streamClaude(options);
+      gen = streamClaude(options);
+      break;
     case "gemini":
     case "gemini-pro":
     case "gemini-flash":
-      return yield* streamGemini(options);
+      gen = streamGemini(options);
+      break;
     case "deepseek":
     case "deepseek-fast":
     case "deepseek-pro":
-      return yield* streamDeepSeek(options);
+      gen = streamDeepSeek(options);
+      break;
     case "chatgpt":
-      return yield* streamOpenAI(options);
+      gen = streamOpenAI(options);
+      break;
     default:
       throw new Error(`Unknown provider: ${options.provider}`);
   }
+
+  let result = await gen.next();
+  while (!result.done) {
+    yield result.value;
+    result = await gen.next();
+  }
+  trackUsage(result.value);
+  return result.value;
 }

@@ -307,6 +307,23 @@ model ApiLog {
   @@index([path, createdAt])
 }
 
+// ─── LLM Token Usage ───────────────────────────
+
+model TokenUsage {
+  id           String   @id @default(cuid())
+  userId       String
+  provider     String   // claude, gemini, deepseek, chatgpt
+  model        String   // actual model name
+  inputTokens  Int
+  outputTokens Int
+  endpoint     String?  // /api/ai/chat, /api/papers/batch-analyze, etc.
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([provider, createdAt])
+  @@index([createdAt])
+}
+
 // ─── Admin Session ─────────────────────────────
 
 model AdminSession {

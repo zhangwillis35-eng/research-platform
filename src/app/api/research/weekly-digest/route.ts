@@ -8,7 +8,7 @@
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { callAI } from "@/lib/ai";
+import { callAI, setAIContext } from "@/lib/ai";
 import { requireProjectAccess } from "@/lib/auth";
 import { searchArxiv } from "@/lib/sources/arxiv";
 import { searchGoogleScholar } from "@/lib/sources/google-scholar";
@@ -380,6 +380,7 @@ export async function POST(request: Request) {
 
     const auth = await requireProjectAccess(projectId);
     if (auth instanceof NextResponse) return auth;
+    setAIContext(auth.id, "/api/research/weekly-digest");
 
     const result = await runDigest(projectId, daysBack);
     return NextResponse.json(result);

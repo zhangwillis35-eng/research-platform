@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runIdeaPipeline } from "@/lib/research/idea-pipeline";
+import { setAIContext } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
 import type { UnifiedPaper } from "@/lib/sources/types";
 import { requireAuth } from "@/lib/auth";
@@ -8,6 +9,7 @@ export async function POST(request: Request) {
   try {
     const auth = await requireAuth();
     if (auth instanceof NextResponse) return auth;
+    setAIContext(auth.id, "/api/research/ideas");
 
     const body = await request.json();
     const {

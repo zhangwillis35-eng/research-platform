@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { callAI } from "@/lib/ai";
+import { callAI, setAIContext } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
 
@@ -87,6 +87,7 @@ export async function POST(request: Request) {
   try {
     const auth = await requireAuth();
     if (auth instanceof NextResponse) return auth;
+    setAIContext(auth.id, "/api/ai/analyze");
 
     const body = await request.json();
     const {

@@ -3,6 +3,7 @@ import {
   generateReviewStream,
   runNotebookLMAnalysis,
 } from "@/lib/research/storm-review";
+import { setAIContext } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
 import type { UnifiedPaper } from "@/lib/sources/types";
 import type { NotebookLMConfig } from "@/lib/integrations/notebooklm";
@@ -13,6 +14,7 @@ export async function POST(request: Request) {
   try {
     const auth = await requireAuth();
     if (auth instanceof NextResponse) return auth;
+    setAIContext(auth.id, "/api/research/review");
     const body = await request.json();
     const {
       topic,
