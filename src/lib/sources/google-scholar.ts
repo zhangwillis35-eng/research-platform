@@ -52,19 +52,27 @@ async function searchViaSerper(
 ): Promise<SearchResult> {
   const { query, limit = 40, yearFrom, yearTo } = options;
 
-  // Fetch page 1 (up to 20 results)
-  const page1 = await fetchSerperPage(query, apiKey, 10, 0, yearFrom, yearTo);
+  // Serper supports num=20 per page for Google Scholar
+  // Page 1: always fetch 20 results
+  const page1 = await fetchSerperPage(query, apiKey, 20, 0, yearFrom, yearTo);
   if (!page1) return { papers: [], total: 0, source: "google_scholar" };
 
   let allPapers = page1;
 
-  // Fetch page 2 if we need more results (costs 1 extra Serper call)
-  if (limit > 20 && page1.length >= 10) {
-    const page2 = await fetchSerperPage(query, apiKey, 10, page1.length, yearFrom, yearTo);
+  // Page 2: fetch if we need more and page 1 was full
+  if (limit > 20 && page1.length >= 15) {
+    const page2 = await fetchSerperPage(query, apiKey, 20, 20, yearFrom, yearTo);
     if (page2) allPapers = [...page1, ...page2];
   }
 
-  console.log(`[google-scholar] Serper returned ${allPapers.length} papers (${limit > 20 ? "2 pages" : "1 page"})`);
+  // Page 3: for unlimited/100 mode, fetch even more
+  if (limit > 50 && allPapers.length >= 35) {
+    const page3 = await fetchSerperPage(query, apiKey, 20, 40, yearFrom, yearTo);
+    if (page3) allPapers = [...allPapers, ...page3];
+  }
+
+  const pages = limit > 50 ? 3 : limit > 20 ? 2 : 1;
+  console.log(`[google-scholar] Serper returned ${allPapers.length} papers (${pages} page${pages > 1 ? "s" : ""})`);
 
   return {
     papers: allPapers,

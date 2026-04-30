@@ -195,6 +195,40 @@ function buildNormalizedSet(journals: Set<string>): Set<string> {
   return normalized;
 }
 
+// Common name variants returned by APIs (Semantic Scholar, OpenAlex, Google Scholar)
+// Map: normalized alias → canonical normalized name (already in the sets)
+const JOURNAL_ALIASES: Record<string, string> = {
+  // Abbreviations
+  "misq": "mis quarterly",
+  "amj": "academy of management journal",
+  "amr": "academy of management review",
+  "smj": "strategic management journal",
+  "asq": "administrative science quarterly",
+  "jom": "journal of operations management",
+  "jmr": "journal of marketing research",
+  "jcr": "journal of consumer research",
+  "jfe": "journal of financial economics",
+  "rfs": "review of financial studies",
+  "jf": "journal of finance",
+  "jams": "journal of the academy of marketing science",
+  "hbr": "harvard business review",
+  "jibe": "journal of international business studies",
+  // Variant spellings from APIs
+  "review of financial studies the": "review of financial studies",
+  "the review of financial studies": "review of financial studies",
+  "the journal of finance": "journal of finance",
+  "the quarterly journal of economics": "quarterly journal of economics",
+  "msom": "manufacturing and service operations management",
+  "mand som": "manufacturing and service operations management",
+  "pom": "production and operations management",
+  "obhdp": "organizational behavior and human decision processes",
+  "org science": "organization science",
+  "orgscience": "organization science",
+  "the accounting review tar": "accounting review",
+  "jae": "journal of accounting and economics",
+  "jar": "journal of accounting research",
+};
+
 const ft50Normalized = buildNormalizedSet(FT50_JOURNALS);
 const utd24Normalized = buildNormalizedSet(UTD24_JOURNALS);
 const abs4starNormalized = buildNormalizedSet(ABS4STAR_JOURNALS);
@@ -207,19 +241,14 @@ export function getJournalRanking(venue: string | undefined | null): JournalRank
   // Empty after normalization (e.g. pure Chinese names) — no match
   if (!normalized || normalized.length < 3) return { ft50: false, utd24: false, abs4star: false };
 
-  // Try exact match first, then careful substring match
+  // Resolve alias if exists
+  const resolved = JOURNAL_ALIASES[normalized] ?? normalized;
+
+  // Strict matching: exact match or known alias only
+  // NEVER use substring matching — it causes false positives like
+  // "Annals of Operations Research" matching "Operations Research"
   const matchesSet = (set: Set<string>) => {
-    if (set.has(normalized)) return true;
-    for (const j of set) {
-      if (j.length < 5 || normalized.length < 5) continue;
-      // Only match if the shorter string is at least 70% of the longer string
-      // This prevents "academy of marketing science review" matching "journal of the academy of marketing science"
-      const shorter = Math.min(j.length, normalized.length);
-      const longer = Math.max(j.length, normalized.length);
-      if (shorter / longer < 0.6) continue;
-      if (normalized.includes(j) || j.includes(normalized)) return true;
-    }
-    return false;
+    return set.has(resolved);
   };
 
   return {

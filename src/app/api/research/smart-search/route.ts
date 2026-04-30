@@ -60,8 +60,16 @@ export async function POST(request: Request) {
             }
           );
 
-          // Send final result
-          send({ type: "result", ...result });
+          // Send final result — strip fullText to save bandwidth (hasFullText flag is preserved)
+          const strippedResult = {
+            ...result,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            papers: result.papers.map((p: any) => {
+              const { fullText, ...rest } = p;
+              return rest;
+            }),
+          };
+          send({ type: "result", ...strippedResult });
           send({ type: "done" });
         } catch (error) {
           send({
@@ -91,4 +99,4 @@ export async function POST(request: Request) {
   }
 }
 
-export const maxDuration = 120;
+export const maxDuration = 300; // Increased: full-text fetching for quality tiers takes longer

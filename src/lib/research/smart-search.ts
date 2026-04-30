@@ -12,7 +12,8 @@ import type { AIProvider } from "@/lib/ai";
 import { searchAllSourcesRaw, enrichPapersBatch } from "@/lib/sources/aggregator";
 import type { SearchResult } from "@/lib/sources/types";
 import type { UnifiedPaper } from "@/lib/sources/types";
-import { scoreRelevance, filterByRelevance, type ScoredPaper } from "./relevance-scorer";
+import { scoreRelevance, scoreRelevanceWithFullText, filterByRelevance, type ScoredPaper } from "./relevance-scorer";
+import { batchFetchFullText, type FullTextResult } from "./fulltext-fetcher";
 
 export interface SearchFilters {
   minABS?: "1" | "2" | "3" | "4" | "4*";
@@ -499,26 +500,79 @@ export async function smartSearch(
     });
   }
 
-  // Step 7: Score with enriched + filtered papers (all have abstracts now)
+  // Step 7: For quality tiers (20/50), fetch full text BEFORE scoring
+  const isQualityTier = limit <= 50;
   const totalBeforeRelevance = papers.length;
+  let fullTextMap = new Map<string, FullTextResult>();
+
+  if (isQualityTier && papers.length > 0) {
+    // Pre-filter by journal quality first to avoid fetching full text for low-tier papers
+    const candidates = limit <= 20
+      ? papers.filter(p => isTopTierJournal(p as ScoredPaper) || !p.journalMeta)
+      : papers;
+
+    // Fetch full text for all candidate papers (up to 80 to have enough after filtering)
+    const toFetch = candidates.slice(0, 80);
+    onProgress?.("fulltext", `获取 ${toFetch.length} 篇论文全文...`);
+    fullTextMap = await batchFetchFullText(
+      toFetch.map(p => ({
+        doi: p.doi,
+        openAccessPdf: p.openAccessPdf,
+        unpaywallUrl: p.unpaywallUrl,
+        title: p.title,
+      })),
+      8 // Higher concurrency for batch full-text fetch
+    );
+    console.log(`[smart-search] Full text fetched: ${fullTextMap.size}/${toFetch.length} papers`);
+
+    // Attach full text to paper objects
+    for (const paper of papers) {
+      const key = paper.doi || paper.title;
+      const ft = fullTextMap.get(key);
+      if (ft) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const p = paper as any;
+        p.fullText = ft.text;
+        p.hasFullText = true;
+        p.fullTextSource = ft.source;
+        p.fullTextWordCount = ft.wordCount;
+      }
+    }
+  }
+
+  // Step 8: Score with enriched papers — use full text when available (quality tiers)
   let scoredPapers: ScoredPaper[];
   let relevanceScored = false;
 
   if (enableRelevanceScoring && papers.length > 0) {
-    onProgress?.("score", `AI 评分: ${papers.length} 篇论文...`);
-    try {
-      scoredPapers = await scoreRelevance(papers, input, plan.translatedInput, provider);
-      scoredPapers = filterByRelevance(scoredPapers, 4);
-      relevanceScored = true;
-    } catch (err) {
-      console.error("[smart-search] scoring failed:", err);
-      scoredPapers = papers.map((p) => ({ ...p, relevanceScore: undefined }));
+    if (isQualityTier && fullTextMap.size > 0) {
+      onProgress?.("score", `AI 全文深度评分: ${papers.length} 篇论文...`);
+      try {
+        scoredPapers = await scoreRelevanceWithFullText(papers, input, plan.translatedInput, provider);
+        scoredPapers = filterByRelevance(scoredPapers, 4);
+        relevanceScored = true;
+      } catch (err) {
+        console.error("[smart-search] full-text scoring failed, falling back to abstract:", err);
+        scoredPapers = await scoreRelevance(papers, input, plan.translatedInput, provider);
+        scoredPapers = filterByRelevance(scoredPapers, 4);
+        relevanceScored = true;
+      }
+    } else {
+      onProgress?.("score", `AI 评分: ${papers.length} 篇论文...`);
+      try {
+        scoredPapers = await scoreRelevance(papers, input, plan.translatedInput, provider);
+        scoredPapers = filterByRelevance(scoredPapers, 4);
+        relevanceScored = true;
+      } catch (err) {
+        console.error("[smart-search] scoring failed:", err);
+        scoredPapers = papers.map((p) => ({ ...p, relevanceScore: undefined }));
+      }
     }
   } else {
     scoredPapers = papers.map((p) => ({ ...p, relevanceScore: undefined }));
   }
 
-  // Step 8: Tiered quality filtering based on user-selected limit
+  // Step 9: Tiered quality filtering based on user-selected limit
   const finalPapers = applyTieredLimit(scoredPapers, limit, relevanceScored);
 
   return {

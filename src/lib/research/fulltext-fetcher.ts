@@ -107,9 +107,9 @@ export async function fetchFullText(paper: {
     });
   }
 
-  // Try each strategy with per-strategy timeout (5s) and total timeout (15s)
-  const totalDeadline = Date.now() + 15000; // 15s max per paper
-  const STRATEGY_TIMEOUT = 5000; // 5s max per strategy
+  // Try each strategy with per-strategy timeout and total timeout
+  const totalDeadline = Date.now() + 25000; // 25s max per paper (increased for quality tier)
+  const STRATEGY_TIMEOUT = 8000; // 8s max per strategy
 
   for (const strategy of strategies) {
     if (Date.now() >= totalDeadline) {

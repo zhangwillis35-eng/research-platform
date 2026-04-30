@@ -7,6 +7,10 @@ const REC_URL = "https://api.semanticscholar.org/recommendations/v1";
 const FIELDS =
   "title,abstract,year,citationCount,referenceCount,authors,venue,externalIds,openAccessPdf,s2FieldsOfStudy,tldr";
 
+// Extended fields including full-text availability indicators
+const EXTENDED_FIELDS =
+  "title,abstract,year,citationCount,referenceCount,authors,venue,externalIds,openAccessPdf,s2FieldsOfStudy,tldr,isOpenAccess,publicationTypes";
+
 function getHeaders(): HeadersInit {
   const headers: HeadersInit = { "Content-Type": "application/json" };
   const apiKey = getEnv("SEMANTIC_SCHOLAR_API_KEY");

@@ -54,6 +54,32 @@ Rules: Base analysis strictly on actual content provided (title + abstract). Nev
 Output a JSON object. Use Chinese for all text fields:
 {"score":8,"reason":"(1 sentence in Chinese)","keyMatch":["matched concepts"],"contribution":"(1 sentence in Chinese)","methodology":"(1 sentence in Chinese)","innovation":"(1 sentence in Chinese)","dataSource":"摘要"}`;
 
+const FULLTEXT_SYSTEM = `You are a management research literature expert. Evaluate the paper's relevance to the user's query based on its FULL TEXT content.
+
+You have access to the paper's full text. Perform a deep analysis covering:
+1. Research question and hypotheses
+2. Theoretical framework and literature positioning
+3. Methodology (data, sample, analytical techniques)
+4. Key findings and contributions
+5. Limitations and future research directions
+
+Scoring (0-10): 9-10 exact match to query, 7-8 highly relevant, 5-6 moderately relevant, 3-4 marginally relevant, 0-2 irrelevant.
+Rules: Base analysis strictly on ACTUAL CONTENT from the full text. Never fabricate. Provide detailed analysis since you have the full paper.
+
+Output a JSON object. Use Chinese for all text fields:
+{"score":8,"reason":"(2-3 sentences in Chinese, detailed)","keyMatch":["matched concepts"],"contribution":"(2-3 sentences in Chinese, specific findings)","methodology":"(2-3 sentences in Chinese, specific methods/data)","innovation":"(1-2 sentences in Chinese)","dataSource":"全文"}`;
+
+const FULLTEXT_BATCH_SYSTEM = `You are a management research literature expert. Evaluate multiple papers' relevance to the user's query. Some papers include full text, others only have abstracts.
+
+For papers WITH full text: perform deep analysis of research questions, methodology, findings, and contributions.
+For papers with ABSTRACT only: evaluate based on available information.
+
+Scoring (0-10): 9-10 exact match, 7-8 highly relevant, 5-6 moderately relevant, 3-4 marginally relevant, 0-2 irrelevant.
+Rules: Base analysis strictly on actual content provided. Never fabricate. For full-text papers, provide more detailed analysis.
+
+Output a JSON array, one element per paper. Use Chinese for all text fields:
+[{"index":0,"score":8,"reason":"(detailed in Chinese)","keyMatch":["concepts"],"contribution":"(specific in Chinese)","methodology":"(specific in Chinese)","innovation":"(Chinese)","dataSource":"全文 or 摘要"}]`;
+
 const BATCH_SYSTEM = `You are a management research literature expert. Evaluate multiple papers' relevance to the user's query based on their titles and abstracts.
 
 Scoring (0-10): 9-10 exact match, 7-8 highly relevant, 5-6 moderately relevant, 3-4 marginally relevant, 0-2 irrelevant.
@@ -77,6 +103,26 @@ function buildSinglePrompt(
   return `${queryDesc}\n\n${paperText}`;
 }
 
+function buildFullTextPrompt(
+  paper: UnifiedPaper & { fullText?: string; hasFullText?: boolean },
+  userQuery: string,
+  translatedQuery: string | undefined
+): string {
+  const queryDesc = translatedQuery
+    ? `Query: "${userQuery}" (${translatedQuery})`
+    : `Query: "${userQuery}"`;
+
+  const fullText = paper.fullText;
+  if (fullText && fullText.length > 500) {
+    // Include full text (truncated to 8000 chars for token budget)
+    const truncatedText = fullText.slice(0, 8000);
+    return `${queryDesc}\n\nTitle: ${paper.title}\nVenue: ${paper.venue ?? "Unknown"}\nYear: ${paper.year ?? "N/A"}\n\nFull Text:\n${truncatedText}`;
+  }
+
+  // Fallback to abstract
+  return `${queryDesc}\n\nTitle: ${paper.title}\nVenue: ${paper.venue ?? "Unknown"}\nAbstract: ${paper.abstract ?? "N/A"}`;
+}
+
 function buildBatchPrompt(
   papers: UnifiedPaper[],
   offset: number,
@@ -95,6 +141,32 @@ function buildBatchPrompt(
     .join("\n\n---\n\n");
 
   return `${queryDesc}\n\nEvaluate the following ${papers.length} papers:\n\n${papersText}`;
+}
+
+function buildFullTextBatchPrompt(
+  papers: Array<UnifiedPaper & { fullText?: string; hasFullText?: boolean }>,
+  offset: number,
+  userQuery: string,
+  translatedQuery: string | undefined
+): string {
+  const queryDesc = translatedQuery
+    ? `查询: "${userQuery}" (${translatedQuery})`
+    : `查询: "${userQuery}"`;
+
+  const papersText = papers
+    .map((p, i) => {
+      const idx = offset + i;
+      const hasFullText = p.fullText && p.fullText.length > 500;
+      if (hasFullText) {
+        // Include truncated full text (5000 chars per paper in batch to stay within token limits)
+        const truncatedText = p.fullText!.slice(0, 5000);
+        return `[${idx}] Title: ${p.title}\nVenue: ${p.venue ?? "Unknown"}\nYear: ${p.year ?? "N/A"}\n[数据来源: 全文]\n${truncatedText}`;
+      }
+      return `[${idx}] Title: ${p.title}\nVenue: ${p.venue ?? "Unknown"}\n[数据来源: 摘要]\nAbstract: ${p.abstract ?? "N/A"}`;
+    })
+    .join("\n\n---\n\n");
+
+  return `${queryDesc}\n\nEvaluate the following ${papers.length} papers (some include full text, others only abstracts):\n\n${papersText}`;
 }
 
 function parseScore(s: Record<string, unknown>): RelevanceScore {
@@ -230,6 +302,94 @@ export async function scoreRelevance(
       relevanceDataSource: "摘要",
       relevanceKeyMatch: score?.keyMatch ?? [],
       hasFullText: false,
+    } as ScoredPaper;
+  });
+}
+
+/**
+ * Score relevance WITH full text — used for quality tiers (20/50 papers).
+ * Papers with fullText get deep analysis; papers without get abstract-based scoring.
+ * Uses smaller batches (4 per call) to accommodate full text token usage.
+ */
+export async function scoreRelevanceWithFullText(
+  papers: UnifiedPaper[],
+  userQuery: string,
+  translatedQuery: string | undefined,
+  provider: AIProvider = SCORING_DEFAULT_PROVIDER
+): Promise<ScoredPaper[]> {
+  if (papers.length === 0) return [];
+
+  const scoringProvider: AIProvider =
+    provider === "deepseek" || provider === "deepseek-pro" ? "deepseek-fast" : provider;
+
+  const papersWithFT = papers as Array<UnifiedPaper & { fullText?: string; hasFullText?: boolean }>;
+  const ftCount = papersWithFT.filter(p => p.fullText && p.fullText.length > 500).length;
+  console.log(
+    `[relevance-scorer] Full-text scoring: ${papers.length} papers (${ftCount} with full text, ${scoringProvider})`
+  );
+
+  const allScores = new Map<number, RelevanceScore>();
+
+  // For full-text mode: smaller batches (4 papers), since full text uses more tokens
+  const batchSize = 4;
+  const batches: { papers: typeof papersWithFT; offset: number }[] = [];
+  for (let i = 0; i < papers.length; i += batchSize) {
+    batches.push({ papers: papersWithFT.slice(i, i + batchSize), offset: i });
+  }
+
+  await concurrentPool(
+    batches,
+    async (batch) => {
+      const hasFT = batch.papers.some(p => p.fullText && p.fullText.length > 500);
+      const systemPrompt = hasFT ? FULLTEXT_BATCH_SYSTEM : BATCH_SYSTEM;
+      const prompt = hasFT
+        ? buildFullTextBatchPrompt(batch.papers, batch.offset, userQuery, translatedQuery)
+        : buildBatchPrompt(batch.papers, batch.offset, userQuery, translatedQuery);
+
+      const response = await callAI({
+        provider: scoringProvider,
+        system: systemPrompt,
+        messages: [{ role: "user", content: prompt }],
+        jsonMode: true,
+        noThinking: true,
+        temperature: 0.1,
+        maxTokens: batch.papers.length * 300, // More tokens for detailed full-text analysis
+      });
+
+      const cleaned = response.content
+        .replace(/```json\s*/g, "")
+        .replace(/```\s*/g, "")
+        .trim();
+      const parsed = JSON.parse(cleaned);
+      const scores = Array.isArray(parsed) ? parsed : [parsed];
+
+      for (const s of scores) {
+        const idx = typeof s.index === "number" ? s.index : batch.offset;
+        allScores.set(idx, parseScore(s));
+      }
+    },
+    SCORING_CONCURRENCY,
+    (completed, total) => {
+      if (completed % 3 === 0 || completed === total) {
+        console.log(`[relevance-scorer] Full-text batch progress: ${completed}/${total}`);
+      }
+    }
+  );
+
+  // Merge scores back into papers
+  return papers.map((paper, i) => {
+    const score = allScores.get(i);
+    const p = paper as UnifiedPaper & { fullText?: string; hasFullText?: boolean; fullTextSource?: string; fullTextWordCount?: number };
+    return {
+      ...paper,
+      relevanceScore: score?.score ?? 5,
+      relevanceReason: score?.reason || `该论文与"${userQuery}"相关`,
+      relevanceContribution: score?.contribution || "",
+      relevanceMethodology: score?.methodology || "",
+      relevanceInnovation: score?.innovation || "",
+      relevanceDataSource: score?.dataSource || (p.hasFullText ? "全文" : "摘要"),
+      relevanceKeyMatch: score?.keyMatch ?? [],
+      hasFullText: !!p.hasFullText,
     } as ScoredPaper;
   });
 }
