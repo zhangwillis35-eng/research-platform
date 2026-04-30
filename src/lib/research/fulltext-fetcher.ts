@@ -59,11 +59,14 @@ export async function fetchFullText(paper: {
     } catch { /* continue */ }
   }
 
-  // ── Tier 2: Race next batch ──
+  // ── Tier 2: Race next batch (includes new sources) ──
   const tier2: Array<() => Promise<FullTextResult | null>> = [];
   if (paper.doi) {
     tier2.push(() => tryPMC(paper.doi!));
     tier2.push(() => tryUnpaywallAllLocations(paper.doi!));
+    tier2.push(() => tryCrossrefTDM(paper.doi!)); // Publisher-authorized TDM links
+    tier2.push(() => trySpringerOA(paper.doi!));   // Springer Nature OA XML
+    tier2.push(() => tryOpenAlexOA(paper.doi!));   // Multiple OA locations
   }
   if (paper.unpaywallUrl) {
     tier2.push(() => tryHtmlVersion(paper.unpaywallUrl!));
@@ -85,9 +88,6 @@ export async function fetchFullText(paper: {
   }
   if (paper.title.length > 10) {
     tier3.push(() => tryEuropePMCByTitle(paper.title));
-  }
-  if (paper.doi) {
-    tier3.push(() => tryCrossrefAbstract(paper.doi!));
   }
 
   for (const strategy of tier3) {
@@ -586,9 +586,9 @@ async function tryGoogleScholarCache(title: string): Promise<FullTextResult | nu
   }
 }
 
-// ─── Crossref abstract ─────────────────────────
+// ─── CrossRef TDM links (authorized full text from publishers) ────
 
-async function tryCrossrefAbstract(doi: string): Promise<FullTextResult | null> {
+async function tryCrossrefTDM(doi: string): Promise<FullTextResult | null> {
   try {
     const res = await proxyFetch(
       `https://api.crossref.org/works/${encodeURIComponent(doi)}`,
@@ -601,19 +601,159 @@ async function tryCrossrefAbstract(doi: string): Promise<FullTextResult | null> 
     if (!res.ok) return null;
 
     const data = (await res.json()) as {
-      message?: { abstract?: string };
+      message?: {
+        abstract?: string;
+        link?: Array<{
+          URL: string;
+          "content-type"?: string;
+          "content-version"?: string;
+          "intended-application"?: string;
+        }>;
+      };
     };
 
+    // Try TDM links first — these are publisher-authorized full text URLs
+    const links = data.message?.link ?? [];
+    const tdmLinks = links.filter(l =>
+      l["intended-application"] === "text-mining" ||
+      l["content-type"]?.includes("xml") ||
+      l["content-type"]?.includes("html") ||
+      l["content-type"]?.includes("plain")
+    );
+
+    for (const tdm of tdmLinks.slice(0, 3)) {
+      try {
+        const tdmRes = await proxyFetch(tdm.URL, {
+          headers: {
+            "User-Agent": "ScholarFlow/1.0 (mailto:scholarflow@research.app)",
+            Accept: tdm["content-type"] || "text/xml, text/html, text/plain",
+          },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!tdmRes.ok) continue;
+
+        const contentType = tdmRes.headers.get("content-type") ?? "";
+        const body = await tdmRes.text();
+
+        if (contentType.includes("xml")) {
+          const text = extractTextFromXml(body);
+          if (text.length > 500) {
+            console.log(`[fulltext] CrossRef TDM XML success for ${doi}`);
+            return makeResult(text, "html_scrape");
+          }
+        } else if (contentType.includes("html")) {
+          const text = extractTextFromHtml(body);
+          if (text.length > 500) {
+            console.log(`[fulltext] CrossRef TDM HTML success for ${doi}`);
+            return makeResult(text, "html_scrape");
+          }
+        } else if (body.length > 500) {
+          console.log(`[fulltext] CrossRef TDM text success for ${doi}`);
+          return makeResult(body, "html_scrape");
+        }
+      } catch { continue; }
+    }
+
+    // Fallback to abstract
     const abstract = data.message?.abstract;
     if (!abstract || abstract.length < 100) return null;
-
-    // Crossref abstracts often have JATS XML tags
-    const cleaned = abstract
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-
+    const cleaned = abstract.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
     return makeResult(cleaned, "html_scrape");
+  } catch {
+    return null;
+  }
+}
+
+// ─── Springer Nature OpenAccess API ────────────
+
+async function trySpringerOA(doi: string): Promise<FullTextResult | null> {
+  // Only for Springer Nature DOIs (10.1007, 10.1038, 10.1186)
+  if (!doi.startsWith("10.1007/") && !doi.startsWith("10.1038/") && !doi.startsWith("10.1186/")) {
+    return null;
+  }
+
+  try {
+    const { getEnv } = await import("@/lib/env");
+    const apiKey = getEnv("SPRINGER_API_KEY");
+    // Free API key from dev.springernature.com — no key = skip
+    if (!apiKey) {
+      // Try without key (limited access)
+      const res = await proxyFetch(
+        `https://api.springernature.com/openaccess/jats?q=doi:${encodeURIComponent(doi)}&p=1`,
+        { signal: AbortSignal.timeout(8000) }
+      );
+      if (!res.ok) return null;
+      const xml = await res.text();
+      const text = extractTextFromXml(xml);
+      if (text.length > 500) {
+        console.log(`[fulltext] Springer OA success for ${doi}`);
+        return makeResult(text, "html_scrape");
+      }
+      return null;
+    }
+
+    const res = await proxyFetch(
+      `https://api.springernature.com/openaccess/jats?q=doi:${encodeURIComponent(doi)}&api_key=${apiKey}&p=1`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (!res.ok) return null;
+
+    const xml = await res.text();
+    const text = extractTextFromXml(xml);
+    if (text.length > 500) {
+      console.log(`[fulltext] Springer OA success for ${doi}`);
+      return makeResult(text, "html_scrape");
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ─── OpenAlex multiple OA locations ──────────────
+
+async function tryOpenAlexOA(doi: string): Promise<FullTextResult | null> {
+  try {
+    const { getEnv } = await import("@/lib/env");
+    const email = getEnv("OPENALEX_EMAIL");
+    const params = new URLSearchParams({ filter: `doi:${doi}`, select: "open_access,best_oa_location,locations" });
+    if (email) params.set("mailto", email);
+
+    const res = await proxyFetch(`https://api.openalex.org/works?${params}`, {
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as {
+      results?: Array<{
+        open_access?: { oa_url?: string };
+        best_oa_location?: { pdf_url?: string; landing_page_url?: string };
+        locations?: Array<{ pdf_url?: string; landing_page_url?: string; source?: { type?: string } }>;
+      }>;
+    };
+
+    const work = data.results?.[0];
+    if (!work) return null;
+
+    // Try all OA locations (not just best)
+    const urls: string[] = [];
+    if (work.best_oa_location?.pdf_url) urls.push(work.best_oa_location.pdf_url);
+    if (work.open_access?.oa_url) urls.push(work.open_access.oa_url);
+    for (const loc of (work.locations ?? []).slice(0, 5)) {
+      if (loc.pdf_url) urls.push(loc.pdf_url);
+      if (loc.landing_page_url && loc.source?.type === "repository") urls.push(loc.landing_page_url);
+    }
+
+    // Deduplicate and try each
+    const uniqueUrls = [...new Set(urls)];
+    for (const url of uniqueUrls.slice(0, 4)) {
+      const result = await tryHtmlVersion(url);
+      if (result && result.text.length > 500) {
+        console.log(`[fulltext] OpenAlex OA location success for ${doi}`);
+        return result;
+      }
+    }
+    return null;
   } catch {
     return null;
   }
