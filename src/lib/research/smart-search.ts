@@ -57,6 +57,76 @@ export interface SmartSearchResult {
   };
 }
 
+// ─── Tiered quality filtering ─────────────────────────────
+// limit=20:  arXiv + JCR Q1 + SSCI Q1 + SCI Q1 + ABS 3+ only, sorted by relevance + citations
+// limit=50:  same as 20; if < 50, relax to JCR Q2
+// limit=100: no journal filter, sorted by relevance + citations, cap at 100
+// limit=999: unlimited, keep all with relevance ≥ 5
+
+function isTopTierJournal(p: ScoredPaper): boolean {
+  const meta = p.journalMeta;
+  if (!meta) return false;
+
+  // arXiv preprints always pass
+  if (p.venue?.toLowerCase().startsWith("arxiv")) return true;
+
+  // JCR Q1 (covers both SSCI Q1 and SCI Q1)
+  if (meta.jcrQuartile === "Q1") return true;
+
+  // ABS 3 star and above
+  const absOrder = ["1", "2", "3", "4", "4*"];
+  if (meta.absRating && absOrder.indexOf(meta.absRating) >= 2) return true;
+
+  return false;
+}
+
+function isQ2Journal(p: ScoredPaper): boolean {
+  return p.journalMeta?.jcrQuartile === "Q2";
+}
+
+/** Sort by relevance (desc) then citations (desc) */
+function sortByQuality(papers: ScoredPaper[]): ScoredPaper[] {
+  return papers.sort((a, b) => {
+    const scoreA = a.relevanceScore ?? 0;
+    const scoreB = b.relevanceScore ?? 0;
+    if (scoreB !== scoreA) return scoreB - scoreA;
+    return b.citationCount - a.citationCount;
+  });
+}
+
+function applyTieredLimit(papers: ScoredPaper[], limit: number, relevanceScored: boolean): ScoredPaper[] {
+  const sorted = sortByQuality(papers);
+
+  if (limit >= 999) {
+    // Unlimited: keep all with relevance ≥ 5 (if scored), no journal filter
+    if (relevanceScored) {
+      return sorted.filter(p => (p.relevanceScore ?? 0) >= 5);
+    }
+    return sorted;
+  }
+
+  if (limit >= 100) {
+    // 100: no journal filter, just top 100 by quality
+    return sorted.slice(0, 100);
+  }
+
+  // 20 or 50: strict quality filter
+  const topTier = sorted.filter(isTopTierJournal);
+
+  if (limit <= 20) {
+    // 20: only top-tier journals, max 20
+    return topTier.slice(0, 20);
+  }
+
+  // 50: top-tier first, then relax to Q2 if not enough
+  if (topTier.length >= 50) {
+    return topTier.slice(0, 50);
+  }
+  const q2Papers = sorted.filter(p => isQ2Journal(p) && !isTopTierJournal(p));
+  const combined = [...topTier, ...q2Papers];
+  return combined.slice(0, 50);
+}
+
 const EXTRACT_SYSTEM = `You are an academic literature search expert. Follow these steps IN ORDER:
 
 STEP 1 — TRANSLATE: If the user's input contains ANY Chinese, first translate the ENTIRE input into English. Remove filler words (帮我找, 有关, 的文章, 相关论文, 请搜索, etc.). Keep only the academic meaning.
@@ -445,9 +515,8 @@ export async function smartSearch(
     scoredPapers = papers.map((p) => ({ ...p, relevanceScore: undefined }));
   }
 
-  // Enforce user-requested limit on final output (unless unlimited mode)
-  const isLimited = limit < 999;
-  const finalPapers = isLimited ? scoredPapers.slice(0, limit) : scoredPapers;
+  // Step 8: Tiered quality filtering based on user-selected limit
+  const finalPapers = applyTieredLimit(scoredPapers, limit, relevanceScored);
 
   return {
     plan,

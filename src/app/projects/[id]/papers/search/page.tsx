@@ -1148,9 +1148,9 @@ ${papersContext}
                   onChange={(e) => setSearchLimit(Number(e.target.value))}
                   className="h-5 px-1 text-[10px] border border-input rounded bg-background text-muted-foreground"
                 >
-                  <option value={20}>20篇</option>
-                  <option value={50}>50篇</option>
-                  <option value={100}>100篇</option>
+                  <option value={20}>20篇（顶刊）</option>
+                  <option value={50}>50篇（顶刊+Q2）</option>
+                  <option value={100}>100篇（不限刊）</option>
                   <option value={999}>不限量</option>
                 </select>
               </>
