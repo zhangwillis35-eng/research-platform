@@ -61,7 +61,7 @@ export default function ProjectsPage() {
   }
 
   useEffect(() => {
-    fetch("/api/projects?userId=default-user")
+    fetch("/api/projects")
       .then((r) => r.json())
       .then((data) => setProjects(data.projects ?? []))
       .catch(() => {})
