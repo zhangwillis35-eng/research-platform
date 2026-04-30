@@ -500,72 +500,84 @@ export async function smartSearch(
     });
   }
 
-  // Step 7: For quality tiers (20/50), fetch full text BEFORE scoring
+  // Step 7: Two-phase scoring pipeline
+  // Phase 1: Fast abstract-based scoring to narrow down candidates
+  // Phase 2: Full text fetch + deep scoring for top candidates only (quality tiers)
   const isQualityTier = limit <= 50;
   const totalBeforeRelevance = papers.length;
-  let fullTextMap = new Map<string, FullTextResult>();
-
-  if (isQualityTier && papers.length > 0) {
-    // Pre-filter by journal quality first to avoid fetching full text for low-tier papers
-    const candidates = limit <= 20
-      ? papers.filter(p => isTopTierJournal(p as ScoredPaper) || !p.journalMeta)
-      : papers;
-
-    // Fetch full text for all candidate papers (up to 80 to have enough after filtering)
-    const toFetch = candidates.slice(0, 80);
-    onProgress?.("fulltext", `获取 ${toFetch.length} 篇论文全文...`);
-    fullTextMap = await batchFetchFullText(
-      toFetch.map(p => ({
-        doi: p.doi,
-        openAccessPdf: p.openAccessPdf,
-        unpaywallUrl: p.unpaywallUrl,
-        title: p.title,
-      })),
-      8 // Higher concurrency for batch full-text fetch
-    );
-    console.log(`[smart-search] Full text fetched: ${fullTextMap.size}/${toFetch.length} papers`);
-
-    // Attach full text to paper objects
-    for (const paper of papers) {
-      const key = paper.doi || paper.title;
-      const ft = fullTextMap.get(key);
-      if (ft) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const p = paper as any;
-        p.fullText = ft.text;
-        p.hasFullText = true;
-        p.fullTextSource = ft.source;
-        p.fullTextWordCount = ft.wordCount;
-      }
-    }
-  }
-
-  // Step 8: Score with enriched papers — use full text when available (quality tiers)
   let scoredPapers: ScoredPaper[];
   let relevanceScored = false;
 
   if (enableRelevanceScoring && papers.length > 0) {
-    if (isQualityTier && fullTextMap.size > 0) {
-      onProgress?.("score", `AI 全文深度评分: ${papers.length} 篇论文...`);
-      try {
-        scoredPapers = await scoreRelevanceWithFullText(papers, input, plan.translatedInput, provider);
-        scoredPapers = filterByRelevance(scoredPapers, 4);
-        relevanceScored = true;
-      } catch (err) {
-        console.error("[smart-search] full-text scoring failed, falling back to abstract:", err);
-        scoredPapers = await scoreRelevance(papers, input, plan.translatedInput, provider);
-        scoredPapers = filterByRelevance(scoredPapers, 4);
-        relevanceScored = true;
-      }
-    } else {
-      onProgress?.("score", `AI 评分: ${papers.length} 篇论文...`);
-      try {
-        scoredPapers = await scoreRelevance(papers, input, plan.translatedInput, provider);
-        scoredPapers = filterByRelevance(scoredPapers, 4);
-        relevanceScored = true;
-      } catch (err) {
-        console.error("[smart-search] scoring failed:", err);
-        scoredPapers = papers.map((p) => ({ ...p, relevanceScore: undefined }));
+    // Phase 1: Quick abstract-based scoring (ALL papers)
+    onProgress?.("score", `AI 摘要快速评分: ${papers.length} 篇...`);
+    try {
+      scoredPapers = await scoreRelevance(papers, input, plan.translatedInput, provider);
+      scoredPapers = filterByRelevance(scoredPapers, 3); // Lower threshold for first pass
+      relevanceScored = true;
+    } catch (err) {
+      console.error("[smart-search] abstract scoring failed:", err);
+      scoredPapers = papers.map((p) => ({ ...p, relevanceScore: undefined }));
+    }
+
+    // Phase 2: For quality tiers, fetch full text ONLY for top candidates
+    if (isQualityTier && scoredPapers.length > 0) {
+      // Only fetch full text for the top candidates (limit * 2 to have buffer)
+      const topCandidates = scoredPapers
+        .sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0))
+        .slice(0, Math.min(limit * 2, 40));
+
+      // Only fetch for papers with OA indicators (skip paywalled papers that will fail anyway)
+      const fetchable = topCandidates.filter(p =>
+        p.openAccessPdf || p.unpaywallUrl || p.doi
+      );
+
+      if (fetchable.length > 0) {
+        onProgress?.("fulltext", `获取 ${fetchable.length} 篇候选论文全文...`);
+        const fullTextMap = await batchFetchFullText(
+          fetchable.map(p => ({
+            doi: p.doi,
+            openAccessPdf: p.openAccessPdf,
+            unpaywallUrl: p.unpaywallUrl,
+            title: p.title,
+          })),
+          20 // High concurrency — strategies are parallel-raced internally
+        );
+        console.log(`[smart-search] Full text: ${fullTextMap.size}/${fetchable.length} papers`);
+
+        // Attach full text to scored papers
+        for (const paper of scoredPapers) {
+          const key = paper.doi || paper.title;
+          const ft = fullTextMap.get(key);
+          if (ft) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const p = paper as any;
+            p.fullText = ft.text;
+            p.hasFullText = true;
+            p.fullTextSource = ft.source;
+            p.fullTextWordCount = ft.wordCount;
+          }
+        }
+
+        // Phase 2b: Re-score papers that got full text with deeper analysis
+        const withFullText = scoredPapers.filter((p: any) => p.hasFullText);
+        if (withFullText.length > 0) {
+          onProgress?.("score", `AI 全文深度评分: ${withFullText.length} 篇...`);
+          try {
+            const deepScored = await scoreRelevanceWithFullText(
+              withFullText, input, plan.translatedInput, provider
+            );
+            // Merge deep scores back
+            const deepMap = new Map(deepScored.map(p => [p.doi || p.title, p]));
+            for (let i = 0; i < scoredPapers.length; i++) {
+              const key = scoredPapers[i].doi || scoredPapers[i].title;
+              const deep = deepMap.get(key);
+              if (deep) scoredPapers[i] = deep;
+            }
+          } catch (err) {
+            console.error("[smart-search] full-text re-scoring failed:", err);
+          }
+        }
       }
     }
   } else {

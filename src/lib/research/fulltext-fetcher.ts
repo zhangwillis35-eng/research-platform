@@ -32,108 +32,108 @@ export async function fetchFullText(paper: {
   unpaywallUrl?: string;
   title: string;
 }, options?: { usePlaywright?: boolean }): Promise<FullTextResult | null> {
-  const strategies: Array<() => Promise<FullTextResult | null>> = [];
-
-  // GROBID — highest quality structured PDF parsing (if available)
-  if (paper.openAccessPdf || paper.doi) {
-    strategies.push(() => tryGrobid(paper));
+  // ── Fast path: if we have a direct OA PDF link, try it first ──
+  if (paper.openAccessPdf) {
+    try {
+      const result = await Promise.race([
+        tryHtmlVersion(paper.openAccessPdf),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+      ]);
+      if (result && result.text.length > 500) return result;
+    } catch { /* continue */ }
   }
 
+  // ── Tier 1: Race top 3 fastest strategies in parallel ──
+  // First one to return valid text wins — no waiting for others
+  const tier1: Array<() => Promise<FullTextResult | null>> = [];
   if (paper.doi) {
-    // Top priority: Europe PMC (has full text for Science, Nature, Lancet, etc.)
-    strategies.push(() => tryEuropePMC(paper.doi!));
-    // PubMed Central
-    strategies.push(() => tryPMC(paper.doi!));
-    // Semantic Scholar (TLDR + abstract + check for OA PDF)
-    strategies.push(() => trySemanticScholar(paper.doi!));
-    // CORE.ac.uk
-    strategies.push(() => tryCORE(paper.doi!));
-    // Unpaywall — try ALL OA locations (not just best)
-    strategies.push(() => tryUnpaywallAllLocations(paper.doi!));
+    tier1.push(() => tryEuropePMC(paper.doi!));
+    tier1.push(() => trySemanticScholar(paper.doi!));
+    tier1.push(() => tryCORE(paper.doi!));
   }
 
-  // Open access PDF direct
-  if (paper.openAccessPdf || paper.unpaywallUrl) {
-    const url = paper.openAccessPdf || paper.unpaywallUrl!;
-    strategies.push(() => tryHtmlVersion(url));
+  if (tier1.length > 0) {
+    try {
+      const result = await raceForFirst(tier1, 6000);
+      if (result) return result;
+    } catch { /* continue */ }
   }
 
-  // Publisher HTML via DOI
+  // ── Tier 2: Race next batch ──
+  const tier2: Array<() => Promise<FullTextResult | null>> = [];
   if (paper.doi) {
-    strategies.push(() => tryPublisherHtml(paper.doi!));
+    tier2.push(() => tryPMC(paper.doi!));
+    tier2.push(() => tryUnpaywallAllLocations(paper.doi!));
+  }
+  if (paper.unpaywallUrl) {
+    tier2.push(() => tryHtmlVersion(paper.unpaywallUrl!));
   }
 
-  // Institutional proxy (EZproxy) — works when user is on VPN
+  if (tier2.length > 0) {
+    try {
+      const result = await raceForFirst(tier2, 6000);
+      if (result) return result;
+    } catch { /* continue */ }
+  }
+
+  // ── Tier 3: Slower fallbacks (sequential, short timeouts) ──
+  const tier3: Array<() => Promise<FullTextResult | null>> = [];
   if (paper.doi) {
-    strategies.push(() => tryInstitutionalProxy(paper.doi!));
+    tier3.push(() => tryPublisherHtml(paper.doi!));
+    tier3.push(() => tryGrobid(paper));
+    tier3.push(() => tryOpenAccessButton(paper.doi!));
   }
-
-  // Open Access Button — finds free versions via institutional repos
-  if (paper.doi) {
-    strategies.push(() => tryOpenAccessButton(paper.doi!));
-  }
-
-  // BASE (Bielefeld Academic Search Engine) — no key needed
-  if (paper.doi) {
-    strategies.push(() => tryBASE(paper.doi!));
-  }
-
-  // Google Scholar cache — often has full text snippets
   if (paper.title.length > 10) {
-    strategies.push(() => tryGoogleScholarCache(paper.title));
+    tier3.push(() => tryEuropePMCByTitle(paper.title));
   }
-
-  // Title-based search on Europe PMC
-  if (paper.title.length > 10) {
-    strategies.push(() => tryEuropePMCByTitle(paper.title));
-  }
-
-  // Crossref abstract as last resort
   if (paper.doi) {
-    strategies.push(() => tryCrossrefAbstract(paper.doi!));
+    tier3.push(() => tryCrossrefAbstract(paper.doi!));
   }
 
-  // Playwright (headless browser) — optional, last resort for paywalled papers
-  if (options?.usePlaywright && paper.doi) {
-    strategies.push(async () => {
-      try {
-        const { fetchWithPlaywright } = await import("./playwright-fetcher");
-        const result = await fetchWithPlaywright(paper.doi!);
-        if (!result) return null;
-        return {
-          text: result.text,
-          source: "html_scrape" as const,
-          truncated: result.truncated,
-          wordCount: result.wordCount,
-        };
-      } catch {
-        return null;
-      }
-    });
-  }
-
-  // Try each strategy with per-strategy timeout and total timeout
-  const totalDeadline = Date.now() + 25000; // 25s max per paper (increased for quality tier)
-  const STRATEGY_TIMEOUT = 8000; // 8s max per strategy
-
-  for (const strategy of strategies) {
-    if (Date.now() >= totalDeadline) {
-      console.log(`[fulltext] Total timeout reached for: ${paper.title.slice(0, 50)}`);
-      break;
-    }
-
+  for (const strategy of tier3) {
     try {
       const result = await Promise.race([
         strategy(),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), STRATEGY_TIMEOUT)),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
       ]);
       if (result && result.text.length > 200) return result;
-    } catch {
-      // Continue to next strategy
-    }
+    } catch { /* continue */ }
   }
 
   return null;
+}
+
+/**
+ * Race multiple strategies in parallel — first valid result wins.
+ * All other promises are abandoned (not awaited) once we have a winner.
+ */
+async function raceForFirst(
+  strategies: Array<() => Promise<FullTextResult | null>>,
+  timeoutMs: number
+): Promise<FullTextResult | null> {
+  return new Promise((resolve) => {
+    let resolved = false;
+    const timer = setTimeout(() => { if (!resolved) { resolved = true; resolve(null); } }, timeoutMs);
+
+    let pending = strategies.length;
+    for (const strategy of strategies) {
+      strategy()
+        .then((result) => {
+          if (!resolved && result && result.text.length > 200) {
+            resolved = true;
+            clearTimeout(timer);
+            resolve(result);
+          } else {
+            pending--;
+            if (!resolved && pending === 0) { resolved = true; clearTimeout(timer); resolve(null); }
+          }
+        })
+        .catch(() => {
+          pending--;
+          if (!resolved && pending === 0) { resolved = true; clearTimeout(timer); resolve(null); }
+        });
+    }
+  });
 }
 
 // ─── GROBID (ML-based structured PDF parsing) ────
@@ -705,7 +705,7 @@ export async function batchFetchFullText(
     unpaywallUrl?: string;
     title: string;
   }>,
-  maxConcurrent: number = 4
+  maxConcurrent: number = 20
 ): Promise<Map<string, FullTextResult>> {
   const results = new Map<string, FullTextResult>();
   const queue = [...papers];
