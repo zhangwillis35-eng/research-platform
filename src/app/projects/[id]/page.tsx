@@ -106,6 +106,8 @@ export default async function ProjectOverview({
               { name: "Stanford STORM", desc: "文献综述引擎，多轮对话深度分析", icon: "⚡" },
               { name: "GROBID", desc: "ML 结构化 PDF 解析（标题/摘要/章节/参考文献）", icon: "📄" },
               { name: "SPECTER2", desc: "Allen AI 语义嵌入，论文相似度搜索", icon: "🔍" },
+              { name: "GLiNER", desc: "零样本变量关系抽取，自动识别 IV/DV/中介/调节", icon: "🧬" },
+              { name: "LightRAG", desc: "跨论文知识图谱查询，基于图证据回答研究问题", icon: "🕸️" },
             ].map((tool) => (
               <div key={tool.name} className="flex items-start gap-3 text-sm">
                 <span className="text-base">{tool.icon}</span>
