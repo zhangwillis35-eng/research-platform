@@ -157,15 +157,23 @@ For RELATIONAL queries:
 - Include the full relationship as one term (e.g. "ESG corporate innovation")
 - Include each variable separately for broader coverage
 
-STEP 4 — SYNONYMS: For each key term, list 5-8 English synonyms and closely related terms actually used in academic papers. Be EXHAUSTIVE — think from multiple angles:
+STEP 4 — SYNONYMS: For each key term, list 8-12 English synonyms and closely related terms actually used in academic papers. Be MAXIMALLY EXHAUSTIVE — think from ALL possible angles:
 - Direct synonyms (e.g. "AI washing" → "AI greenwashing")
 - Broader category terms (e.g. "AI washing" → "technology greenwashing", "digital washing")
 - Related misconduct terms (e.g. "AI washing" → "AI fraud", "AI snake oil", "AI theater")
 - Academic jargon variants (e.g. "AI washing" → "performative AI adoption", "symbolic AI")
 - Abbreviated or informal forms used in papers
 - Terms used in adjacent research streams that study the same phenomenon
+- FORMAL ACADEMIC TERMS that might not be obvious translations (e.g. "AI谄媚" → "AI sycophancy" which is the FORMAL term, NOT just "AI flattery")
+- Terms used in TOP JOURNALS like Nature, Science (these often use specific terminology)
+- Related concepts from AI safety/alignment research (e.g. "reward hacking", "specification gaming", "alignment tax")
 
-The goal is to catch ALL relevant papers, not just the obvious ones. Missing a relevant synonym = missing relevant papers.
+CRITICAL: For Chinese concepts, you MUST include the MOST FORMAL and TECHNICAL English translation, not just the colloquial one.
+Example: "AI谄媚" → MUST include "sycophancy", "sycophantic behavior", "AI sycophancy" — these are the terms used in Nature/Science papers.
+Example: "AI幻觉" → MUST include "hallucination" AND "confabulation" — both are used in top journals.
+Example: "大模型对齐" → MUST include "alignment", "RLHF", "constitutional AI", "value alignment"
+
+The goal is to catch ALL relevant papers especially those in Nature/Science/top venues. Missing a relevant synonym = missing a landmark paper.
 For METHODOLOGICAL queries, synonyms should include concrete technique names, not just rephrasing.
 
 STEP 5 — BUILD QUERIES: Construct precision and broad search queries.
@@ -357,7 +365,20 @@ export async function smartSearch(
     ),
   ]);
 
-  const allResults = [...gsResults, ...freeResults];
+  // Phase C: Direct translated query search (catches papers missed by synonym expansion)
+  // e.g. "AI sycophancy" might not appear in broad synonym queries
+  const directQuery = plan.translatedInput || input;
+  const directResults = await Promise.all([
+    searchAllSourcesRaw({ query: `"${directQuery}"`, limit: 20, yearFrom, yearTo, freeOnly: true })
+      .catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] })),
+    // Also search each key term as exact phrase
+    ...plan.keyTerms.slice(0, 3).map(term =>
+      searchAllSourcesRaw({ query: `"${term}"`, limit: 10, yearFrom, yearTo, freeOnly: true })
+        .catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
+    ),
+  ]);
+
+  const allResults = [...gsResults, ...freeResults, ...directResults];
   const totalRaw = allResults.reduce((sum, r) => sum + r.papers.length, 0);
   onProgress?.("dedup", `检索到 ${totalRaw} 条结果，正在去重合并...`);
 
