@@ -13,9 +13,10 @@ services:
           memory: 1024M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8070/api/isalive"]
+      start_period: 180s
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
 
   app:
     build: .
@@ -30,4 +31,4 @@ services:
       - GROBID_URL=http://grobid:8070
     depends_on:
       grobid:
-        condition: service_healthy
+        condition: service_started
