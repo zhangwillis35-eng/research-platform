@@ -34,9 +34,16 @@ export interface ScoredPaper extends UnifiedPaper {
   hasFullText?: boolean;
 }
 
-const SCORING_CONCURRENCY = 50; // Increased for faster feedback
-const BATCH_SCORING_THRESHOLD = 30; // Use batch mode above this count (more aggressive batching)
-const BATCH_SIZE = 10; // Papers per AI call in batch mode
+const SCORING_CONCURRENCY = 50;
+const BATCH_SCORING_THRESHOLD = 20; // Use batch mode above this count (more aggressive batching)
+
+/** Adaptive batch size — larger batches for larger sets to reduce API overhead */
+function getBatchSize(paperCount: number): number {
+  if (paperCount >= 200) return 20; // 200+ papers: 20/call → 10 calls at 50 concurrency
+  if (paperCount >= 100) return 15; // 100-199: 15/call
+  if (paperCount >= 50) return 10;  // 50-99: 10/call
+  return 8;                          // 20-49: 8/call
+}
 const SCORING_DEFAULT_PROVIDER: AIProvider = "deepseek-fast";
 
 const SINGLE_SYSTEM = `You are a management research literature expert. Evaluate the paper's relevance to the user's query based on its title and abstract.
@@ -120,20 +127,20 @@ export async function scoreRelevance(
     provider === "deepseek" || provider === "deepseek-pro" ? "deepseek-fast" : provider;
 
   const useBatchMode = papers.length >= BATCH_SCORING_THRESHOLD;
+  const batchSize = getBatchSize(papers.length);
 
   console.log(
     `[relevance-scorer] Scoring ${papers.length} papers (${scoringProvider}, ` +
-    `${useBatchMode ? `batch mode: ${BATCH_SIZE}/call` : "single mode"}, ` +
+    `${useBatchMode ? `batch mode: ${batchSize}/call` : "single mode"}, ` +
     `${SCORING_CONCURRENCY} concurrent)`
   );
 
   const allScores = new Map<number, RelevanceScore>();
 
   if (useBatchMode) {
-    // Batch mode: 8 papers per AI call — reduces 200 API calls to 25
     const batches: { papers: UnifiedPaper[]; offset: number }[] = [];
-    for (let i = 0; i < papers.length; i += BATCH_SIZE) {
-      batches.push({ papers: papers.slice(i, i + BATCH_SIZE), offset: i });
+    for (let i = 0; i < papers.length; i += batchSize) {
+      batches.push({ papers: papers.slice(i, i + batchSize), offset: i });
     }
 
     await concurrentPool(

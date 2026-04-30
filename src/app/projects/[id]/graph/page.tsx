@@ -127,7 +127,7 @@ export default function GraphPage() {
   const projectId = params.id as string;
 
   const NS = `graph-${projectId}`;
-  const [provider, setProvider] = usePersistedState<AIProvider>(NS, "provider", "gemini-pro");
+  const [provider, setProvider] = usePersistedState<AIProvider>(NS, "provider", "deepseek-pro");
   const [papers, setPapers] = usePersistedState<Paper[]>(NS, "papers", []);
   const [analysisEngine, setAnalysisEngine] = usePersistedState<"storm" | "notebooklm">(NS, "analysisEngine", "storm");
   const [notebookId, setNotebookId] = usePersistedState<string>(NS, "notebookId", "");
@@ -228,7 +228,7 @@ export default function GraphPage() {
 
       setLoadingPhase("AI 元分析编码 + 领域全景生成...");
 
-      const paperData = activePapers.slice(0, 25).map((p) => ({
+      const paperData = activePapers.slice(0, 50).map((p) => ({
         title: p.title,
         abstract: p.abstract,
         year: p.year,
@@ -243,12 +243,50 @@ export default function GraphPage() {
         signal,
       });
       if (!graphRes.ok) throw new Error("分析失败");
-      const graph = await graphRes.json();
 
-      setNodes(graph.nodes ?? []);
-      setEdges(graph.edges ?? []);
-      setMetaSummary(graph.metaSummary ?? null);
-      setLandscape(graph.landscape ?? null);
+      const contentType = graphRes.headers.get("Content-Type") ?? "";
+
+      if (contentType.includes("text/event-stream")) {
+        // SSE streaming mode (parallel sub-agents, >8 papers)
+        const reader = graphRes.body?.getReader();
+        if (!reader) throw new Error("No stream reader");
+        const decoder = new TextDecoder();
+        let buf = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const evt = JSON.parse(line.slice(6));
+              if (evt.type === "status") {
+                setLoadingPhase(evt.message);
+              } else if (evt.type === "progress") {
+                setLoadingPhase(`子代理提取: ${evt.completed}/${evt.total}`);
+              } else if (evt.type === "done") {
+                setNodes(evt.nodes ?? []);
+                setEdges(evt.edges ?? []);
+                setMetaSummary(evt.metaSummary ?? null);
+                setLandscape(evt.landscape ?? null);
+              } else if (evt.type === "error") {
+                throw new Error(evt.message);
+              }
+            } catch { /* skip malformed lines */ }
+          }
+        }
+      } else {
+        // Direct JSON mode (≤8 papers)
+        const graph = await graphRes.json();
+        setNodes(graph.nodes ?? []);
+        setEdges(graph.edges ?? []);
+        setMetaSummary(graph.metaSummary ?? null);
+        setLandscape(graph.landscape ?? null);
+      }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") { setLoading(false); setLoadingPhase(""); return; }
       setError(String(err));

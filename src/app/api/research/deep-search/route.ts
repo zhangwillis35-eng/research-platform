@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     setAIContext(auth.id, "/api/research/deep-search");
 
     const body = await request.json();
-    const { topic, provider = "gemini" } = body as {
+    const { topic, provider = "deepseek-fast" } = body as {
       topic: string;
       provider?: AIProvider;
     };

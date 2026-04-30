@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const {
       papers,
-      provider = "gemini",
+      provider = "deepseek-fast",
       withPeerReview = true,
       topic,
       notebookLM,

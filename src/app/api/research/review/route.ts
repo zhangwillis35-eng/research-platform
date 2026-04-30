@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       topic,
       papers,
       perspectives,
-      provider = "gemini",
+      provider = "deepseek-fast",
       notebookLM,
     } = body as {
       topic: string;

@@ -27,6 +27,7 @@ import {
   CONFERENCE_RANKINGS,
   type ConferenceInfo,
 } from "./easyscholar-data";
+import { SSCI_JCR, SSCI_SET, SCI_JCR_Q1Q2, SCI_SET } from "./jcr-data";
 
 export interface JournalMetadata {
   impactFactor?: number;
@@ -122,8 +123,11 @@ export function getJournalMetadata(venue: string | undefined | null): JournalMet
   const absRating = absRatingStr as JournalMetadata["absRating"];
   const impactFactor = findInRecord(venue, JOURNAL_IF);
 
-  // JCR quartile (from explicit data)
-  const jcrQuartile = findInRecord(venue, JCR_QUARTILES);
+  // JCR quartile — authoritative: first check JCR 2024 SSCI data, then SCIE, then hand-curated
+  const ssciJcrQ = findInRecord(venue, SSCI_JCR as Record<string, string>) as JournalMetadata["jcrQuartile"];
+  const sciJcrQ = findInRecord(venue, SCI_JCR_Q1Q2 as Record<string, string>) as JournalMetadata["jcrQuartile"];
+  const handJcrQ = findInRecord(venue, JCR_QUARTILES);
+  const jcrQuartile = ssciJcrQ ?? sciJcrQ ?? handJcrQ;
 
   // ABDC rating
   const abdcRating = findInRecord(venue, ABDC_RANKINGS);
@@ -131,10 +135,11 @@ export function getJournalMetadata(venue: string | undefined | null): JournalMet
   // CCF rating
   const ccfRating = findInRecord(venue, CCF_RANKINGS);
 
-  // SSCI: journal must have BOTH ABS rating AND JCR quartile (= indexed in Web of Science SSCI)
-  // ABS alone is NOT sufficient — ABS lists some journals that aren't SSCI-indexed
-  // JCR alone is NOT sufficient — some JCR journals are SCI (natural science), not SSCI
-  const ssci = !!absRatingStr && !!jcrQuartile;
+  // SSCI: authoritative check from JCR 2024 SSCI journal list (3523 journals)
+  const ssci = !!ssciJcrQ || matchesSet(venue, SSCI_SET);
+
+  // SCI: authoritative check from JCR 2024 SCIE journal list (management-adjacent Q1-Q2)
+  const sci = !!sciJcrQ || matchesSet(venue, SCI_SET);
 
   // CSSCI (南大核心)
   const cssci = matchesSet(venue, CSSCI_JOURNALS);
@@ -158,9 +163,6 @@ export function getJournalMetadata(venue: string | undefined | null): JournalMet
   if (impactFactor && impactFactor > 10) sjrQuartile = "Q1";
   else if (impactFactor && impactFactor > 5) sjrQuartile = "Q1";
   else if (impactFactor && impactFactor > 3) sjrQuartile = "Q2";
-
-  // SCI for natural science journals (detected by IF + JCR but not in ABS)
-  const sci = !absRatingStr && !!jcrQuartile;
 
   // Conference detection
   const conference = findInRecord(venue, CONFERENCE_RANKINGS);

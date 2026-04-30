@@ -1,8 +1,11 @@
 /**
- * DeepSeek client — supports both R1 (reasoner) and V3 (chat) models.
+ * DeepSeek client — supports R1 (reasoner) and V4 (chat/flash/pro) models.
  *
- * - deepseek-reasoner: deep chain-of-thought reasoning, slow (~10-30s)
- * - deepseek-chat (V3): fast structured extraction, supports temperature + JSON mode (~1-3s)
+ * Optimizations:
+ * - Connection keep-alive for reduced latency on concurrent calls
+ * - stream_options.include_usage for streaming token tracking
+ * - noThinking disables reasoning tokens (~2x faster for structured extraction)
+ * - Prefix caching: system prompt placed first for automatic DeepSeek cache hits
  */
 import type { AIRequestOptions, AIResponse } from "./types";
 import { PROVIDER_MODELS } from "./types";
@@ -25,11 +28,17 @@ function isReasonerModel(model: string): boolean {
   return model === "deepseek-reasoner";
 }
 
-export async function callDeepSeek(options: AIRequestOptions): Promise<AIResponse> {
-  const apiKey = getApiKey();
-  const model = getModel(options.provider);
-  const isReasoner = isReasonerModel(model);
+/** Shared headers — keep-alive for connection reuse across concurrent calls */
+function baseHeaders(apiKey: string): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${apiKey}`,
+    Connection: "keep-alive",
+  };
+}
 
+/** Build common request body for both streaming and non-streaming calls */
+function buildBody(options: AIRequestOptions, model: string, isReasoner: boolean, stream: boolean) {
   const messages: Array<{ role: string; content: string }> = [];
   if (options.system) messages.push({ role: "system", content: options.system });
   for (const m of options.messages) {
@@ -37,12 +46,17 @@ export async function callDeepSeek(options: AIRequestOptions): Promise<AIRespons
     messages.push({ role: m.role, content: m.content });
   }
 
-  // Build request body — R1 doesn't support temperature/response_format/thinking
   const body: Record<string, unknown> = {
     model,
     messages,
     max_tokens: options.maxTokens ?? (isReasoner ? 8192 : 4096),
   };
+
+  if (stream) {
+    body.stream = true;
+    // Request usage stats in the final streaming chunk
+    body.stream_options = { include_usage: true };
+  }
 
   if (!isReasoner) {
     body.temperature = options.temperature ?? 0.3;
@@ -55,12 +69,19 @@ export async function callDeepSeek(options: AIRequestOptions): Promise<AIRespons
     }
   }
 
+  return body;
+}
+
+export async function callDeepSeek(options: AIRequestOptions): Promise<AIResponse> {
+  const apiKey = getApiKey();
+  const model = getModel(options.provider);
+  const isReasoner = isReasonerModel(model);
+
+  const body = buildBody(options, model, isReasoner, false);
+
   const res = await proxyFetch(`${DEEPSEEK_BASE}/chat/completions`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers: baseHeaders(apiKey),
     body: JSON.stringify(body),
   });
 
@@ -93,36 +114,11 @@ export async function* streamDeepSeek(
   const model = getModel(options.provider);
   const isReasoner = isReasonerModel(model);
 
-  const messages: Array<{ role: string; content: string }> = [];
-  if (options.system) messages.push({ role: "system", content: options.system });
-  for (const m of options.messages) {
-    if (m.role === "system") continue;
-    messages.push({ role: m.role, content: m.content });
-  }
-
-  const body: Record<string, unknown> = {
-    model,
-    messages,
-    max_tokens: options.maxTokens ?? (isReasoner ? 8192 : 4096),
-    stream: true,
-  };
-
-  if (!isReasoner) {
-    body.temperature = options.temperature ?? 0.3;
-    if (options.jsonMode) {
-      body.response_format = { type: "json_object" };
-    }
-    if (options.noThinking) {
-      body.thinking = { type: "disabled" };
-    }
-  }
+  const body = buildBody(options, model, isReasoner, true);
 
   const res = await proxyFetch(`${DEEPSEEK_BASE}/chat/completions`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers: baseHeaders(apiKey),
     body: JSON.stringify(body),
   });
 
@@ -132,6 +128,7 @@ export async function* streamDeepSeek(
   }
 
   let fullText = "";
+  let usage: { inputTokens: number; outputTokens: number } | undefined;
   const reader = res.body as unknown as AsyncIterable<Buffer | Uint8Array>;
   let buffer = "";
 
@@ -147,15 +144,26 @@ export async function* streamDeepSeek(
       try {
         const parsed = JSON.parse(jsonStr) as {
           choices: Array<{ delta: { content?: string } }>;
+          usage?: { prompt_tokens: number; completion_tokens: number };
         };
+
+        // Content delta
         const text = parsed.choices[0]?.delta?.content ?? "";
         if (text) {
           fullText += text;
           yield text;
         }
-      } catch { /* skip */ }
+
+        // Usage stats appear in the final chunk when stream_options.include_usage is set
+        if (parsed.usage) {
+          usage = {
+            inputTokens: parsed.usage.prompt_tokens,
+            outputTokens: parsed.usage.completion_tokens ?? 0,
+          };
+        }
+      } catch { /* skip malformed chunks */ }
     }
   }
 
-  return { content: fullText, provider: options.provider, model };
+  return { content: fullText, provider: options.provider, model, usage };
 }

@@ -226,7 +226,7 @@ export default function PaperSearchPage() {
   const [query, setQuery] = usePersistedState<string>(NS, "query", "");
   const [papers, setPapers] = usePersistedState<Paper[]>(NS, "papers", []);
   const [meta, setMeta] = usePersistedState<SearchMeta | null>(NS, "meta", null);
-  const [aiProvider, setAiProvider] = usePersistedState<AIProvider>(NS, "aiProvider", "gemini");
+  const [aiProvider, setAiProvider] = usePersistedState<AIProvider>(NS, "aiProvider", "deepseek-fast");
   const [analysisResult, setAnalysisResult] = usePersistedState<string | null>(NS, "analysisResult", null);
   const [sortBy, setSortBy] = usePersistedState<SortBy>(NS, "sortBy", "relevance");
   const [filterRankings, setFilterRankings] = usePersistedState<Set<string>>(NS, "filterRankings", new Set());

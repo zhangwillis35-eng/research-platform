@@ -36,7 +36,7 @@ export default function PapersPage() {
   const NS = `papers-${projectId}`;
   const [papers, setPapers] = usePersistedState<Paper[]>(NS, "papers", []);
   const [activeTab, setActiveTab] = usePersistedState<"catalog" | "weekly">(NS, "activeTab", "catalog");
-  const [aiProvider, setAiProvider] = usePersistedState<AIProvider>(NS, "aiProvider", "gemini");
+  const [aiProvider, setAiProvider] = usePersistedState<AIProvider>(NS, "aiProvider", "deepseek-fast");
   const [overview, setOverview] = usePersistedState<string | null>(NS, "overview", null);
   const [overviewOpen, setOverviewOpen] = usePersistedState<boolean>(NS, "overviewOpen", false);
 

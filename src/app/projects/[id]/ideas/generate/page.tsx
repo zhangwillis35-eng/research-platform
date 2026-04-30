@@ -90,7 +90,7 @@ export default function IdeasGeneratePage() {
   const params = useParams();
   const projectId = params.id as string;
 
-  const [provider, setProvider] = usePersistedState<AIProvider>(`ideas-${projectId}`, "aiProvider", "gemini");
+  const [provider, setProvider] = usePersistedState<AIProvider>(`ideas-${projectId}`, "aiProvider", "deepseek-fast");
   const [phase, setPhase] = useState<Phase>("idle");
   const [papers, setPapers] = useState<Paper[]>([]);
   const [papersLoading, setPapersLoading] = useState(true);

@@ -193,6 +193,7 @@ export async function buildSmartSearchPlan(
       system: EXTRACT_SYSTEM,
       messages: [{ role: "user", content: input }],
       jsonMode: true,
+      noThinking: true,
       temperature: 0.2,
     });
 

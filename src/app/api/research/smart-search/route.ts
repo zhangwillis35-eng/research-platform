@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const {
       query,
-      provider = "gemini",
+      provider = "deepseek-fast",
       limit = 20,
       enableRelevanceScoring = true,
       stream = false,

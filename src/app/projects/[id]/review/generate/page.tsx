@@ -53,7 +53,7 @@ export default function ReviewGeneratePage() {
 
   const NS = `review-${projectId}`;
   const [topic, setTopic] = usePersistedState<string>(NS, "topic", "");
-  const [provider, setProvider] = usePersistedState<AIProvider>(NS, "provider", "gemini");
+  const [provider, setProvider] = usePersistedState<AIProvider>(NS, "provider", "deepseek-fast");
   const [outline, setOutline] = usePersistedState<ReviewOutline | null>(NS, "outline", null);
   const [reviewText, setReviewText] = usePersistedState<string>(NS, "reviewText", "");
   const [papers, setPapers] = usePersistedState<Paper[]>(NS, "papers", []);

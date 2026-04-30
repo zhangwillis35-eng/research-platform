@@ -35,7 +35,7 @@ export default function ProposalPage() {
   const projectId = params.id as string;
 
   const NS = `proposal-${projectId}`;
-  const [aiProvider, setAiProvider] = usePersistedState<AIProvider>(NS, "provider", "gemini-pro");
+  const [aiProvider, setAiProvider] = usePersistedState<AIProvider>(NS, "provider", "deepseek-pro");
   const [papers, setPapers] = usePersistedState<Paper[]>(NS, "papers", []);
   const [analysisEngine, setAnalysisEngine] = usePersistedState<"storm" | "notebooklm">(NS, "engine", "storm");
   const [proposalText, setProposalText] = usePersistedState<string>(NS, "proposalText", "");

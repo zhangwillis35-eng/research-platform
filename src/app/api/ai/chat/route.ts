@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     setAIContext(auth.id, "/api/ai/chat");
     const body = await request.json();
     const {
-      provider = "gemini",
+      provider = "deepseek-fast",
       messages,
       system,
     } = body as {

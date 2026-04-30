@@ -3,6 +3,7 @@
  *
  * Retries on 429 (Too Many Requests) and 503 (Service Unavailable).
  * Uses exponential backoff with jitter to avoid thundering herd.
+ * Includes per-request timeout to prevent hanging connections.
  */
 import { proxyFetch } from "@/lib/ai/proxy-fetch";
 
@@ -11,6 +12,8 @@ interface RetryOptions {
   baseDelayMs?: number;
   maxDelayMs?: number;
   retryOn?: number[];
+  /** Per-request timeout in ms (default: 15000) */
+  timeoutMs?: number;
 }
 
 const DEFAULT_RETRY_ON = [429, 503];
@@ -24,12 +27,17 @@ export async function fetchWithRetry(
   const baseDelay = options?.baseDelayMs ?? 1000;
   const maxDelay = options?.maxDelayMs ?? 10000;
   const retryOn = options?.retryOn ?? DEFAULT_RETRY_ON;
+  const timeoutMs = options?.timeoutMs ?? 15000;
 
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const res = await proxyFetch(url, init);
+      // Add timeout signal — prevents hanging on unresponsive APIs
+      const signal = AbortSignal.timeout(timeoutMs);
+      const mergedInit = init ? { ...init, signal } : { signal };
+
+      const res = await proxyFetch(url, mergedInit as RequestInit & { body?: string });
 
       if (!retryOn.includes(res.status) || attempt === maxRetries) {
         return res;

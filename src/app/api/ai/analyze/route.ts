@@ -91,7 +91,7 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const {
-      provider = "gemini",
+      provider = "deepseek-fast",
       type,
       content,
     } = body as {

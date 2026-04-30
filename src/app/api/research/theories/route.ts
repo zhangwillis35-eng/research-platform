@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     setAIContext(auth.id, "/api/research/theories");
 
     const body = await request.json();
-    const { papers, topic, provider = "gemini" } = body as {
+    const { papers, topic, provider = "deepseek-fast" } = body as {
       papers: { title: string; abstract?: string; year?: number; venue?: string }[];
       topic: string;
       provider?: AIProvider;

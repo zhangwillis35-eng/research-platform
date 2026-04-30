@@ -12,6 +12,7 @@ import { callAI, setAIContext } from "@/lib/ai";
 import { requireProjectAccess } from "@/lib/auth";
 import { searchArxiv } from "@/lib/sources/arxiv";
 import { searchGoogleScholar } from "@/lib/sources/google-scholar";
+import { concurrentPool } from "@/lib/concurrent-pool";
 import type { UnifiedPaper } from "@/lib/sources/types";
 
 // ─── OpenAlex Source IDs for target journals ──────
@@ -283,15 +284,17 @@ async function batchAnalyzePapers(paperIds: string[]) {
     );
   }
 
-  // Batch into groups of 10, run ALL batches in parallel
+  // Batch into groups of 10, run with controlled concurrency
   const BATCH = 10;
+  const ANALYSIS_CONCURRENCY = 5; // 5 parallel AI calls
   const batches: typeof papers[] = [];
   for (let i = 0; i < papers.length; i += BATCH) {
     batches.push(papers.slice(i, i + BATCH));
   }
 
-  await Promise.all(
-    batches.map(async (batch) => {
+  await concurrentPool(
+    batches,
+    async (batch) => {
       const paperList = batch.map((p, idx) => {
         const authors = (p.authors as Array<{ name: string }>)?.slice(0, 3).map((a) => a.name).join(", ") ?? "";
         return `[${idx + 1}] 标题: ${p.title}\n作者: ${authors}\n年份: ${p.year ?? "N/A"} | 期刊: ${p.venue ?? "N/A"} | 引用: ${p.citationCount}\n摘要: ${p.abstract ?? "无摘要"}`;
@@ -299,12 +302,14 @@ async function batchAnalyzePapers(paperIds: string[]) {
 
       try {
         const result = await callAI({
-          provider: "gemini",
+          provider: "deepseek-fast",
           messages: [{
             role: "user",
             content: `Perform structured analysis on the following ${batch.length} papers.\n\n${paperList}\n\nReturn strict JSON array (no markdown). Each element corresponds to one paper:\n[{"tags":["tag1","tag2","tag3"],"model":"theoretical model (1-2 sentences)","variables":"key variables (IV, DV, mediator, moderator)","method":"research method (1-2 sentences)","contribution":"marginal contribution (1-2 sentences)"}]`,
           }],
           system: "You are a management research methodology expert. For each paper, extract 3-5 key tags (theory names, method types, research domains) and analyze its theoretical model, key variables, research methods, and marginal contribution. Respond in Chinese. Return JSON array only, no other text.",
+          jsonMode: true,
+          noThinking: true,
           temperature: 0.1,
           maxTokens: 4000,
         });
@@ -335,7 +340,8 @@ async function batchAnalyzePapers(paperIds: string[]) {
       } catch (err) {
         console.error("[weekly-digest] Batch analysis error:", (err as Error).message);
       }
-    })
+    },
+    ANALYSIS_CONCURRENCY
   );
 }
 

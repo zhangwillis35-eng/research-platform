@@ -15,18 +15,23 @@ export const AI_PROVIDERS: {
 }[] = [
   {
     id: "deepseek-fast",
-    name: "DeepSeek V4 Flash",
-    description: "最快的分析模型，结构化提取首选",
+    name: "DeepSeek V4 Flash（默认）",
+    description: "最快的分析模型，结构化提取首选，免代理",
   },
   {
     id: "deepseek-pro",
     name: "DeepSeek V4 Pro",
-    description: "DeepSeek 最强模型，深度分析",
+    description: "DeepSeek 最强模型，深度分析，免代理",
+  },
+  {
+    id: "deepseek",
+    name: "DeepSeek R1",
+    description: "DeepSeek 推理模型，深度思考（较慢），免代理",
   },
   {
     id: "gemini-pro",
     name: "Gemini 3.1 Pro",
-    description: "Google 最强模型，深度分析首选（大陆需代理）",
+    description: "Google 最强模型，深度分析（大陆需代理）",
   },
   {
     id: "gemini",
@@ -37,11 +42,6 @@ export const AI_PROVIDERS: {
     id: "chatgpt",
     name: "GPT-4o",
     description: "OpenAI 旗舰模型（大陆需代理）",
-  },
-  {
-    id: "deepseek",
-    name: "DeepSeek R1",
-    description: "DeepSeek 推理模型，深度思考（较慢）",
   },
   {
     id: "claude",

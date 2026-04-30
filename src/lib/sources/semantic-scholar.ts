@@ -60,9 +60,11 @@ export async function searchSemanticScholar(
     params.set("year", `${from}-${to}`);
   }
 
-  const res = await fetchWithRetry(`${BASE_URL}/paper/search?${params}`, {
-    headers: getHeaders(),
-  });
+  const res = await fetchWithRetry(
+    `${BASE_URL}/paper/search?${params}`,
+    { headers: getHeaders() },
+    { maxRetries: 3, baseDelayMs: 1500, maxDelayMs: 15000, retryOn: [429, 500, 502, 503], timeoutMs: 20000 }
+  );
 
   if (!res.ok) {
     throw new Error(`Semantic Scholar API error: ${res.status}`);
@@ -199,7 +201,7 @@ export async function batchLookupS2(
           headers: getHeaders(),
           body: JSON.stringify({ ids: batch }),
         },
-        { maxRetries: 2, baseDelayMs: 2000 }
+        { maxRetries: 3, baseDelayMs: 2000, retryOn: [429, 500, 502, 503], timeoutMs: 30000 }
       );
 
       if (!res.ok) {

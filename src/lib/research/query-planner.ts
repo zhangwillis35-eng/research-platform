@@ -46,6 +46,7 @@ export async function planResearch(
     system: PLANNER_SYSTEM,
     messages: [{ role: "user", content: topic }],
     jsonMode: true,
+    noThinking: true,
     temperature: 0.3,
   });
 
