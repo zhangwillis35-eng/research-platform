@@ -5,6 +5,10 @@ import { searchGoogleScholar } from "./google-scholar";
 import { searchArxiv } from "./arxiv";
 import { searchCORE } from "./core";
 import { searchWoS } from "./wos";
+import { searchPubMed } from "./pubmed";
+import { searchDBLP } from "./dblp";
+import { searchBioRxiv } from "./biorxiv";
+import { searchCrossRef } from "./crossref-search";
 import { getJournalRanking } from "./journal-rankings";
 import { getJournalMetadata, batchEnrichJournals } from "./journal-metadata";
 import { batchFindOpenAccess } from "./unpaywall";
@@ -71,6 +75,22 @@ export async function searchAllSourcesRaw(
       }).then(papers => ({
         papers, total: papers.length, source: "openalex" as const,
       })).catch(() => ({
+        papers: [] as UnifiedPaper[], total: 0, source: "openalex" as const,
+      })),
+      // PubMed — biomedical + many Nature/Science papers
+      searchPubMed({ query: options.query, limit: 15, yearFrom: options.yearFrom, yearTo: options.yearTo }).catch(() => ({
+        papers: [] as UnifiedPaper[], total: 0, source: "openalex" as const,
+      })),
+      // DBLP — CS/IS papers
+      searchDBLP(options.query, 10).catch(() => ({
+        papers: [] as UnifiedPaper[], total: 0, source: "openalex" as const,
+      })),
+      // bioRxiv/medRxiv — preprints
+      searchBioRxiv(options.query, 10).catch(() => ({
+        papers: [] as UnifiedPaper[], total: 0, source: "openalex" as const,
+      })),
+      // CrossRef — authoritative DOI/metadata
+      searchCrossRef({ query: options.query, limit: 15, yearFrom: options.yearFrom, yearTo: options.yearTo }).catch(() => ({
         papers: [] as UnifiedPaper[], total: 0, source: "openalex" as const,
       })),
     ]);

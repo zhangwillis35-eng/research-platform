@@ -575,6 +575,36 @@ export async function smartSearch(
   // Step 9: Tiered quality filtering based on user-selected limit
   const finalPapers = applyTieredLimit(scoredPapers, limit, relevanceScored);
 
+  // Step 10: Optional SPECTER2 semantic re-ranking for quality tiers
+  if (isQualityTier && finalPapers.length > 0) {
+    try {
+      const { findSimilarPapers, isSpecterAvailable } = await import("@/lib/sources/specter");
+      if (isSpecterAvailable()) {
+        onProgress?.("semantic", "SPECTER2 语义相似度重排序...");
+        const similarities = await findSimilarPapers(
+          plan.translatedInput || input,
+          undefined,
+          finalPapers.map(p => ({ title: p.title, abstract: p.abstract, doi: p.doi })),
+          finalPapers.length,
+        );
+
+        // Blend SPECTER2 similarity score with existing relevance score
+        for (const sim of similarities) {
+          const paper = finalPapers.find(p => p.title === sim.title);
+          if (paper && paper.relevanceScore != null) {
+            const semanticScore = sim.similarity * 10;
+            paper.relevanceScore = paper.relevanceScore * 0.7 + semanticScore * 0.3;
+          }
+        }
+
+        finalPapers.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
+        console.log(`[smart-search] SPECTER2 re-ranking applied to ${similarities.length} papers`);
+      }
+    } catch (err) {
+      console.error("[smart-search] SPECTER2 re-ranking failed:", (err as Error).message);
+    }
+  }
+
   return {
     plan,
     papers: finalPapers,

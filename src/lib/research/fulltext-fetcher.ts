@@ -34,6 +34,11 @@ export async function fetchFullText(paper: {
 }, options?: { usePlaywright?: boolean }): Promise<FullTextResult | null> {
   const strategies: Array<() => Promise<FullTextResult | null>> = [];
 
+  // GROBID — highest quality structured PDF parsing (if available)
+  if (paper.openAccessPdf || paper.doi) {
+    strategies.push(() => tryGrobid(paper));
+  }
+
   if (paper.doi) {
     // Top priority: Europe PMC (has full text for Science, Nature, Lancet, etc.)
     strategies.push(() => tryEuropePMC(paper.doi!));
@@ -129,6 +134,30 @@ export async function fetchFullText(paper: {
   }
 
   return null;
+}
+
+// ─── GROBID (ML-based structured PDF parsing) ────
+
+async function tryGrobid(paper: { doi?: string; openAccessPdf?: string; title: string }): Promise<FullTextResult | null> {
+  try {
+    const { isGrobidAvailable, parseWithGrobid } = await import("@/lib/sources/grobid");
+    if (!(await isGrobidAvailable())) return null;
+
+    const pdfUrl = paper.openAccessPdf || (paper.doi ? `https://doi.org/${paper.doi}` : null);
+    if (!pdfUrl) return null;
+
+    const result = await parseWithGrobid(pdfUrl);
+    if (!result || result.fullText.length < 500) return null;
+
+    return {
+      text: result.fullText.slice(0, MAX_TEXT_LENGTH),
+      source: "html_scrape" as const,
+      truncated: result.fullText.length > MAX_TEXT_LENGTH,
+      wordCount: result.wordCount,
+    };
+  } catch {
+    return null;
+  }
 }
 
 // ─── Europe PMC (BEST for top journals) ────────
