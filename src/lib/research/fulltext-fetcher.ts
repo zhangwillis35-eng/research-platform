@@ -392,29 +392,219 @@ async function tryHtmlVersion(url: string): Promise<FullTextResult | null> {
   }
 }
 
-// ─── Publisher HTML via DOI ────────────────────
+// ─── Publisher HTML via DOI — aggressive deep scraping ────────────
+// Publishers show substantial content on landing pages (abstract, intro,
+// partial/full body, conclusions). The server is in HK and can access all of them.
+// We use publisher-specific selectors to extract MAXIMUM visible content.
 
 async function tryPublisherHtml(doi: string): Promise<FullTextResult | null> {
   try {
-    const res = await proxyFetch(`https://doi.org/${doi}`, {
+    const res = await fetch(`https://doi.org/${doi}`, {
       headers: {
-        "User-Agent": "ScholarFlow/1.0 (Academic Research Tool; mailto:scholarflow@research.app)",
-        Accept: "text/html",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
       },
+      redirect: "follow",
+      signal: AbortSignal.timeout(12000),
     });
     if (!res.ok) return null;
 
     const contentType = res.headers.get("content-type") ?? "";
-    if (!contentType.includes("text/html")) return null;
+    if (!contentType.includes("text/html") && !contentType.includes("xhtml")) return null;
 
     const html = await res.text();
-    const text = extractTextFromHtml(html);
-    if (!text || text.length < 300) return null;
+    const finalUrl = res.url || "";
 
+    // Try publisher-specific extractors first (get more content than generic)
+    const publisherText = extractPublisherContent(html, finalUrl, doi);
+    if (publisherText && publisherText.length > 300) {
+      console.log(`[fulltext] Publisher scrape: ${publisherText.length} chars from ${finalUrl.slice(0, 60)}`);
+      return makeResult(publisherText, "html_scrape");
+    }
+
+    // Fall back to generic extraction
+    const text = extractTextFromHtml(html);
+    if (!text || text.length < 200) return null;
     return makeResult(text, "html_scrape");
   } catch {
     return null;
   }
+}
+
+/**
+ * Publisher-specific content extractors — each publisher has different HTML
+ * structures. These selectors target the actual article body content that
+ * is publicly visible on the page (even for paywalled articles).
+ */
+function extractPublisherContent(html: string, url: string, doi: string): string | null {
+  // Strip scripts/styles/nav first
+  let cleaned = html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<nav[\s\S]*?<\/nav>/gi, "")
+    .replace(/<header[\s\S]*?<\/header>/gi, "")
+    .replace(/<footer[\s\S]*?<\/footer>/gi, "");
+
+  const parts: string[] = [];
+
+  // ── Elsevier / ScienceDirect ──
+  if (url.includes("sciencedirect.com") || doi.startsWith("10.1016/")) {
+    const selectors = [
+      /<div[^>]*class="[^"]*abstract[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+      /<div[^>]*id="[^"]*abstracts[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+      /<section[^>]*id="[^"]*introduction[^"]*"[^>]*>([\s\S]*?)<\/section>/gi,
+      /<section[^>]*id="[^"]*body[^"]*"[^>]*>([\s\S]*?)<\/section>/gi,
+      /<div[^>]*class="[^"]*Body[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+      /<section[^>]*class="[^"]*section[^"]*"[^>]*>([\s\S]*?)<\/section>/gi,
+    ];
+    for (const sel of selectors) {
+      let m;
+      while ((m = sel.exec(cleaned)) !== null) {
+        const t = stripHtml(m[1]);
+        if (t.length > 100) parts.push(t);
+      }
+    }
+  }
+
+  // ── Wiley Online Library ──
+  else if (url.includes("onlinelibrary.wiley.com") || doi.startsWith("10.1111/") || doi.startsWith("10.1002/")) {
+    const selectors = [
+      /<section[^>]*class="[^"]*article-section[^"]*"[^>]*>([\s\S]*?)<\/section>/gi,
+      /<div[^>]*class="[^"]*abstract-group[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+      /<section[^>]*class="[^"]*body-section[^"]*"[^>]*>([\s\S]*?)<\/section>/gi,
+      /<div[^>]*class="[^"]*article-section__content[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    ];
+    for (const sel of selectors) {
+      let m;
+      while ((m = sel.exec(cleaned)) !== null) {
+        const t = stripHtml(m[1]);
+        if (t.length > 100) parts.push(t);
+      }
+    }
+  }
+
+  // ── Nature / Springer ──
+  else if (url.includes("nature.com") || url.includes("springer.com") || doi.startsWith("10.1038/") || doi.startsWith("10.1007/")) {
+    const selectors = [
+      /<div[^>]*class="[^"]*c-article-body[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+      /<section[^>]*(?:id|class)="[^"]*[Aa]bstract[^"]*"[^>]*>([\s\S]*?)<\/section>/gi,
+      /<section[^>]*(?:id|class)="[^"]*introduction[^"]*"[^>]*>([\s\S]*?)<\/section>/gi,
+      /<section[^>]*(?:id|class)="[^"]*results[^"]*"[^>]*>([\s\S]*?)<\/section>/gi,
+      /<section[^>]*(?:id|class)="[^"]*discussion[^"]*"[^>]*>([\s\S]*?)<\/section>/gi,
+      /<section[^>]*(?:id|class)="[^"]*methods[^"]*"[^>]*>([\s\S]*?)<\/section>/gi,
+      /<div[^>]*class="[^"]*c-article-section__content[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    ];
+    for (const sel of selectors) {
+      let m;
+      while ((m = sel.exec(cleaned)) !== null) {
+        const t = stripHtml(m[1]);
+        if (t.length > 100) parts.push(t);
+      }
+    }
+  }
+
+  // ── Taylor & Francis ──
+  else if (url.includes("tandfonline.com") || doi.startsWith("10.1080/")) {
+    const selectors = [
+      /<div[^>]*class="[^"]*abstractSection[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+      /<div[^>]*class="[^"]*hlFld-Abstract[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+      /<div[^>]*class="[^"]*hlFld-Fulltext[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+      /<div[^>]*class="[^"]*article-body[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    ];
+    for (const sel of selectors) {
+      let m;
+      while ((m = sel.exec(cleaned)) !== null) {
+        const t = stripHtml(m[1]);
+        if (t.length > 100) parts.push(t);
+      }
+    }
+  }
+
+  // ── SAGE ──
+  else if (url.includes("sagepub.com") || doi.startsWith("10.1177/")) {
+    const selectors = [
+      /<div[^>]*class="[^"]*abstractSection[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+      /<div[^>]*class="[^"]*hlFld-Abstract[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+      /<div[^>]*class="[^"]*hlFld-Fulltext[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    ];
+    for (const sel of selectors) {
+      let m;
+      while ((m = sel.exec(cleaned)) !== null) {
+        const t = stripHtml(m[1]);
+        if (t.length > 100) parts.push(t);
+      }
+    }
+  }
+
+  // ── Science (AAAS) ──
+  else if (url.includes("science.org") || doi.startsWith("10.1126/")) {
+    const selectors = [
+      /<div[^>]*class="[^"]*article__body[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+      /<section[^>]*class="[^"]*abstract[^"]*"[^>]*>([\s\S]*?)<\/section>/gi,
+      /<section[^>]*class="[^"]*body[^"]*"[^>]*>([\s\S]*?)<\/section>/gi,
+      /<div[^>]*role="doc-abstract"[^>]*>([\s\S]*?)<\/div>/gi,
+    ];
+    for (const sel of selectors) {
+      let m;
+      while ((m = sel.exec(cleaned)) !== null) {
+        const t = stripHtml(m[1]);
+        if (t.length > 100) parts.push(t);
+      }
+    }
+  }
+
+  // ── Generic academic selectors (fallback for any publisher) ──
+  if (parts.length === 0) {
+    const genericSelectors = [
+      /<article[^>]*>([\s\S]*?)<\/article>/i,
+      /<div[^>]*class="[^"]*(?:article-content|paper-content|full-text|fulltext|main-content|article__body|article-body)[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+      /<div[^>]*id="[^"]*(?:article-body|full-text|main-text|body|content)[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+      /<section[^>]*class="[^"]*(?:abstract|introduction|body|discussion|conclusion|results|methods)[^"]*"[^>]*>([\s\S]*?)<\/section>/gi,
+      /<div[^>]*role="doc-abstract"[^>]*>([\s\S]*?)<\/div>/gi,
+    ];
+    for (const sel of genericSelectors) {
+      let m;
+      while ((m = sel.exec(cleaned)) !== null) {
+        const t = stripHtml(m[1] || m[0]);
+        if (t.length > 150) parts.push(t);
+      }
+    }
+  }
+
+  if (parts.length === 0) return null;
+
+  // Deduplicate overlapping parts and join
+  const unique = deduplicateParts(parts);
+  return unique.join("\n\n");
+}
+
+/** Strip HTML tags and clean whitespace */
+function stripHtml(html: string): string {
+  return html
+    .replace(/<figure[\s\S]*?<\/figure>/gi, "")
+    .replace(/<table[\s\S]*?<\/table>/gi, "")
+    .replace(/<aside[\s\S]*?<\/aside>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#\d+;/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Remove near-duplicate text parts (one contains the other) */
+function deduplicateParts(parts: string[]): string[] {
+  const sorted = parts.sort((a, b) => b.length - a.length);
+  const result: string[] = [];
+  for (const part of sorted) {
+    const isDuplicate = result.some(r => r.includes(part.slice(0, 80)));
+    if (!isDuplicate) result.push(part);
+  }
+  return result;
 }
 
 // ─── Institutional EZproxy ─────────────────────
