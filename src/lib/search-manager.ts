@@ -143,15 +143,19 @@ class BackgroundSearchManager {
               // Don't save full result to sessionStorage here — too large
               // It will be saved when status changes to "done"
             } else if (evt.type === "done") {
-              this.state.status = "done";
-              this.state.completedAt = Date.now();
-              this.state.progress = this.state.progress.map((s) => ({
-                ...s,
-                done: true,
-              }));
-              this.notify();
-              this.saveState();
-              this.saveResult();
+              // Only fire "done" once — prevent duplicate from stream-end fallback
+              if (this.state.status !== "done") {
+                this.state.status = "done";
+                this.state.completedAt = Date.now();
+                this.state.consumed = false; // Reset consumed for this new result
+                this.state.progress = this.state.progress.map((s) => ({
+                  ...s,
+                  done: true,
+                }));
+                this.notify();
+                this.saveState();
+                this.saveResult();
+              }
             } else if (evt.type === "error") {
               this.state.status = "error";
               this.state.error = evt.details || evt.error;

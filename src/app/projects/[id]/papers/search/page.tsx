@@ -611,9 +611,17 @@ ${fullTextContext}` : ""}`;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Track last processed result to prevent duplicate processing
+  const lastProcessedRef = useRef<number>(0);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function handleSearchResult(data: any) {
     if (!data?.papers) return;
+    // Dedup guard: skip if this result was already processed (within 5 seconds)
+    const now = Date.now();
+    if (now - lastProcessedRef.current < 5000) return;
+    lastProcessedRef.current = now;
+
     const searchQuery = data.plan?.translatedInput || query;
 
     const batchId = `batch-${Date.now()}`;
@@ -712,7 +720,11 @@ ${fullTextContext}` : ""}`;
       }),
     }).then(r => r.json()).then(d => {
       if (d.record) {
-        setSearchHistory(prev => [d.record, ...prev]);
+        // Dedup: only add if not already in the list (prevents duplicates from re-processing)
+        setSearchHistory(prev => {
+          if (prev.some(h => h.id === d.record.id)) return prev;
+          return [d.record, ...prev];
+        });
       }
     }).catch(() => {});
   }
