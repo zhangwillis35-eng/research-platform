@@ -59,14 +59,17 @@ export async function fetchFullText(paper: {
     } catch { /* continue */ }
   }
 
-  // ── Tier 2: Race next batch (includes new sources) ──
+  // ── Tier 2: Race ALL remaining strategies in parallel ──
+  // Publisher scraping runs alongside API calls — first result wins
   const tier2: Array<() => Promise<FullTextResult | null>> = [];
   if (paper.doi) {
     tier2.push(() => tryPMC(paper.doi!));
     tier2.push(() => tryUnpaywallAllLocations(paper.doi!));
-    tier2.push(() => tryCrossrefTDM(paper.doi!)); // Publisher-authorized TDM links
-    tier2.push(() => trySpringerOA(paper.doi!));   // Springer Nature OA XML
-    tier2.push(() => tryOpenAlexOA(paper.doi!));   // Multiple OA locations
+    tier2.push(() => tryCrossrefTDM(paper.doi!));
+    tier2.push(() => trySpringerOA(paper.doi!));
+    tier2.push(() => tryOpenAlexOA(paper.doi!));
+    tier2.push(() => tryPublisherHtml(paper.doi!));  // Publisher page — parallel with APIs
+    tier2.push(() => tryOpenAccessButton(paper.doi!));
   }
   if (paper.unpaywallUrl) {
     tier2.push(() => tryHtmlVersion(paper.unpaywallUrl!));
@@ -74,17 +77,15 @@ export async function fetchFullText(paper: {
 
   if (tier2.length > 0) {
     try {
-      const result = await raceForFirst(tier2, 6000);
+      const result = await raceForFirst(tier2, 8000);
       if (result) return result;
     } catch { /* continue */ }
   }
 
-  // ── Tier 3: Slower fallbacks (sequential, short timeouts) ──
+  // ── Tier 3: Last-resort fallbacks (sequential) ──
   const tier3: Array<() => Promise<FullTextResult | null>> = [];
   if (paper.doi) {
-    tier3.push(() => tryPublisherHtml(paper.doi!));
     tier3.push(() => tryGrobid(paper));
-    tier3.push(() => tryOpenAccessButton(paper.doi!));
   }
   if (paper.title.length > 10) {
     tier3.push(() => tryEuropePMCByTitle(paper.title));
