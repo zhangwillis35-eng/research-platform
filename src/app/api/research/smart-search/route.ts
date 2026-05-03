@@ -66,6 +66,7 @@ export async function POST(request: Request) {
         }, 15000);
 
         try {
+          const searchStart = Date.now();
           send({ type: "status", message: "AI 提取关键词中..." });
 
           const result = await smartSearch(
@@ -74,10 +75,14 @@ export async function POST(request: Request) {
             limit,
             enableRelevanceScoring,
             (phase, detail) => {
+              const elapsed = ((Date.now() - searchStart) / 1000).toFixed(1);
+              console.log(`[smart-search] ${elapsed}s — ${phase}: ${detail}`);
               send({ type: "status", phase, message: detail });
             },
             journalLang
           );
+
+          console.log(`[smart-search] Total: ${((Date.now() - searchStart) / 1000).toFixed(1)}s, papers: ${result.papers.length}`);
 
           // Apply journal filter if projectId provided
           if (projectId) {
