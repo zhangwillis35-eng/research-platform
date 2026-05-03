@@ -61,6 +61,7 @@ class BackgroundSearchManager {
     limit: number;
     enableRelevanceScoring: boolean;
     stream: boolean;
+    projectId?: string;
   }): Promise<void> {
     // Cancel any existing search
     this.abort();

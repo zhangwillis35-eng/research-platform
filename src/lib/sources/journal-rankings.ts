@@ -1,6 +1,6 @@
 // FT50 — Financial Times Top 50 Business Journals (2024 list)
 // Source: https://www.ft.com/ft-top-50-journals
-const FT50_JOURNALS = new Set([
+export const FT50_JOURNALS = new Set([
   // Accounting (6)
   "The Accounting Review",
   "Accounting, Organizations and Society",
@@ -69,7 +69,7 @@ const FT50_JOURNALS = new Set([
 
 // UTD24 — UT Dallas Top 24 Business School Research Rankings Journals
 // Source: https://jsom.utdallas.edu/the-utd-top-100-business-school-research-rankings/
-const UTD24_JOURNALS = new Set([
+export const UTD24_JOURNALS = new Set([
   // Accounting (3)
   "The Accounting Review",
   "Journal of Accounting and Economics",
@@ -107,7 +107,7 @@ const UTD24_JOURNALS = new Set([
 // ABS (Chartered Association of Business Schools) 4* Journals of Distinction
 // Source: Chartered ABS Academic Journal Guide 2024
 // Full list of 45 journals rated 4* (Journal of Distinction)
-const ABS4STAR_JOURNALS = new Set([
+export const ABS4STAR_JOURNALS = new Set([
   // Accounting
   "The Accounting Review",
   "Accounting, Organizations and Society",
@@ -177,7 +177,7 @@ export interface JournalRanking {
 }
 
 // Normalize journal name for matching
-function normalize(name: string): string {
+export function normalizeJournalName(name: string): string {
   return name
     .toLowerCase()
     .replace(/^the\s+/, "")
@@ -190,7 +190,7 @@ function normalize(name: string): string {
 function buildNormalizedSet(journals: Set<string>): Set<string> {
   const normalized = new Set<string>();
   for (const j of journals) {
-    normalized.add(normalize(j));
+    normalized.add(normalizeJournalName(j));
   }
   return normalized;
 }
@@ -236,7 +236,7 @@ const abs4starNormalized = buildNormalizedSet(ABS4STAR_JOURNALS);
 export function getJournalRanking(venue: string | undefined | null): JournalRanking {
   if (!venue) return { ft50: false, utd24: false, abs4star: false };
 
-  const normalized = normalize(venue);
+  const normalized = normalizeJournalName(venue);
 
   // Empty after normalization (e.g. pure Chinese names) — no match
   if (!normalized || normalized.length < 3) return { ft50: false, utd24: false, abs4star: false };

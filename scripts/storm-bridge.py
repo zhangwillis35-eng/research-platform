@@ -135,6 +135,91 @@ For EACH gap, provide:
 - Feasibility assessment (data availability, sample access)
 
 Respond in Chinese. Be specific and actionable — each gap should be directly publishable.""",
+
+    "field-summary": """You are a senior academic researcher synthesizing the key takeaways from a collection of papers within a specific research field.
+
+From the provided papers, generate a comprehensive field-level synthesis:
+
+1. **核心发现与共识** (Key Findings & Consensus)
+   - What are the most important and widely-supported findings?
+   - Where do multiple papers converge on the same conclusion?
+   - Cite specific papers for each finding [by number]
+
+2. **主流方法论趋势** (Methodological Trends)
+   - Dominant research designs (empirical, experimental, qualitative, mixed)
+   - Common data sources, sample sizes, and analytical techniques
+   - Emerging methodological innovations
+
+3. **主要争论与张力** (Major Debates & Tensions)
+   - Where do papers disagree or present conflicting evidence?
+   - What are the unresolved theoretical debates?
+   - How do different schools of thought clash?
+
+4. **新兴趋势** (Emerging Trends)
+   - What new directions are gaining traction?
+   - What topics have seen rapid growth recently?
+   - Cross-disciplinary influences entering the field
+
+5. **研究空白** (Research Gaps)
+   - What important questions remain unanswered?
+   - What contexts, variables, or populations are understudied?
+   - Each gap must be specific and grounded in the reviewed literature
+
+Requirements:
+- Respond in Chinese (学术写作风格)
+- Cite papers using [number] format matching the input order
+- Be synthetic, not descriptive — identify patterns across papers
+- Focus on field-level insights, not individual paper summaries
+- Minimum 2500 Chinese characters""",
+
+    "assumptions": """You are an expert at identifying and comparing research assumptions across academic papers.
+
+From the provided papers, extract and compare assumptions at multiple levels:
+
+## Part 1: Per-Paper Assumption Extraction
+
+For EACH paper, identify:
+
+1. **理论假设** (Theoretical Assumptions)
+   - What theoretical frameworks are taken as given?
+   - What causal mechanisms are assumed to operate?
+
+2. **方法论假设** (Methodological Assumptions)
+   - What assumptions about measurement validity?
+   - What assumptions about data distribution or sample representativeness?
+   - What statistical assumptions (linearity, independence, etc.)?
+
+3. **边界条件** (Boundary Conditions)
+   - In what contexts do the authors assume their findings hold?
+   - What scope limitations are explicitly stated?
+
+4. **隐含假设** (Implicit Assumptions)
+   - What is taken for granted but not explicitly stated?
+   - What paradigmatic assumptions underlie the research?
+
+## Part 2: Cross-Paper Comparison
+
+After extracting per-paper assumptions:
+
+1. **共享假设** (Shared Assumptions)
+   - Assumptions held in common across most/all papers
+   - Whether this consensus is well-grounded or merely conventional
+
+2. **冲突假设** (Conflicting Assumptions)
+   - Where papers make contradictory assumptions
+   - Implications for interpreting their findings
+   - Which assumption is better supported by evidence
+
+3. **独特假设** (Unique Assumptions)
+   - Assumptions unique to specific papers
+   - Whether these represent innovation or limitation
+
+Requirements:
+- Respond in Chinese (学术写作风格)
+- Cite papers using [number] format
+- Be analytical — don't just list, compare and evaluate
+- Highlight the most consequential assumption differences
+- Minimum 2000 Chinese characters""",
 }
 
 

@@ -3,6 +3,7 @@ import { setAIContext } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
 import { NextResponse } from "next/server";
+import { applyJournalFilter } from "@/lib/sources/journal-filter";
 
 export async function POST(request: Request) {
   try {
@@ -16,12 +17,14 @@ export async function POST(request: Request) {
       limit = 20,
       enableRelevanceScoring = true,
       stream = false,
+      projectId,
     } = body as {
       query: string;
       provider?: AIProvider;
       limit?: number;
       enableRelevanceScoring?: boolean;
       stream?: boolean;
+      projectId?: string;
     };
 
     if (!query?.trim()) {
@@ -34,6 +37,12 @@ export async function POST(request: Request) {
     if (!stream) {
       // Non-streaming mode — backwards compatible JSON response
       const result = await smartSearch(query, provider, limit, enableRelevanceScoring);
+      if (projectId) {
+        const { papers: filtered, removedCount } = await applyJournalFilter(projectId, result.papers);
+        result.papers = filtered;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if (result.stats) (result.stats as any).filteredByJournalFilter = removedCount;
+      }
       return new Response(JSON.stringify(result), {
         headers: { "Content-Type": "application/json" },
       });
@@ -59,6 +68,17 @@ export async function POST(request: Request) {
               send({ type: "status", phase, message: detail });
             }
           );
+
+          // Apply journal filter if projectId provided
+          if (projectId) {
+            const { papers: filtered, removedCount } = await applyJournalFilter(projectId, result.papers);
+            result.papers = filtered;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            if (result.stats) (result.stats as any).filteredByJournalFilter = removedCount;
+            if (removedCount > 0) {
+              send({ type: "status", phase: "journal-filter", message: `期刊过滤：排除 ${removedCount} 篇` });
+            }
+          }
 
           // Send final result — strip fullText to save bandwidth (hasFullText flag is preserved)
           const strippedResult = {

@@ -85,12 +85,28 @@ function isQ2Journal(p: ScoredPaper): boolean {
   return p.journalMeta?.jcrQuartile === "Q2";
 }
 
-/** Sort by relevance (desc) then citations (desc) */
+/** Sort by relevance (desc), then journal grade (desc), then IF (desc), then citations (desc) */
 function sortByQuality(papers: ScoredPaper[]): ScoredPaper[] {
   return papers.sort((a, b) => {
+    // Primary: relevance score
     const scoreA = a.relevanceScore ?? 0;
     const scoreB = b.relevanceScore ?? 0;
     if (scoreB !== scoreA) return scoreB - scoreA;
+
+    // Secondary: journal grade (UTD24/FT50 > JCR Q1 > Q2 > ...)
+    const jcrOrder: Record<string, number> = { Q1: 4, Q2: 3, Q3: 2, Q4: 1 };
+    const aGrade = (a.journalRanking?.utd24 ? 10 : 0) + (a.journalRanking?.ft50 ? 10 : 0) +
+      (jcrOrder[a.journalMeta?.jcrQuartile ?? ""] ?? 0);
+    const bGrade = (b.journalRanking?.utd24 ? 10 : 0) + (b.journalRanking?.ft50 ? 10 : 0) +
+      (jcrOrder[b.journalMeta?.jcrQuartile ?? ""] ?? 0);
+    if (bGrade !== aGrade) return bGrade - aGrade;
+
+    // Tertiary: impact factor
+    const aIF = a.journalMeta?.impactFactor ?? 0;
+    const bIF = b.journalMeta?.impactFactor ?? 0;
+    if (aIF !== bIF) return bIF - aIF;
+
+    // Quaternary: citations
     return b.citationCount - a.citationCount;
   });
 }
@@ -519,6 +535,40 @@ export async function smartSearch(
 
       return true;
     });
+  }
+
+  // Step 6.5: Pre-scoring truncation — sort by journal grade + IF, keep only top candidates
+  // This prevents expensive relevance scoring on papers that will be discarded anyway
+  if (limit < 999 && papers.length > limit * 3) {
+    const preSorted = [...papers].sort((a, b) => {
+      // Tier 1: UTD24/FT50 papers first
+      const aTop = (a.journalRanking?.utd24 ? 2 : 0) + (a.journalRanking?.ft50 ? 2 : 0);
+      const bTop = (b.journalRanking?.utd24 ? 2 : 0) + (b.journalRanking?.ft50 ? 2 : 0);
+      if (aTop !== bTop) return bTop - aTop;
+
+      // Tier 2: JCR quartile (Q1 > Q2 > Q3 > Q4 > none)
+      const jcrOrder: Record<string, number> = { Q1: 4, Q2: 3, Q3: 2, Q4: 1 };
+      const aJCR = jcrOrder[a.journalMeta?.jcrQuartile ?? ""] ?? 0;
+      const bJCR = jcrOrder[b.journalMeta?.jcrQuartile ?? ""] ?? 0;
+      if (aJCR !== bJCR) return bJCR - aJCR;
+
+      // Tier 3: Impact factor
+      const aIF = a.journalMeta?.impactFactor ?? 0;
+      const bIF = b.journalMeta?.impactFactor ?? 0;
+      if (aIF !== bIF) return bIF - aIF;
+
+      // Tier 4: SSCI/SCI indexed
+      const aIndexed = (a.journalMeta?.ssci ? 1 : 0) + (a.journalMeta?.sci ? 1 : 0);
+      const bIndexed = (b.journalMeta?.ssci ? 1 : 0) + (b.journalMeta?.sci ? 1 : 0);
+      if (aIndexed !== bIndexed) return bIndexed - aIndexed;
+
+      // Tier 5: Citations
+      return b.citationCount - a.citationCount;
+    });
+
+    const candidatePool = Math.max(limit * 3, 60); // Keep 3x limit as candidate pool for scoring
+    papers = preSorted.slice(0, candidatePool);
+    onProgress?.("truncate", `按期刊等级排序，保留前 ${papers.length} 篇候选进入评分`);
   }
 
   // Step 7: Two-phase scoring pipeline

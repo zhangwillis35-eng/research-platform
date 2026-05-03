@@ -83,7 +83,7 @@ export async function checkStormAvailable(): Promise<{
 /**
  * Run STORM analysis on a set of papers.
  */
-export type StormMode = "review" | "variables" | "theories" | "gaps";
+export type StormMode = "review" | "variables" | "theories" | "gaps" | "field-summary" | "assumptions";
 
 export async function runStormAnalysis(
   topic: string,

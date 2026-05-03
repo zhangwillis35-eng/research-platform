@@ -34,14 +34,15 @@ model PendingRegistration {
 }
 
 model ResearchProject {
-  id          String   @id @default(cuid())
-  userId      String
-  name        String
-  description String?  @db.Text
-  domain      String? // e.g. "组织行为学", "战略管理"
-  notebookUrl String? // NotebookLM notebook share URL
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                String   @id @default(cuid())
+  userId            String
+  name              String
+  description       String?  @db.Text
+  domain            String? // e.g. "组织行为学", "战略管理"
+  notebookUrl       String? // NotebookLM notebook share URL
+  journalFilterMode String? // "blacklist" | "whitelist" | null
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   papers  Paper[]
@@ -52,6 +53,7 @@ model ResearchProject {
   theories Theory[]
   searchHistory SearchHistory[]
   chatHistory   ChatHistory[]
+  journalFilters JournalFilter[]
 }
 
 // ─── Papers ─────────────────────────────────────
@@ -331,4 +333,20 @@ model AdminSession {
   token     String   @unique
   createdAt DateTime @default(now())
   expiresAt DateTime
+}
+
+// ─── Journal Filter ───────────────────────────
+
+model JournalFilter {
+  id          String   @id @default(cuid())
+  projectId   String
+  journalName String   // normalized journal name
+  filterType  String   // "blacklist" | "whitelist"
+  source      String   @default("manual") // "manual" | "csv" | "preset"
+  createdAt   DateTime @default(now())
+
+  project ResearchProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, journalName, filterType])
+  @@index([projectId, filterType])
 }
