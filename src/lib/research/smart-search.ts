@@ -664,66 +664,9 @@ export async function smartSearch(
       scoredPapers = papers.map((p) => ({ ...p, relevanceScore: undefined }));
     }
 
-    // Phase 2: For quality tiers, fetch full text ONLY for top candidates
-    if (isQualityTier && scoredPapers.length > 0) {
-      // Only fetch full text for the top candidates (limit * 2 to have buffer)
-      const topCandidates = scoredPapers
-        .sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0))
-        .slice(0, Math.min(limit * 2, 40));
-
-      // Only fetch for papers with OA indicators (skip paywalled papers that will fail anyway)
-      const fetchable = topCandidates.filter(p =>
-        p.openAccessPdf || p.unpaywallUrl || p.doi
-      );
-
-      if (fetchable.length > 0) {
-        onProgress?.("fulltext", `获取 ${fetchable.length} 篇候选论文全文...`);
-        const fullTextMap = await batchFetchFullText(
-          fetchable.map(p => ({
-            doi: p.doi,
-            openAccessPdf: p.openAccessPdf,
-            unpaywallUrl: p.unpaywallUrl,
-            title: p.title,
-          })),
-          20 // High concurrency — strategies are parallel-raced internally
-        );
-        console.log(`[smart-search] Full text: ${fullTextMap.size}/${fetchable.length} papers`);
-
-        // Attach full text to scored papers
-        for (const paper of scoredPapers) {
-          const key = paper.doi || paper.title;
-          const ft = fullTextMap.get(key);
-          if (ft) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const p = paper as any;
-            p.fullText = ft.text;
-            p.hasFullText = true;
-            p.fullTextSource = ft.source;
-            p.fullTextWordCount = ft.wordCount;
-          }
-        }
-
-        // Phase 2b: Re-score papers that got full text with deeper analysis
-        const withFullText = scoredPapers.filter((p: any) => p.hasFullText);
-        if (withFullText.length > 0) {
-          onProgress?.("score", `AI 全文深度评分: ${withFullText.length} 篇...`);
-          try {
-            const deepScored = await scoreRelevanceWithFullText(
-              withFullText, input, plan.translatedInput, provider
-            );
-            // Merge deep scores back
-            const deepMap = new Map(deepScored.map(p => [p.doi || p.title, p]));
-            for (let i = 0; i < scoredPapers.length; i++) {
-              const key = scoredPapers[i].doi || scoredPapers[i].title;
-              const deep = deepMap.get(key);
-              if (deep) scoredPapers[i] = deep;
-            }
-          } catch (err) {
-            console.error("[smart-search] full-text re-scoring failed:", err);
-          }
-        }
-      }
-    }
+    // Phase 2: Full-text fetching is DEFERRED — results are returned first,
+    // full text is fetched later via the /api/papers/fulltext endpoint.
+    // This prevents the search from hanging on slow/unreachable PDF sources.
   } else {
     scoredPapers = papers.map((p) => ({ ...p, relevanceScore: undefined }));
   }
