@@ -624,6 +624,23 @@ export default function PapersPage() {
     }
   }
 
+  // Clear weekly digest papers
+  async function clearWeeklyDigest() {
+    if (!confirm("确定清空所有 AI 前沿周刊文献？清空后可重新获取最新顶刊论文。")) return;
+    try {
+      const res = await fetch(`/api/papers?projectId=${projectId}&folder=AI 前沿`, { method: "DELETE" });
+      if (res.ok) {
+        const data = await res.json();
+        setUploadResult(`已清空 ${data.deleted ?? 0} 篇周刊文献`);
+        const reload = await fetch(`/api/papers?projectId=${projectId}`);
+        const reloadData = await reload.json();
+        setPapers(reloadData.papers ?? []);
+      }
+    } catch {
+      setUploadResult("清空失败");
+    }
+  }
+
   // Split papers into catalog (search/upload) vs weekly digest
   const weeklyPapers = papers.filter((p) => p.folder?.includes("AI 前沿"));
   const catalogPapers = papers.filter((p) => !p.folder?.includes("AI 前沿"));
@@ -763,6 +780,14 @@ export default function PapersPage() {
         >
           AI 前沿周刊（{weeklyPapers.length}）
         </button>
+        {activeTab === "weekly" && weeklyPapers.length > 0 && (
+          <button
+            className="ml-auto px-2 py-1 text-[10px] text-destructive hover:bg-destructive/10 rounded transition-colors"
+            onClick={clearWeeklyDigest}
+          >
+            清空周刊
+          </button>
+        )}
       </div>
 
       {/* AI Overview toolbar */}

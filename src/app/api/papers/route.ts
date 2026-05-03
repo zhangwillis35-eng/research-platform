@@ -87,3 +87,23 @@ export async function POST(request: Request) {
     );
   }
 }
+
+// DELETE /api/papers?projectId=xxx&folder=AI 前沿 — bulk delete papers by folder
+export async function DELETE(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const projectId = searchParams.get("projectId");
+  const folder = searchParams.get("folder");
+
+  if (!projectId || !folder) {
+    return NextResponse.json({ error: "projectId and folder required" }, { status: 400 });
+  }
+
+  const auth = await requireProjectAccess(projectId);
+  if (auth instanceof NextResponse) return auth;
+
+  const { count } = await prisma.paper.deleteMany({
+    where: { projectId, folder: { contains: folder } },
+  });
+
+  return NextResponse.json({ deleted: count });
+}
