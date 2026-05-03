@@ -398,31 +398,20 @@ export default function PapersPage() {
 
     setFolderProgress({ current: 0, total: files.length, name: "加载 PDF 解析器..." });
 
-    // Load pdf.js from CDN (works on all browsers: Safari, Chrome, Firefox, Edge)
+    // Load pdf.js UMD from CDN (creates window.pdfjsLib — works on all browsers)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let pdfjsLib: any = (window as any).pdfjsLib;
     if (!pdfjsLib) {
-      await new Promise<void>((resolve, reject) => {
+      await new Promise<void>((resolve) => {
         const script = document.createElement("script");
-        script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs";
-        script.type = "module";
+        script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
         script.onload = () => resolve();
-        script.onerror = () => reject(new Error("Failed to load pdf.js"));
+        script.onerror = () => resolve();
         document.head.appendChild(script);
-      }).catch(() => {
-        // Fallback: try loading as regular script
-        return new Promise<void>((resolve) => {
-          const script = document.createElement("script");
-          script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-          script.onload = () => resolve();
-          script.onerror = () => resolve(); // Continue even if CDN fails
-          document.head.appendChild(script);
-        });
       });
       pdfjsLib = (window as any).pdfjsLib;
     }
 
-    // Set worker to CDN
     if (pdfjsLib?.GlobalWorkerOptions) {
       pdfjsLib.GlobalWorkerOptions.workerSrc =
         "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -450,11 +439,31 @@ export default function PapersPage() {
 
     async function uploadOne(file: File) {
       try {
-        let fullText = await extractTextFromPdf(file);
-        fullText = fullText.trim().slice(0, 30000);
+        let fullText = "";
+        try {
+          fullText = (await extractTextFromPdf(file)).trim().slice(0, 30000);
+        } catch { /* pdf.js extraction failed */ }
 
-        if (fullText.length < 100) {
-          // Fallback to server-side extraction
+        if (fullText.length >= 100) {
+          // Fast path: send only text JSON (~50KB)
+          const lines = fullText.split("\n").map((l: string) => l.trim()).filter(Boolean);
+          let title = file.name.replace(/\.pdf$/i, "");
+          for (const line of lines.slice(0, 20)) {
+            if (line.length >= 15 && line.length <= 250 && !/^[\d\s.]+$/.test(line) && !line.startsWith("http")) {
+              title = line; break;
+            }
+          }
+          const res = await fetch("/api/papers/batch-upload-text", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId, title, abstract: fullText.slice(0, 500), fullText, pdfFileName: file.name, authors: [] }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.matched) matched++; else created++;
+          } else { failed++; }
+        } else {
+          // Fallback: upload PDF binary to server for extraction
           const formData = new FormData();
           formData.append("projectId", projectId);
           formData.append("file", file);
@@ -463,34 +472,7 @@ export default function PapersPage() {
             const data = await res.json();
             if (data.matched) matched++; else created++;
           } else { failed++; }
-          completed++;
-          setFolderProgress({ current: completed, total: files.length, name: file.name });
-          return;
         }
-
-        // Extract title
-        const lines = fullText.split("\n").map((l: string) => l.trim()).filter(Boolean);
-        let title = file.name.replace(/\.pdf$/i, "");
-        for (const line of lines.slice(0, 20)) {
-          if (line.length >= 15 && line.length <= 250 && !/^[\d\s.]+$/.test(line) && !line.startsWith("http")) {
-            title = line; break;
-          }
-        }
-
-        // Send only text JSON (~50KB) instead of PDF binary (~5MB)
-        const res = await fetch("/api/papers/batch-upload-text", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            projectId, title,
-            abstract: fullText.slice(0, 500),
-            fullText, pdfFileName: file.name, authors: [],
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.matched) matched++; else created++;
-        } else { failed++; }
       } catch {
         failed++;
       }
