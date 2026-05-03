@@ -25,34 +25,53 @@ Digital transformation and organizational resilience
 AI adoption in healthcare: A systematic review`;
 
 export async function POST(request: Request) {
-  // Auth check BEFORE streaming
-  let userId = "unknown";
+  // Step 0: Auth + parse body (non-streaming, fail fast)
   try {
     const auth = await requireAuth();
     if (auth instanceof NextResponse) return auth;
-    userId = auth.id;
-  } catch (err) {
-    console.error("[reference-search] Auth error:", err);
+    setAIContext(auth.id, "/api/papers/reference-search");
+  } catch {
     return NextResponse.json({ error: "Authentication failed" }, { status: 401 });
   }
 
-  let body: { references?: string; provider?: string };
+  let references: string;
+  let provider: AIProvider;
   try {
-    body = await request.json();
+    const body = await request.json();
+    references = body.references ?? "";
+    provider = (body.provider ?? "deepseek-fast") as AIProvider;
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
-
-  const references = body.references ?? "";
-  const provider = (body.provider ?? "deepseek-fast") as AIProvider;
 
   if (!references.trim()) {
     return NextResponse.json({ error: "references text required" }, { status: 400 });
   }
 
-  setAIContext(userId, "/api/papers/reference-search");
+  // Step 1: Extract titles using LLM (non-streaming, fail fast)
+  let titles: string[];
+  try {
+    const extractResult = await callAI({
+      provider,
+      system: EXTRACT_TITLES_PROMPT,
+      messages: [{ role: "user", content: references }],
+      temperature: 0,
+    });
 
-  // SSE streaming for progress
+    titles = extractResult.content
+      .split("\n")
+      .map((t: string) => t.trim())
+      .filter((t: string) => t.length > 10 && t.length < 300);
+  } catch (err) {
+    console.error("[reference-search] LLM extraction failed:", err);
+    return NextResponse.json({ error: "AI 提取标题失败: " + String(err) }, { status: 500 });
+  }
+
+  if (titles.length === 0) {
+    return NextResponse.json({ error: "未能从参考文献中提取到论文标题" }, { status: 400 });
+  }
+
+  // Step 2+3: Search + enrich via SSE stream
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
     async start(controller) {
@@ -62,46 +81,16 @@ export async function POST(request: Request) {
         } catch { /* stream closed */ }
       }
 
-      // Keepalive to prevent nginx timeout
       const keepalive = setInterval(() => {
         try { controller.enqueue(encoder.encode(`: keepalive\n\n`)); } catch { /* closed */ }
       }, 15000);
 
       try {
-        // Step 1: Extract titles using LLM
-        send({ type: "status", message: "AI 正在从参考文献中提取论文标题..." });
+        send({ type: "titles", titles, message: `提取到 ${titles.length} 篇论文标题，开始逐篇精确检索...` });
 
-        const extractResult = await callAI({
-          provider,
-          system: EXTRACT_TITLES_PROMPT,
-          messages: [{ role: "user", content: references }],
-          temperature: 0,
-        });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const allPapers: Array<{ title: string; found: boolean; paper?: any }> = [];
 
-        const titles = extractResult.content
-          .split("\n")
-          .map((t: string) => t.trim())
-          .filter((t: string) => t.length > 10 && t.length < 300);
-
-        if (titles.length === 0) {
-          send({ type: "error", error: "未能从参考文献中提取到论文标题，请检查参考文献格式" });
-          clearInterval(keepalive);
-          controller.close();
-          return;
-        }
-
-        send({ type: "status", message: `提取到 ${titles.length} 篇论文标题，开始逐篇精确检索...` });
-        send({ type: "titles", titles });
-
-        // Step 2: Search each title as exact phrase
-        const allPapers: Array<{
-          title: string;
-          found: boolean;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          paper?: any;
-        }> = [];
-
-        // Batch search: 3 concurrent (conservative to avoid rate limits)
         const batchSize = 3;
         for (let i = 0; i < titles.length; i += batchSize) {
           const batch = titles.slice(i, i + batchSize);
@@ -113,7 +102,6 @@ export async function POST(request: Request) {
                 freeOnly: true,
               });
 
-              // Find best match by title similarity
               const normalized = title.toLowerCase().replace(/[^a-z0-9]/g, "");
               const match = papers.find((p) => {
                 const pNorm = p.title.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -124,8 +112,7 @@ export async function POST(request: Request) {
               });
 
               return { title, found: !!match, paper: match ?? papers[0] };
-            } catch (err) {
-              console.error(`[reference-search] Search failed for: ${title.slice(0, 50)}`, err);
+            } catch {
               return { title, found: false };
             }
           });
@@ -141,35 +128,24 @@ export async function POST(request: Request) {
           });
         }
 
-        // Step 3: Enrich found papers (cap at 30 to avoid timeout)
-        const foundPapers = allPapers.filter((p) => p.paper).map((p) => p.paper!);
-        const toEnrich = foundPapers.slice(0, 30);
-        send({ type: "status", message: `找到 ${foundPapers.length}/${titles.length} 篇，正在补全元数据...` });
-
-        let enriched = toEnrich;
+        // Enrich (cap at 30)
+        const foundPapers = allPapers.filter((p) => p.paper).map((p) => p.paper!).slice(0, 30);
+        let enriched = foundPapers;
         try {
-          if (toEnrich.length > 0) {
-            enriched = await enrichPapersBatch(toEnrich);
+          if (foundPapers.length > 0) {
+            send({ type: "status", message: `找到 ${foundPapers.length}/${titles.length} 篇，补全元数据...` });
+            enriched = await enrichPapersBatch(foundPapers);
           }
-        } catch (err) {
-          console.error("[reference-search] Enrichment failed:", err);
-          // Continue with unenriched papers
-        }
+        } catch { /* continue with unenriched */ }
 
-        // Build result with match status
         const result = allPapers.map((item) => {
-          const enrichedPaper = item.paper
+          const ep = item.paper
             ? enriched.find((p) =>
                 p.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 60) ===
                 item.paper!.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 60)
               ) ?? item.paper
             : null;
-
-          return {
-            queryTitle: item.title,
-            found: item.found,
-            paper: enrichedPaper,
-          };
+          return { queryTitle: item.title, found: item.found, paper: ep };
         });
 
         send({
@@ -184,7 +160,6 @@ export async function POST(request: Request) {
         });
         send({ type: "done" });
       } catch (err) {
-        console.error("[reference-search] Pipeline error:", err);
         send({ type: "error", error: String(err) });
       }
 
