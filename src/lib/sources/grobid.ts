@@ -34,6 +34,37 @@ export async function isGrobidAvailable(): Promise<boolean> {
 }
 
 /**
+ * Parse only the header (title, abstract, authors) of a PDF — ~10x faster than full document.
+ * Use for batch imports where full body ML parsing is not needed.
+ */
+export async function parseHeaderWithGrobid(pdfBuffer: Buffer): Promise<{
+  title?: string;
+  abstract?: string;
+  authors: string[];
+} | null> {
+  try {
+    const formData = new FormData();
+    const blob = new Blob([pdfBuffer], { type: "application/pdf" });
+    formData.append("input", blob, "paper.pdf");
+
+    const res = await fetch(`${GROBID_URL}/api/processHeaderDocument`, {
+      method: "POST",
+      body: formData,
+      signal: AbortSignal.timeout(10000), // header-only: 10s is plenty
+    });
+
+    if (!res.ok) return null;
+
+    const teiXml = await res.text();
+    const result = parseTeiXml(teiXml);
+    return { title: result.title, abstract: result.abstract, authors: result.authors };
+  } catch (err) {
+    console.log(`[grobid] Header parse error: ${String(err).slice(0, 80)}`);
+    return null;
+  }
+}
+
+/**
  * Parse a PDF with GROBID into structured text.
  * @param pdfSource - URL string or PDF Buffer
  */
