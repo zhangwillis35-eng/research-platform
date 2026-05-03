@@ -185,6 +185,112 @@ const rankingColors: Record<string, string> = {
   "预印本": "bg-gray-500 text-white",
 };
 
+// ─── Variable Relation Visualization ─────────────────────────
+interface VariableRelation {
+  independentVar: string;
+  dependentVar: string;
+  mediators?: string[];
+  moderators?: string[];
+  direction?: string;
+  effectSize?: string;
+  sampleContext?: string;
+}
+
+const directionColors: Record<string, string> = {
+  positive: "text-emerald-600 bg-emerald-50 border-emerald-200",
+  negative: "text-red-600 bg-red-50 border-red-200",
+  mixed: "text-amber-600 bg-amber-50 border-amber-200",
+  nonsignificant: "text-gray-500 bg-gray-50 border-gray-200",
+};
+
+const directionLabels: Record<string, string> = {
+  positive: "正向",
+  negative: "负向",
+  mixed: "混合",
+  nonsignificant: "不显著",
+};
+
+function AnalysisResultView({ content }: { content: string | null }) {
+  if (!content) return null;
+
+  // Try to parse as JSON with relations
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed.relations && Array.isArray(parsed.relations)) {
+      return <RelationsView relations={parsed.relations} />;
+    }
+    // Other JSON structures — render as formatted text
+    if (typeof parsed === "object") {
+      return (
+        <div className="prose prose-sm max-w-none text-sm whitespace-pre-wrap leading-relaxed">
+          {JSON.stringify(parsed, null, 2)}
+        </div>
+      );
+    }
+  } catch {
+    // Not JSON — render as plain text (possibly markdown-like)
+  }
+
+  return (
+    <div className="prose prose-sm max-w-none text-sm whitespace-pre-wrap leading-relaxed">
+      {content}
+    </div>
+  );
+}
+
+function RelationsView({ relations }: { relations: VariableRelation[] }) {
+  return (
+    <div className="space-y-3">
+      <div className="text-xs text-muted-foreground mb-2">
+        共提取 {relations.length} 组变量关系
+      </div>
+      {relations.map((rel, i) => {
+        const dirClass = directionColors[rel.direction ?? ""] ?? "text-gray-600 bg-gray-50 border-gray-200";
+        const dirLabel = directionLabels[rel.direction ?? ""] ?? rel.direction ?? "未知";
+
+        return (
+          <div key={i} className="border border-border/60 rounded-lg p-3 bg-card hover:shadow-sm transition-shadow">
+            {/* Main relationship: IV → DV */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-medium border border-emerald-200">
+                IV: {rel.independentVar}
+              </span>
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${dirClass}`}>
+                {dirLabel === "正向" ? "→ +" : dirLabel === "负向" ? "→ −" : "→ ?"} {dirLabel}
+              </span>
+              <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-medium border border-blue-200">
+                DV: {rel.dependentVar}
+              </span>
+            </div>
+
+            {/* Mediators & Moderators */}
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {rel.mediators && rel.mediators.length > 0 && rel.mediators.map((m, j) => (
+                <span key={`med-${j}`} className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] border border-amber-200">
+                  中介: {m}
+                </span>
+              ))}
+              {rel.moderators && rel.moderators.length > 0 && rel.moderators.map((m, j) => (
+                <span key={`mod-${j}`} className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 text-[10px] border border-purple-200">
+                  调节: {m}
+                </span>
+              ))}
+            </div>
+
+            {/* Effect size & Sample context */}
+            {(rel.effectSize || rel.sampleContext) && (
+              <div className="mt-1.5 text-[10px] text-muted-foreground flex gap-3">
+                {rel.effectSize && <span>效应量: {rel.effectSize}</span>}
+                {rel.sampleContext && <span>样本: {rel.sampleContext}</span>}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function sortPapers(papers: Paper[], sortBy: SortBy): Paper[] {
   const sorted = [...papers];
   switch (sortBy) {
@@ -1751,9 +1857,7 @@ ${fullTextContext}` : ""}`;
           </CardHeader>
           <Separator />
           <CardContent className="pt-4">
-            <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed">
-              {analysisResult}
-            </pre>
+            <AnalysisResultView content={analysisResult} />
           </CardContent>
         </Card>
       )}
