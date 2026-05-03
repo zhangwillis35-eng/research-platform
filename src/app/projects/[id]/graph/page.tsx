@@ -20,6 +20,7 @@ import {
 import { KnowledgeGraph } from "@/components/graph/KnowledgeGraph";
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
+import { AnalysisChat } from "@/components/analysis-chat";
 
 interface Paper {
   id: string;
@@ -131,7 +132,7 @@ export default function GraphPage() {
   const projectId = params.id as string;
 
   const NS = `graph-${projectId}`;
-  const [provider, setProvider] = usePersistedState<AIProvider>(NS, "provider", "deepseek-pro");
+  const [provider, setProvider] = usePersistedState<AIProvider>(NS, "provider", "deepseek-fast");
   const [papers, setPapers] = usePersistedState<Paper[]>(NS, "papers", []);
   const [analysisEngine, setAnalysisEngine] = usePersistedState<AnalysisEngine>(NS, "analysisEngine", "builtin");
   const [nodes, setNodes] = usePersistedState<GraphNode[]>(NS, "nodes", []);
@@ -783,6 +784,17 @@ export default function GraphPage() {
             </p>
           </CardContent>
         </Card>
+      )}
+
+      {/* Analysis Chat */}
+      {hasResults && (
+        <AnalysisChat
+          namespace={NS}
+          analysisContext={landscape || (metaSummary ? JSON.stringify(metaSummary) : "")}
+          systemPrompt="你是管理学知识图谱分析助手。用户可以对知识图谱的分析结果提出优化意见或深入提问。"
+          provider={provider}
+          paperTitles={papers.map(p => p.title)}
+        />
       )}
     </div>
   );

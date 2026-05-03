@@ -33,6 +33,7 @@ import {
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 import { usePersistedState } from "@/hooks/use-persisted-state";
+import { AnalysisChat } from "@/components/analysis-chat";
 
 // ─── Custom Node Component ──────────────────────
 
@@ -110,7 +111,7 @@ export default function ConceptualModelPage() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState(INITIAL_EDGES);
-  const [aiProvider, setAiProvider] = usePersistedState<AIProvider>(`model-${projectId}`, "aiProvider", "gemini-pro");
+  const [aiProvider, setAiProvider] = usePersistedState<AIProvider>(`model-${projectId}`, "aiProvider", "deepseek-fast");
   const [generating, setGenerating] = useState(false);
   const [hypothesisCount, setHypothesisCount] = useState(2);
   const [analysisEngine, setAnalysisEngine] = usePersistedState<AnalysisEngine>(`model-${projectId}`, "engine", "builtin");
@@ -462,6 +463,19 @@ ${paperContext || "（无文献，请基于常见管理学变量关系生成示�
         </span>
         <span className="ml-4">操作: 拖拽移动 · 从节点圆点拉线创建假设 · 双击编辑名称</span>
       </div>
+
+      <AnalysisChat
+        namespace={`model-${projectId}`}
+        analysisContext={
+          "概念模型变量:\n" +
+          nodes.map(n => `- ${n.data.label} (${n.data.varType})`).join("\n") +
+          "\n\n假设关系:\n" +
+          edges.map(e => `- ${e.source} → ${e.target}: ${e.label ?? ""}`).join("\n")
+        }
+        systemPrompt="你是管理学概念模型分析助手。用户可以对概念模型提出优化意见或深入探讨假设关系。"
+        provider={aiProvider}
+        paperTitles={papers.map(p => p.title)}
+      />
     </div>
   );
 }

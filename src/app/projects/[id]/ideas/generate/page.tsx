@@ -20,6 +20,7 @@ import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 import { consumeCrossFeatureData } from "@/lib/cross-feature";
 import { usePersistedState } from "@/hooks/use-persisted-state";
+import { AnalysisChat } from "@/components/analysis-chat";
 
 interface Paper {
   id: string;
@@ -524,6 +525,17 @@ export default function IdeasGeneratePage() {
             </p>
           </CardContent>
         </Card>
+      )}
+
+      {/* Analysis Chat */}
+      {ideas.length > 0 && (
+        <AnalysisChat
+          namespace={`ideas-${projectId}`}
+          analysisContext={ideas.map(idea => `${idea.title}: ${idea.hypothesis} (${idea.contribution})`).join("\n\n")}
+          systemPrompt="你是管理学研究想法分析助手。用户可以对生成的研究想法提出优化意见或深入探讨。"
+          provider={provider}
+          paperTitles={papers.map(p => p.title)}
+        />
       )}
     </div>
   );

@@ -21,6 +21,7 @@ import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { consumeCrossFeatureData } from "@/lib/cross-feature";
+import { AnalysisChat } from "@/components/analysis-chat";
 
 interface Paper {
   id: string;
@@ -398,6 +399,21 @@ export default function TheoriesIntegratePage() {
           </CardContent>
         </Card>
       )}
+
+      <AnalysisChat
+        namespace={`theories-${projectId}`}
+        analysisContext={
+          (theories.length > 0
+            ? "已识别理论:\n" + theories.map(t => `- ${t.name} (${t.nameEn}): 核心构念=${t.coreConstructs.join(", ")}; 假设=${t.assumptions.join("; ")}; 边界=${t.boundaries.join("; ")}`).join("\n")
+            : "") +
+          (framework
+            ? `\n\n整合框架: ${framework.title}\n${framework.description}\n层次: ${framework.layers.map(l => `${l.name}(${l.role}): ${l.theories.join(", ")}`).join("; ")}`
+            : "")
+        }
+        systemPrompt="你是管理学理论整合分析助手。用户可以对理论整合结果提出优化意见或深入探讨。"
+        provider={provider}
+        paperTitles={papers.map(p => p.title)}
+      />
     </div>
   );
 }
