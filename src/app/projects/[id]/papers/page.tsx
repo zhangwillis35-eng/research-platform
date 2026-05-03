@@ -382,7 +382,7 @@ export default function PapersPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  // Upload a folder of PDFs
+  // Upload a folder of PDFs (concurrent batches of 5)
   async function handleFolderUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []).filter((f) => f.name.toLowerCase().endsWith(".pdf"));
     if (files.length === 0) return;
@@ -391,12 +391,12 @@ export default function PapersPage() {
     setUploadResult(null);
     setFolderProgress({ current: 0, total: files.length, name: "" });
 
+    let completed = 0;
     let uploaded = 0;
     let failed = 0;
+    const CONCURRENCY = 5;
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      setFolderProgress({ current: i + 1, total: files.length, name: file.name });
+    async function uploadOne(file: File) {
       try {
         const formData = new FormData();
         formData.append("file", file);
@@ -406,7 +406,16 @@ export default function PapersPage() {
         else failed++;
       } catch {
         failed++;
+      } finally {
+        completed++;
+        setFolderProgress({ current: completed, total: files.length, name: file.name });
       }
+    }
+
+    // Process in concurrent batches
+    for (let i = 0; i < files.length; i += CONCURRENCY) {
+      const batch = files.slice(i, i + CONCURRENCY);
+      await Promise.all(batch.map(uploadOne));
     }
 
     const res = await fetch(`/api/papers?projectId=${projectId}`);
