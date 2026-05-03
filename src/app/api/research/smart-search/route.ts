@@ -56,12 +56,12 @@ export async function POST(request: Request) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
         }
 
-        // Keepalive ping every 30s to prevent nginx proxy_read_timeout (300s)
+        // Keepalive ping every 15s — shorter interval survives stricter proxies
         const keepalive = setInterval(() => {
           try {
             controller.enqueue(encoder.encode(`: keepalive\n\n`));
           } catch { /* stream already closed */ }
-        }, 30000);
+        }, 15000);
 
         try {
           send({ type: "status", message: "AI 提取关键词中..." });
@@ -87,17 +87,33 @@ export async function POST(request: Request) {
             }
           }
 
-          // Send final result — strip fullText to save bandwidth (hasFullText flag is preserved)
-          const strippedResult = {
-            ...result,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            papers: result.papers.map((p: any) => {
-              const { fullText, ...rest } = p;
-              return rest;
-            }),
-          };
-          send({ type: "result", ...strippedResult });
-          send({ type: "done" });
+          // Strip fullText from papers to save bandwidth
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const strippedPapers = result.papers.map((p: any) => {
+            const { fullText, ...rest } = p;
+            return rest;
+          });
+
+          // Send papers in chunks of 20 to avoid large single SSE frames
+          // A single 100-paper JSON can exceed proxy/browser buffer limits
+          const CHUNK_SIZE = 20;
+          const totalChunks = Math.ceil(strippedPapers.length / CHUNK_SIZE);
+          for (let i = 0; i < strippedPapers.length; i += CHUNK_SIZE) {
+            send({
+              type: "papers_chunk",
+              papers: strippedPapers.slice(i, i + CHUNK_SIZE),
+              chunkIndex: Math.floor(i / CHUNK_SIZE),
+              totalChunks,
+            });
+          }
+
+          // Send metadata + done signal separately
+          send({
+            type: "done",
+            stats: result.stats,
+            keywords: result.keywords,
+            totalPapers: strippedPapers.length,
+          });
         } catch (error) {
           send({
             type: "error",
@@ -115,7 +131,8 @@ export async function POST(request: Request) {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        Connection: "keep-alive",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",   // Disable nginx proxy buffering for SSE
       },
     });
   } catch (error) {

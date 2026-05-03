@@ -138,17 +138,31 @@ class BackgroundSearchManager {
               ];
               this.notify();
               this.saveState();
+            } else if (evt.type === "papers_chunk") {
+              // Accumulate paper chunks into result
+              if (!this.state.result) {
+                this.state.result = { papers: [], stats: null, keywords: [] };
+              }
+              this.state.result.papers = [
+                ...(this.state.result.papers ?? []),
+                ...(evt.papers ?? []),
+              ];
+              this.notify();
             } else if (evt.type === "result") {
+              // Legacy single-result event (backwards compat)
               this.state.result = evt;
               this.notify();
-              // Don't save full result to sessionStorage here — too large
-              // It will be saved when status changes to "done"
             } else if (evt.type === "done") {
+              // Merge stats/keywords from done event into accumulated result
+              if (this.state.result && evt.stats) {
+                this.state.result.stats = evt.stats;
+                this.state.result.keywords = evt.keywords;
+              }
               // Only fire "done" once — prevent duplicate from stream-end fallback
               if (this.state.status !== "done") {
                 this.state.status = "done";
                 this.state.completedAt = Date.now();
-                this.state.consumed = false; // Reset consumed for this new result
+                this.state.consumed = false;
                 this.state.progress = this.state.progress.map((s) => ({
                   ...s,
                   done: true,
