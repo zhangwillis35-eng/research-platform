@@ -587,15 +587,9 @@ export default function PaperSearchPage() {
               });
             } else if (event.type === "result") {
               // Merge found papers into existing results
+              // Replace papers list with results in input order (not merge)
               if (event.papers && event.papers.length > 0) {
-                setPapers((prev) => {
-                  const existingKeys = new Set(prev.map((p) => p.doi?.toLowerCase() || p.title.toLowerCase().slice(0, 60)));
-                  const newPapers = event.papers.filter((p: Paper) => {
-                    const key = p.doi?.toLowerCase() || p.title.toLowerCase().slice(0, 60);
-                    return !existingKeys.has(key);
-                  });
-                  return [...prev, ...newPapers];
-                });
+                setPapers(event.papers);
               }
               setRefSearchResult({ matchResults: event.matchResults, stats: event.stats });
               // Add result message to chat
