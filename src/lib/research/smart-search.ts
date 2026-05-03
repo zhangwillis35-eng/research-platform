@@ -356,8 +356,11 @@ export async function smartSearch(
   const gsQueries = [gsPrecisionQuery, gsBroadQuery].filter(Boolean);
   const allQueries = [...precisionQueries, ...broadQueries];
 
-  // Use higher per-source limits for free APIs (S2/OpenAlex are free and have good data)
-  const freeLimit = Math.max(50, limit);
+  // Per-query limit for free APIs — scale down to avoid accumulating too many papers
+  // With N queries, each fetching freeLimit, total raw = N * freeLimit * 2 (S2 + OpenAlex)
+  // We want total raw to stay around limit * 5 after dedup
+  const queryCount = allQueries.length || 1;
+  const freeLimit = Math.max(15, Math.ceil((limit * 3) / queryCount));
 
   onProgress?.("search", `并行检索 ${gsQueries.length + allQueries.length} 个查询...`);
   const [gsResults, freeResults] = await Promise.all([
@@ -425,9 +428,16 @@ export async function smartSearch(
     }
   }
 
-  // Step 5.5: Enrich abstracts first (fast), THEN score with complete data
-  const rawPapers = Array.from(seen.values()).sort((a, b) => b.citationCount - a.citationCount);
-  onProgress?.("enrich", `去重后 ${rawPapers.length} 篇，补全摘要 + 期刊元数据...`);
+  // Step 5.5: Cap papers before enrichment — never enrich more than we could need
+  // Sort by citations first (best proxy for relevance before scoring), cap at limit * 5
+  const allDeduped = Array.from(seen.values()).sort((a, b) => b.citationCount - a.citationCount);
+  const enrichCap = Math.min(allDeduped.length, Math.max(limit * 5, 150));
+  const rawPapers = allDeduped.slice(0, enrichCap);
+  if (allDeduped.length > enrichCap) {
+    onProgress?.("enrich", `去重后 ${allDeduped.length} 篇，按引用量保留前 ${enrichCap} 篇，补全摘要 + 期刊元数据...`);
+  } else {
+    onProgress?.("enrich", `去重后 ${rawPapers.length} 篇，补全摘要 + 期刊元数据...`);
+  }
 
   // Phase 1: Enrichment (fills abstracts from S2, CrossRef, OpenAlex)
   const enrichedPapers = await enrichPapersBatch(rawPapers);
