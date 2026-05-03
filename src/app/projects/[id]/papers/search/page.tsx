@@ -1582,7 +1582,7 @@ ${fullTextContext}` : ""}`;
                 <select
                   value={searchLimit}
                   onChange={(e) => setSearchLimit(Number(e.target.value))}
-                  className="h-5 px-1 text-[10px] border border-input rounded bg-background text-muted-foreground"
+                  className="h-7 px-2 text-xs border border-input rounded bg-background text-foreground cursor-pointer"
                 >
                   <option value={20}>20篇（顶刊）</option>
                   <option value={50}>50篇（顶刊+Q2）</option>
@@ -1592,7 +1592,7 @@ ${fullTextContext}` : ""}`;
                 <select
                   value={journalLang}
                   onChange={(e) => setJournalLang(e.target.value as "en" | "zh")}
-                  className="h-5 px-1 text-[10px] border border-input rounded bg-background text-muted-foreground"
+                  className="h-7 px-2 text-xs border border-input rounded bg-background text-foreground cursor-pointer"
                 >
                   <option value="en">英文期刊</option>
                   <option value="zh">中文期刊</option>
