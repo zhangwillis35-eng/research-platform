@@ -429,6 +429,7 @@ export default function PaperSearchPage() {
     keywords: true, precision: true, broad: true, filters: true, platforms: true,
   });
   const [leftPanelWidth, setLeftPanelWidth] = usePersistedState<number>(NS, "leftPanelWidth", 480);
+  const [journalLang, setJournalLang] = usePersistedState<"en" | "zh">(NS, "journalLang", "en");
   const [journalFilterOpen, setJournalFilterOpen] = usePersistedState<boolean>(NS, "journalFilterOpen", false);
   const [refSearchOpen, setRefSearchOpen] = usePersistedState<boolean>(NS, "refSearchOpen", false);
   const [refSearchInput, setRefSearchInput] = useState("");
@@ -1104,6 +1105,7 @@ ${fullTextContext}` : ""}`;
         enableRelevanceScoring: enableRelevance,
         stream: true,
         projectId,
+        journalLang,
       });
 
       return 0; // Result count updated via subscribe callback
@@ -1582,6 +1584,14 @@ ${fullTextContext}` : ""}`;
                   <option value={50}>50篇（顶刊+Q2）</option>
                   <option value={100}>100篇（不限刊）</option>
                   <option value={999}>不限量</option>
+                </select>
+                <select
+                  value={journalLang}
+                  onChange={(e) => setJournalLang(e.target.value as "en" | "zh")}
+                  className="h-5 px-1 text-[10px] border border-input rounded bg-background text-muted-foreground"
+                >
+                  <option value="en">英文期刊</option>
+                  <option value="zh">中文期刊</option>
                 </select>
                 <button
                   onClick={() => setJournalFilterOpen((v) => !v)}

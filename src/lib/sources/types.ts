@@ -38,7 +38,7 @@ export interface UnifiedPaper {
   referenceCount: number;
   doi?: string;
   externalId?: string;
-  source: "semantic_scholar" | "openalex" | "google_scholar" | "manual";
+  source: "semantic_scholar" | "openalex" | "google_scholar" | "cnki" | "manual";
   pdfUrl?: string;
   openAccessPdf?: string;
   fieldsOfStudy?: string[];

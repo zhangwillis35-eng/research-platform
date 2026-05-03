@@ -44,7 +44,7 @@ export async function parseHeaderWithGrobid(pdfBuffer: Buffer): Promise<{
 } | null> {
   try {
     const formData = new FormData();
-    const blob = new Blob([pdfBuffer], { type: "application/pdf" });
+    const blob = new Blob([new Uint8Array(pdfBuffer)], { type: "application/pdf" });
     formData.append("input", blob, "paper.pdf");
 
     const res = await fetch(`${GROBID_URL}/api/processHeaderDocument`, {

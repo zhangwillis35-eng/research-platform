@@ -1,4 +1,4 @@
-import { smartSearch } from "@/lib/research/smart-search";
+import { smartSearch, type JournalLang } from "@/lib/research/smart-search";
 import { setAIContext } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
@@ -18,6 +18,7 @@ export async function POST(request: Request) {
       enableRelevanceScoring = true,
       stream = false,
       projectId,
+      journalLang = "en",
     } = body as {
       query: string;
       provider?: AIProvider;
@@ -25,6 +26,7 @@ export async function POST(request: Request) {
       enableRelevanceScoring?: boolean;
       stream?: boolean;
       projectId?: string;
+      journalLang?: JournalLang;
     };
 
     if (!query?.trim()) {
@@ -36,7 +38,7 @@ export async function POST(request: Request) {
 
     if (!stream) {
       // Non-streaming mode — backwards compatible JSON response
-      const result = await smartSearch(query, provider, limit, enableRelevanceScoring);
+      const result = await smartSearch(query, provider, limit, enableRelevanceScoring, undefined, journalLang);
       if (projectId) {
         const { papers: filtered, removedCount } = await applyJournalFilter(projectId, result.papers);
         result.papers = filtered;
@@ -73,7 +75,8 @@ export async function POST(request: Request) {
             enableRelevanceScoring,
             (phase, detail) => {
               send({ type: "status", phase, message: detail });
-            }
+            },
+            journalLang
           );
 
           // Apply journal filter if projectId provided
@@ -111,7 +114,7 @@ export async function POST(request: Request) {
           send({
             type: "done",
             stats: result.stats,
-            keywords: result.keywords,
+            plan: result.plan,
             totalPapers: strippedPapers.length,
           });
         } catch (error) {

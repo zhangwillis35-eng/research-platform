@@ -298,15 +298,43 @@ RULES:
 - SEPARATE search terms from quality requirements. "ABS3星以上" is a FILTER, not a search term
 - ALWAYS extract year/time references into filters — they are NOT search terms`;
 
+const EXTRACT_SYSTEM_ZH = `You are an academic search assistant. Given a research topic (in any language), extract CHINESE keywords and queries for searching Chinese academic databases (CNKI 知网, CSSCI, PKU Core).
+
+ALL keyTerms, synonyms, precisionQueries, and broadQueries MUST be in CHINESE (中文). Even if the user's input is in English, translate everything to Chinese academic terms.
+
+Output STRICT JSON only:
+{
+  "translatedInput": "中文翻译（完整学术翻译）",
+  "queryIntent": "TOPICAL" | "RELATIONAL" | "METHODOLOGICAL" | "REVIEW",
+  "keyTerms": ["人工智能伦理"],
+  "synonyms": {
+    "人工智能伦理": ["AI伦理", "机器伦理", "算法伦理", "智能系统伦理"]
+  },
+  "precisionQueries": ["\"人工智能伦理\"", "\"AI伦理\""],
+  "broadQueries": ["(\"人工智能伦理\" OR \"AI伦理\" OR \"机器伦理\" OR \"算法伦理\")"],
+  "filters": {}
+}
+
+RULES:
+- CHINESE ONLY: ALL keyTerms, synonyms, precisionQueries, and broadQueries MUST be in Chinese
+- keyTerms = 2-5 Chinese academic terms/phrases
+- synonyms: 4-6 per key term, ALL IN CHINESE, covering direct synonyms, broader terms, related academic jargon
+- precisionQueries = exact phrase searches in Chinese
+- broadQueries = Chinese synonyms connected with OR
+- filters: same as English mode (yearFrom, yearTo, etc.)
+- SEPARATE search terms from quality requirements`;
+
 export async function buildSmartSearchPlan(
   input: string,
-  provider: AIProvider = "deepseek-fast"
+  provider: AIProvider = "deepseek-fast",
+  journalLang: JournalLang = "en"
 ): Promise<SmartSearchPlan> {
   try {
-    console.log(`[smart-search] Calling AI provider: ${provider}`);
+    const system = journalLang === "zh" ? EXTRACT_SYSTEM_ZH : EXTRACT_SYSTEM;
+    console.log(`[smart-search] Calling AI provider: ${provider}, lang: ${journalLang}`);
     const response = await callAI({
       provider,
-      system: EXTRACT_SYSTEM,
+      system,
       messages: [{ role: "user", content: input }],
       jsonMode: true,
       noThinking: true,
@@ -343,82 +371,111 @@ export async function buildSmartSearchPlan(
   }
 }
 
+export type JournalLang = "en" | "zh";
+
 export async function smartSearch(
   input: string,
   provider: AIProvider = "deepseek-fast",
   limit: number = 20,
   enableRelevanceScoring: boolean = true,
-  onProgress?: (phase: string, detail: string) => void
+  onProgress?: (phase: string, detail: string) => void,
+  journalLang: JournalLang = "en"
 ): Promise<SmartSearchResult> {
   const startTime = Date.now();
 
   // Step 1-2: Extract terms + synonyms
-  onProgress?.("plan", "AI 提取关键词与同义词...");
-  const plan = await buildSmartSearchPlan(input, provider);
+  onProgress?.("plan", journalLang === "zh" ? "AI 提取中文关键词..." : "AI 提取关键词与同义词...");
+  const plan = await buildSmartSearchPlan(input, provider, journalLang);
 
   // Pass year filters to search APIs for server-side filtering (much more effective)
   const yearFrom = plan.filters.yearFrom;
   const yearTo = plan.filters.yearTo;
 
-  // Step 3-4: Search strategy — conserve SerpAPI credits
-  // Google Scholar: merge all precision queries into 1 call, all broad into 1 call = 2 SerpAPI calls total
-  // Free sources: all queries in parallel
-  // For unlimited mode (limit >= 999), use more queries for broader coverage
+  // Step 3-4: Search strategy
   const isUnlimited = limit >= 999;
   const precisionQueries = plan.precisionQueries.slice(0, isUnlimited ? 15 : 8);
   const broadQueries = plan.broadQueries.slice(0, isUnlimited ? 8 : 5);
 
-  // Merge queries for Google Scholar (1 SerpAPI call each)
-  const gsPrecisionQuery = precisionQueries.join(" OR ");
-  const gsBroadQuery = broadQueries.join(" OR ");
+  let allResults: Array<{ papers: UnifiedPaper[]; results: SearchResult[] }>;
 
-  // Phase A+B: Google Scholar + Free sources — ALL in parallel
-  // GS queries run concurrently with free-source queries for maximum speed
-  const gsQueries = [gsPrecisionQuery, gsBroadQuery].filter(Boolean);
-  const allQueries = [...precisionQueries, ...broadQueries];
+  if (journalLang === "zh") {
+    // ── Chinese mode: CNKI (via Serper site:cnki.net) + Google Scholar with Chinese keywords ──
+    const { searchCNKI } = await import("@/lib/sources/cnki");
 
-  // Per-query limit for free APIs — scale down to avoid accumulating too many papers
-  // With N queries, each fetching freeLimit, total raw = N * freeLimit * 2 (S2 + OpenAlex)
-  // We want total raw to stay around limit * 5 after dedup
-  const queryCount = allQueries.length || 1;
-  const freeLimit = Math.max(15, Math.ceil((limit * 3) / queryCount));
+    const cnkiQueries = [...precisionQueries, ...broadQueries];
+    const gsChineseQuery = cnkiQueries.join(" OR ");
 
-  onProgress?.("search", `并行检索 ${gsQueries.length + allQueries.length} 个查询...`);
-  const [gsResults, freeResults] = await Promise.all([
-    // Google Scholar: all queries in parallel
-    Promise.all(
-      gsQueries.map((q) =>
-        searchAllSourcesRaw({
-          query: q, limit: Math.max(40, limit), yearFrom, yearTo,
-          sources: ["google_scholar"],
-        }).catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
+    onProgress?.("search", `中文检索：CNKI + Google Scholar（${cnkiQueries.length} 个查询）...`);
+
+    const [cnkiResults, gsResults] = await Promise.all([
+      // CNKI: search each query independently
+      Promise.all(
+        cnkiQueries.map((q) =>
+          searchCNKI({ query: q, limit: Math.max(20, limit), yearFrom, yearTo })
+            .then((r) => ({ papers: r.papers, results: [r] as SearchResult[] }))
+            .catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
+        )
+      ),
+      // Google Scholar with Chinese keywords (catches papers indexed by Google but not via site:cnki.net)
+      searchAllSourcesRaw({
+        query: gsChineseQuery, limit: Math.max(40, limit), yearFrom, yearTo,
+        sources: ["google_scholar"],
+      }).catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] })),
+    ]);
+
+    // Direct search with original Chinese input
+    const directResults = await Promise.all(
+      plan.keyTerms.slice(0, 3).map((term) =>
+        searchCNKI({ query: term, limit: 10, yearFrom, yearTo })
+          .then((r) => ({ papers: r.papers, results: [r] as SearchResult[] }))
+          .catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
       )
-    ),
-    // Free sources: all queries in parallel (higher limits for better coverage)
-    Promise.all(
-      allQueries.map((q) =>
-        searchAllSourcesRaw({ query: q, limit: freeLimit, yearFrom, yearTo, freeOnly: true }).catch(() => ({
-          papers: [] as UnifiedPaper[],
-          results: [] as SearchResult[],
-        }))
-      )
-    ),
-  ]);
+    );
 
-  // Phase C: Direct translated query search (catches papers missed by synonym expansion)
-  // e.g. "AI sycophancy" might not appear in broad synonym queries
-  const directQuery = plan.translatedInput || input;
-  const directResults = await Promise.all([
-    searchAllSourcesRaw({ query: `"${directQuery}"`, limit: 20, yearFrom, yearTo, freeOnly: true })
-      .catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] })),
-    // Also search each key term as exact phrase
-    ...plan.keyTerms.slice(0, 3).map(term =>
-      searchAllSourcesRaw({ query: `"${term}"`, limit: 10, yearFrom, yearTo, freeOnly: true })
-        .catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
-    ),
-  ]);
+    allResults = [...cnkiResults, gsResults, ...directResults];
+  } else {
+    // ── English mode: original pipeline ──
+    // Google Scholar: merge all precision queries into 1 call, all broad into 1 call
+    const gsPrecisionQuery = precisionQueries.join(" OR ");
+    const gsBroadQuery = broadQueries.join(" OR ");
+    const gsQueries = [gsPrecisionQuery, gsBroadQuery].filter(Boolean);
+    const allQueries = [...precisionQueries, ...broadQueries];
 
-  const allResults = [...gsResults, ...freeResults, ...directResults];
+    const queryCount = allQueries.length || 1;
+    const freeLimit = Math.max(15, Math.ceil((limit * 3) / queryCount));
+
+    onProgress?.("search", `并行检索 ${gsQueries.length + allQueries.length} 个查询...`);
+    const [gsResults, freeResults] = await Promise.all([
+      Promise.all(
+        gsQueries.map((q) =>
+          searchAllSourcesRaw({
+            query: q, limit: Math.max(40, limit), yearFrom, yearTo,
+            sources: ["google_scholar"],
+          }).catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
+        )
+      ),
+      Promise.all(
+        allQueries.map((q) =>
+          searchAllSourcesRaw({ query: q, limit: freeLimit, yearFrom, yearTo, freeOnly: true }).catch(() => ({
+            papers: [] as UnifiedPaper[],
+            results: [] as SearchResult[],
+          }))
+        )
+      ),
+    ]);
+
+    const directQuery = plan.translatedInput || input;
+    const directResults = await Promise.all([
+      searchAllSourcesRaw({ query: `"${directQuery}"`, limit: 20, yearFrom, yearTo, freeOnly: true })
+        .catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] })),
+      ...plan.keyTerms.slice(0, 3).map(term =>
+        searchAllSourcesRaw({ query: `"${term}"`, limit: 10, yearFrom, yearTo, freeOnly: true })
+          .catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
+      ),
+    ]);
+
+    allResults = [...gsResults, ...freeResults, ...directResults];
+  }
   const totalRaw = allResults.reduce((sum, r) => sum + r.papers.length, 0);
   onProgress?.("dedup", `检索到 ${totalRaw} 条结果，正在去重合并...`);
 
@@ -426,8 +483,8 @@ export async function smartSearch(
   const seen = new Map<string, UnifiedPaper>();
   const byQuery: Record<string, number> = {};
 
-  // Label GS results
-  const allLabels = [...gsQueries.map((q) => `GS: ${q.slice(0, 50)}`), ...allQueries];
+  // Label results for logging
+  const allLabels = allResults.map((_, i) => `query-${i}`);
 
   for (let i = 0; i < allResults.length; i++) {
     const result = allResults[i];

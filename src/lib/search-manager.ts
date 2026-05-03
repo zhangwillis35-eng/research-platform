@@ -62,6 +62,7 @@ class BackgroundSearchManager {
     enableRelevanceScoring: boolean;
     stream: boolean;
     projectId?: string;
+    journalLang?: "en" | "zh";
   }): Promise<void> {
     // Cancel any existing search
     this.abort();
@@ -156,7 +157,7 @@ class BackgroundSearchManager {
               // Merge stats/keywords from done event into accumulated result
               if (this.state.result && evt.stats) {
                 this.state.result.stats = evt.stats;
-                this.state.result.keywords = evt.keywords;
+                this.state.result.plan = evt.plan;
               }
               // Only fire "done" once — prevent duplicate from stream-end fallback
               if (this.state.status !== "done") {
