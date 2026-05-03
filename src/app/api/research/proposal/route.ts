@@ -85,7 +85,7 @@ export async function POST(request: Request) {
       const citations = await Promise.all(
         papers.map((p) =>
           formatCitation(
-            { title: p.title, authors: p.authors, year: p.year, venue: p.venue, doi: p.doi },
+            { title: p.title, authors: p.authors ?? [], year: p.year, venue: p.venue, doi: p.doi },
             "apa"
           )
         )
@@ -94,7 +94,7 @@ export async function POST(request: Request) {
       paperContext = papers
         .map(
           (p, i) =>
-            `[${i + 1}] ${p.title}\n作者: ${p.authors.map((a) => a.name).join(", ")} (${p.year ?? "N/A"})\n期刊: ${p.venue ?? ""}\n摘要: ${p.abstract ?? "(无)"}\nAPA引用: ${citations[i]}`
+            `[${i + 1}] ${p.title}\n作者: ${(p.authors ?? []).map((a: { name: string }) => a.name).join(", ")} (${p.year ?? "N/A"})\n期刊: ${p.venue ?? ""}\n摘要: ${p.abstract ?? "(无)"}\nAPA引用: ${citations[i]}`
         )
         .join("\n\n");
     }
