@@ -402,11 +402,6 @@ async function runDigest(projectId: string, daysBack: number = 30) {
   const weekLabel = getWeekLabel();
   const folderName = `AI 前沿周刊 ${weekLabel}`;
 
-  // Delete old papers in this week's folder so each click fetches fresh results
-  await prisma.paper.deleteMany({
-    where: { projectId, folder: folderName },
-  });
-
   // Fetch from all sources IN PARALLEL
   console.log(`[weekly-digest] Fetching papers from last ${daysBack} days...`);
   const [targetPapers, broadPapers, arxivPapers, scholarPapers] = await Promise.all([
@@ -426,7 +421,14 @@ async function runDigest(projectId: string, daysBack: number = 30) {
     .filter((p) => !p.year || p.year >= minYear);
   console.log(`[weekly-digest] After dedup + year filter (>=${minYear}): ${allPapers.length}`);
 
-  // Save to database
+  // Delete ALL previous weekly digest papers (not just current week's)
+  // so re-running always gets fresh top-tier papers
+  await prisma.paper.deleteMany({
+    where: { projectId, folder: { contains: "AI 前沿" } },
+  });
+
+  // Save to database — DOI/externalId set to null to avoid unique constraint
+  // conflicts with catalog papers (weekly digest is fully independent)
   let saved = 0;
   const savedIds: string[] = [];
   for (const paper of allPapers.slice(0, 80)) {
@@ -440,8 +442,8 @@ async function runDigest(projectId: string, daysBack: number = 30) {
           year: paper.year,
           venue: paper.venue,
           citationCount: paper.citationCount,
-          doi: paper.doi,
-          externalId: paper.externalId,
+          doi: null,         // Independent from catalog — no DOI uniqueness conflict
+          externalId: null,  // Independent from catalog
           source: paper.source,
           openAccessPdf: paper.openAccessPdf,
           pdfUrl: paper.openAccessPdf,
@@ -451,8 +453,8 @@ async function runDigest(projectId: string, daysBack: number = 30) {
       });
       saved++;
       savedIds.push(created.id);
-    } catch {
-      // Skip duplicates
+    } catch (err) {
+      console.error("[weekly-digest] Save failed:", (err as Error).message?.slice(0, 100));
     }
   }
 

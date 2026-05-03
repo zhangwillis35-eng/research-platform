@@ -1,5 +1,9 @@
 FROM node:22-alpine AS base
 
+# Install Python3 + pip for STORM bridge
+RUN apk add --no-cache python3 py3-pip && \
+    python3 -m pip install --break-system-packages litellm knowledge-storm
+
 # Install dependencies only when needed
 FROM base AS deps
 WORKDIR /app
@@ -42,6 +46,9 @@ COPY --from=builder /app/src/generated ./src/generated
 # External packages not bundled by Next.js standalone
 COPY --from=builder /app/node_modules/nodemailer ./node_modules/nodemailer
 COPY --from=builder /app/node_modules/ali-oss ./node_modules/ali-oss
+
+# STORM bridge script
+COPY --from=builder /app/scripts ./scripts
 
 USER nextjs
 
