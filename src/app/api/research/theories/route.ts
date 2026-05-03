@@ -67,6 +67,7 @@ Output strict JSON. Use Chinese for all descriptive text fields:
         },
       ],
       jsonMode: true,
+      noThinking: true,
       temperature: 0.3,
     });
 
