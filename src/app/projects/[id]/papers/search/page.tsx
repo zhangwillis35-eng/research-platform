@@ -430,6 +430,14 @@ export default function PaperSearchPage() {
   });
   const [leftPanelWidth, setLeftPanelWidth] = usePersistedState<number>(NS, "leftPanelWidth", 480);
   const [journalFilterOpen, setJournalFilterOpen] = usePersistedState<boolean>(NS, "journalFilterOpen", false);
+  const [refSearchOpen, setRefSearchOpen] = usePersistedState<boolean>(NS, "refSearchOpen", false);
+  const [refSearchInput, setRefSearchInput] = useState("");
+  const [refSearching, setRefSearching] = useState(false);
+  const [refSearchResult, setRefSearchResult] = useState<{
+    matchResults: Array<{ queryTitle: string; found: boolean }>;
+    stats: { total: number; found: number; notFound: number };
+  } | null>(null);
+  const refAbort = useAbort();
 
   // ─── Journal filter state ───
   const [journalFilters, setJournalFilters] = useState<Array<{ id: string; journalName: string; filterType: string }>>([]);
@@ -527,6 +535,91 @@ export default function PaperSearchPage() {
       await addJournalFilter(journals, "preset");
     } catch { /* skip */ }
     setJournalFilterLoading(false);
+  }
+
+  async function handleRefSearch() {
+    if (!refSearchInput.trim() || refSearching) return;
+    setRefSearching(true);
+    setRefSearchResult(null);
+    const signal = refAbort.reset();
+
+    // Add a "searching" message to chat
+    const userMsg = { role: "user" as const, content: `[参考文献批量检索]\n${refSearchInput.slice(0, 200)}...` };
+    setChatMessages((prev) => [...prev, userMsg]);
+
+    try {
+      const res = await fetch("/api/papers/reference-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ references: refSearchInput, provider: aiProvider }),
+        signal,
+      });
+
+      if (!res.body) throw new Error("No response body");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let statusMsg = "正在检索参考文献...";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === "status") {
+              statusMsg = event.message;
+              setSearchProgress((prev) => {
+                const last = prev[prev.length - 1];
+                if (last && !last.done) return [...prev.slice(0, -1), { ...last, message: statusMsg }];
+                return [...prev, { phase: "ref-search", message: statusMsg, done: false }];
+              });
+            } else if (event.type === "progress") {
+              setSearchProgress((prev) => {
+                const updated = { phase: "ref-search", message: `已检索 ${event.searched}/${event.total}，找到 ${event.found} 篇`, done: false };
+                const last = prev[prev.length - 1];
+                if (last && !last.done) return [...prev.slice(0, -1), updated];
+                return [...prev, updated];
+              });
+            } else if (event.type === "result") {
+              // Merge found papers into existing results
+              if (event.papers && event.papers.length > 0) {
+                setPapers((prev) => {
+                  const existingKeys = new Set(prev.map((p) => p.doi?.toLowerCase() || p.title.toLowerCase().slice(0, 60)));
+                  const newPapers = event.papers.filter((p: Paper) => {
+                    const key = p.doi?.toLowerCase() || p.title.toLowerCase().slice(0, 60);
+                    return !existingKeys.has(key);
+                  });
+                  return [...prev, ...newPapers];
+                });
+              }
+              setRefSearchResult({ matchResults: event.matchResults, stats: event.stats });
+              // Add result message to chat
+              const resultMsg = {
+                role: "assistant" as const,
+                content: `参考文献检索完成：共 ${event.stats.total} 篇，找到 ${event.stats.found} 篇，未找到 ${event.stats.notFound} 篇。${
+                  event.stats.notFound > 0
+                    ? "\n\n未找到的论文：\n" + event.matchResults.filter((r: { found: boolean }) => !r.found).map((r: { queryTitle: string }) => `- ${r.queryTitle}`).join("\n")
+                    : ""
+                }`,
+              };
+              setChatMessages((prev) => [...prev, resultMsg]);
+            }
+          } catch { /* skip */ }
+        }
+      }
+
+      setSearchProgress((prev) => prev.map((p) => ({ ...p, done: true })));
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        setChatMessages((prev) => [...prev, { role: "assistant" as const, content: `参考文献检索失败: ${err}` }]);
+      }
+    }
+    setRefSearching(false);
   }
 
   // ─── Transient state (resets on navigation — no need to persist) ───
@@ -1506,6 +1599,16 @@ ${fullTextContext}` : ""}`;
                 >
                   期刊过滤{journalFilters.length > 0 ? ` (${journalFilters.length})` : ""}
                 </button>
+                <button
+                  onClick={() => { setRefSearchOpen((v) => !v); setJournalFilterOpen(false); }}
+                  className={`h-5 px-1.5 text-[10px] border rounded transition-colors ${
+                    refSearchOpen
+                      ? "border-indigo-400 text-indigo-600 bg-indigo-50"
+                      : "border-input text-muted-foreground bg-background"
+                  }`}
+                >
+                  参考文献检索
+                </button>
               </>
             )}
           </div>
@@ -1599,6 +1702,55 @@ ${fullTextContext}` : ""}`;
               </div>
             )}
             {journalFilterLoading && <div className="text-[10px] text-muted-foreground">加载中...</div>}
+          </div>
+        )}
+
+        {/* Reference search panel (collapsible) */}
+        {refSearchOpen && (
+          <div className="border-b border-border/50 px-3 py-2 bg-indigo-50/30 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-foreground">粘贴参考文献列表（支持 APA/MLA/Chicago/Vancouver 等格式）</span>
+              {refSearchResult && (
+                <span className="text-[10px] text-indigo-600">
+                  找到 {refSearchResult.stats.found}/{refSearchResult.stats.total} 篇
+                </span>
+              )}
+            </div>
+            <textarea
+              value={refSearchInput}
+              onChange={(e) => setRefSearchInput(e.target.value)}
+              placeholder={"1. Smith, J. (2020). Digital transformation and organizational resilience. Journal of Management, 46(3), 123-145.\n2. Zhang, W., & Lee, K. (2021). AI adoption in healthcare. MIS Quarterly, 45(2), 567-589.\n...\n\n粘贴完整参考文献列表，AI 将自动提取标题并逐篇检索"}
+              className="w-full h-28 px-2 py-1.5 text-[11px] border border-input rounded bg-background resize-y font-mono leading-relaxed"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleRefSearch}
+                disabled={refSearching || !refSearchInput.trim()}
+                className="text-[11px] px-3 py-1 rounded bg-indigo-500 text-white hover:bg-indigo-600 disabled:opacity-50 transition-colors"
+              >
+                {refSearching ? "检索中..." : "开始批量检索"}
+              </button>
+              {refSearching && (
+                <button onClick={() => refAbort.abort()} className="text-[10px] px-2 py-0.5 rounded border border-red-300 text-red-500 hover:bg-red-50">
+                  停止
+                </button>
+              )}
+              {refSearchResult && refSearchResult.stats.notFound > 0 && (
+                <span className="text-[10px] text-amber-600">
+                  {refSearchResult.stats.notFound} 篇未找到
+                </span>
+              )}
+            </div>
+            {/* Not-found list */}
+            {refSearchResult && refSearchResult.stats.notFound > 0 && (
+              <div className="text-[10px] text-muted-foreground space-y-0.5 max-h-20 overflow-y-auto">
+                {refSearchResult.matchResults.filter((r) => !r.found).map((r, i) => (
+                  <div key={i} className="pl-2 border-l-2 border-amber-300">
+                    {r.queryTitle}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
