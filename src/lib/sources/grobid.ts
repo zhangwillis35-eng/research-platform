@@ -11,6 +11,7 @@ const GROBID_URL = process.env.GROBID_URL || "http://localhost:8070";
 export interface GrobidResult {
   title?: string;
   abstract?: string;
+  authors: string[]; // paper's own authors
   sections: Array<{ heading: string; text: string }>;
   references: Array<{ title: string; authors: string[]; year?: number; doi?: string }>;
   fullText: string; // concatenated body text
@@ -111,6 +112,20 @@ function parseTeiXml(xml: string): GrobidResult {
   const abstractMatch = xml.match(/<abstract[^>]*>([\s\S]*?)<\/abstract>/i);
   const abstract = abstractMatch ? stripTags(abstractMatch[1]).trim() : undefined;
 
+  // Extract paper's own authors from teiHeader
+  const authors: string[] = [];
+  const headerMatch = xml.match(/<teiHeader[^>]*>([\s\S]*?)<\/teiHeader>/i);
+  if (headerMatch) {
+    const authorRegex = /<author[^>]*>([\s\S]*?)<\/author>/gi;
+    let authorMatch;
+    while ((authorMatch = authorRegex.exec(headerMatch[1])) !== null) {
+      const forename = authorMatch[1].match(/<forename[^>]*>([\s\S]*?)<\/forename>/i);
+      const surname = authorMatch[1].match(/<surname[^>]*>([\s\S]*?)<\/surname>/i);
+      const name = [forename?.[1], surname?.[1]].filter(Boolean).join(" ").trim();
+      if (name) authors.push(stripTags(name));
+    }
+  }
+
   // Extract body sections
   const sections: Array<{ heading: string; text: string }> = [];
   const bodyMatch = xml.match(/<body>([\s\S]*?)<\/body>/i);
@@ -198,11 +213,12 @@ function parseTeiXml(xml: string): GrobidResult {
   const fullText = parts.join("\n\n");
   const wordCount = fullText.split(/\s+/).length;
 
-  console.log(`[grobid] Parsed: ${sections.length} sections, ${references.length} refs, ${wordCount} words`);
+  console.log(`[grobid] Parsed: ${sections.length} sections, ${references.length} refs, ${authors.length} authors, ${wordCount} words`);
 
   return {
     title,
     abstract,
+    authors,
     sections,
     references,
     fullText,
