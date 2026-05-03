@@ -382,7 +382,7 @@ export default function PapersPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  // Upload a folder of PDFs — extract text in browser, send only JSON (no binary upload)
+  // Upload a folder of PDFs — extract text locally via pdf.js (CDN), send JSON to server
   async function handleFolderUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []).filter((f) => f.name.toLowerCase().endsWith(".pdf"));
     if (files.length === 0) return;
@@ -394,67 +394,103 @@ export default function PapersPage() {
     let matched = 0;
     let created = 0;
     let failed = 0;
-    const CONCURRENCY = 5;
+    const CONCURRENCY = 3;
 
-    setFolderProgress({ current: 0, total: files.length, name: "正在提取文本..." });
+    setFolderProgress({ current: 0, total: files.length, name: "加载 PDF 解析器..." });
+
+    // Load pdf.js from CDN (works on all browsers: Safari, Chrome, Firefox, Edge)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let pdfjsLib: any = (window as any).pdfjsLib;
+    if (!pdfjsLib) {
+      await new Promise<void>((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs";
+        script.type = "module";
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("Failed to load pdf.js"));
+        document.head.appendChild(script);
+      }).catch(() => {
+        // Fallback: try loading as regular script
+        return new Promise<void>((resolve) => {
+          const script = document.createElement("script");
+          script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+          script.onload = () => resolve();
+          script.onerror = () => resolve(); // Continue even if CDN fails
+          document.head.appendChild(script);
+        });
+      });
+      pdfjsLib = (window as any).pdfjsLib;
+    }
+
+    // Set worker to CDN
+    if (pdfjsLib?.GlobalWorkerOptions) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    }
+
+    setFolderProgress({ current: 0, total: files.length, name: "开始提取文本..." });
+
+    async function extractTextFromPdf(file: File): Promise<string> {
+      // If pdf.js loaded, extract in browser
+      if (pdfjsLib) {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const pages: string[] = [];
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          pages.push(content.items.map((item: any) => item.str).join(" "));
+        }
+        return pages.join("\n\n");
+      }
+      // Fallback: send PDF to server for extraction
+      return "";
+    }
 
     async function uploadOne(file: File) {
       try {
-        // Step 1: Read PDF as ArrayBuffer in browser
-        const arrayBuffer = await file.arrayBuffer();
-        const uint8 = new Uint8Array(arrayBuffer);
-
-        // Step 2: Extract text in browser using unpdf (works client-side)
-        const { extractText } = await import("unpdf");
-        const { text } = await extractText(uint8, { mergePages: true });
-        const fullText = text?.trim()?.slice(0, 30000) ?? "";
+        let fullText = await extractTextFromPdf(file);
+        fullText = fullText.trim().slice(0, 30000);
 
         if (fullText.length < 100) {
-          failed++;
+          // Fallback to server-side extraction
+          const formData = new FormData();
+          formData.append("projectId", projectId);
+          formData.append("file", file);
+          const res = await fetch("/api/papers/batch-upload", { method: "POST", body: formData });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.matched) matched++; else created++;
+          } else { failed++; }
           completed++;
-          setFolderProgress({ current: completed, total: files.length, name: `${file.name} (文本过少)` });
+          setFolderProgress({ current: completed, total: files.length, name: file.name });
           return;
         }
 
-        // Step 3: Extract title from text
+        // Extract title
         const lines = fullText.split("\n").map((l: string) => l.trim()).filter(Boolean);
         let title = file.name.replace(/\.pdf$/i, "");
-        if (lines.length > 5) {
-          for (const line of lines.slice(0, 20)) {
-            if (line.length >= 15 && line.length <= 250 && !/^[\d\s.]+$/.test(line) && !line.startsWith("http")) {
-              title = line; break;
-            }
-          }
-        } else {
-          const m = fullText.match(/^(.*?)(?:\s*Abstract[\s—:.-])/i);
-          if (m) {
-            let c = m[1].replace(/arXiv:\S+\s*/g, "").replace(/\[[\w.]+\]\s*/g, "").trim();
-            const authorStart = c.search(/\s[A-Z][a-z]+\s+[A-Z][a-z]+\s*[\*†‡\d]/);
-            if (authorStart > 10) c = c.slice(0, authorStart).trim();
-            if (c.length >= 10 && c.length <= 300) title = c;
+        for (const line of lines.slice(0, 20)) {
+          if (line.length >= 15 && line.length <= 250 && !/^[\d\s.]+$/.test(line) && !line.startsWith("http")) {
+            title = line; break;
           }
         }
 
-        // Step 4: Send only text (JSON, ~50KB) instead of PDF binary (~5MB)
+        // Send only text JSON (~50KB) instead of PDF binary (~5MB)
         const res = await fetch("/api/papers/batch-upload-text", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            projectId,
-            title,
+            projectId, title,
             abstract: fullText.slice(0, 500),
-            fullText,
-            pdfFileName: file.name,
-            authors: [],
+            fullText, pdfFileName: file.name, authors: [],
           }),
         });
-
         if (res.ok) {
           const data = await res.json();
           if (data.matched) matched++; else created++;
-        } else {
-          failed++;
-        }
+        } else { failed++; }
       } catch {
         failed++;
       }
@@ -657,6 +693,8 @@ export default function PapersPage() {
           <input
             ref={folderInputRef}
             type="file"
+            accept=".pdf"
+            multiple
             className="hidden"
             // @ts-expect-error webkitdirectory is not in React typings
             webkitdirectory=""
