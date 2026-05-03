@@ -20,33 +20,7 @@ export async function POST(request: Request) {
     const auth = await requireProjectAccess(projectId);
     if (auth instanceof NextResponse) return auth;
 
-    // Check for existing paper with similar title
-    const existing = await prisma.paper.findMany({
-      where: { projectId },
-      select: { id: true, title: true },
-    });
-
-    const norm = title.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, "");
-    let matchId: string | null = null;
-    for (const p of existing) {
-      const pNorm = p.title.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, "");
-      if (pNorm.length < 10 || norm.length < 10) continue;
-      const shorter = Math.min(norm.length, pNorm.length);
-      const longer = Math.max(norm.length, pNorm.length);
-      if (pNorm.includes(norm) || norm.includes(pNorm) || shorter / longer > 0.85) {
-        matchId = p.id;
-        break;
-      }
-    }
-
-    if (matchId) {
-      await prisma.paper.update({
-        where: { id: matchId },
-        data: { fullText: fullText.slice(0, 30000), pdfFileName, ...(abstract ? { abstract } : {}) },
-      });
-      return NextResponse.json({ ok: true, matched: true, title });
-    }
-
+    // Always create a new paper entry (no fuzzy matching — avoids false positives)
     await prisma.paper.create({
       data: {
         projectId,

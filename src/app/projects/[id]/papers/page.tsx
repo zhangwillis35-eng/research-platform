@@ -494,11 +494,7 @@ export default function PapersPage() {
     const data = await res.json();
     setPapers(data.papers ?? []);
 
-    const parts = [];
-    if (matched > 0) parts.push(`关联已有文献 ${matched} 篇`);
-    if (created > 0) parts.push(`新建 ${created} 篇`);
-    if (failed > 0) parts.push(`失败 ${failed} 篇`);
-    setUploadResult(`文件夹导入完成：${parts.join("，") || `共 ${completed} 篇`}`);
+    setUploadResult(`文件夹导入完成：成功 ${completed - failed} 篇${failed > 0 ? `，失败 ${failed} 篇` : ""}`);
     setFolderProgress(null);
     setUploading(false);
     if (folderInputRef.current) folderInputRef.current.value = "";

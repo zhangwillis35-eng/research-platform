@@ -55,22 +55,7 @@ export async function POST(request: Request) {
     // Extract metadata with regex (instant, no network)
     const { title, abstract, authors } = extractMetadata(rawText, file.name);
 
-    // Single DB query: check for existing title match
-    const existing = await prisma.paper.findMany({
-      where: { projectId },
-      select: { id: true, title: true },
-    });
-
-    const match = findTitleMatch(title, existing);
-
-    if (match) {
-      await prisma.paper.update({
-        where: { id: match.id },
-        data: { fullText, pdfFileName: file.name, ...(abstract ? { abstract } : {}) },
-      });
-      return NextResponse.json({ ok: true, matched: true, title });
-    }
-
+    // Always create new paper (no fuzzy matching — avoids false positives)
     await prisma.paper.create({
       data: {
         projectId,
