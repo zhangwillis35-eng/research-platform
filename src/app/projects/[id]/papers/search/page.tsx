@@ -194,6 +194,7 @@ interface VariableRelation {
   direction?: string;
   effectSize?: string;
   sampleContext?: string;
+  sources?: number[];
 }
 
 const directionColors: Record<string, string> = {
@@ -210,14 +211,14 @@ const directionLabels: Record<string, string> = {
   nonsignificant: "不显著",
 };
 
-function AnalysisResultView({ content }: { content: string | null }) {
+function AnalysisResultView({ content, papers }: { content: string | null; papers?: Paper[] }) {
   if (!content) return null;
 
   // Try to parse as JSON with relations
   try {
     const parsed = JSON.parse(content);
     if (parsed.relations && Array.isArray(parsed.relations)) {
-      return <RelationsView relations={parsed.relations} />;
+      return <RelationsView relations={parsed.relations} papers={papers} />;
     }
     // Other JSON structures — render as formatted text
     if (typeof parsed === "object") {
@@ -238,7 +239,19 @@ function AnalysisResultView({ content }: { content: string | null }) {
   );
 }
 
-function RelationsView({ relations }: { relations: VariableRelation[] }) {
+function RelationsView({ relations, papers }: { relations: VariableRelation[]; papers?: Paper[] }) {
+  const [expandedSource, setExpandedSource] = useState<string | null>(null);
+
+  function scrollToPaper(index: number) {
+    // Paper indices are 1-based in the LLM output
+    const paperEl = document.querySelector(`[data-paper-index="${index - 1}"]`);
+    if (paperEl) {
+      paperEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      paperEl.classList.add("ring-2", "ring-teal", "ring-offset-2");
+      setTimeout(() => paperEl.classList.remove("ring-2", "ring-teal", "ring-offset-2"), 3000);
+    }
+  }
+
   return (
     <div className="space-y-3">
       <div className="text-xs text-muted-foreground mb-2">
@@ -247,6 +260,7 @@ function RelationsView({ relations }: { relations: VariableRelation[] }) {
       {relations.map((rel, i) => {
         const dirClass = directionColors[rel.direction ?? ""] ?? "text-gray-600 bg-gray-50 border-gray-200";
         const dirLabel = directionLabels[rel.direction ?? ""] ?? rel.direction ?? "未知";
+        const sourceKey = `rel-${i}`;
 
         return (
           <div key={i} className="border border-border/60 rounded-lg p-3 bg-card hover:shadow-sm transition-shadow">
@@ -261,6 +275,21 @@ function RelationsView({ relations }: { relations: VariableRelation[] }) {
               <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-medium border border-blue-200">
                 DV: {rel.dependentVar}
               </span>
+              {/* Source paper badges */}
+              {rel.sources && rel.sources.length > 0 && (
+                <span className="ml-auto flex items-center gap-1">
+                  {rel.sources.map((src) => (
+                    <button
+                      key={src}
+                      onClick={() => scrollToPaper(src)}
+                      className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-[10px] font-medium border border-gray-300 hover:bg-teal/10 hover:text-teal hover:border-teal/30 transition-colors cursor-pointer"
+                      title={papers && papers[src - 1] ? papers[src - 1].title : `Paper [${src}]`}
+                    >
+                      [{src}]
+                    </button>
+                  ))}
+                </span>
+              )}
             </div>
 
             {/* Mediators & Moderators */}
@@ -282,6 +311,39 @@ function RelationsView({ relations }: { relations: VariableRelation[] }) {
               <div className="mt-1.5 text-[10px] text-muted-foreground flex gap-3">
                 {rel.effectSize && <span>效应量: {rel.effectSize}</span>}
                 {rel.sampleContext && <span>样本: {rel.sampleContext}</span>}
+              </div>
+            )}
+
+            {/* Expandable source details */}
+            {rel.sources && rel.sources.length > 0 && papers && (
+              <div className="mt-1.5">
+                <button
+                  className="text-[10px] text-muted-foreground hover:text-foreground"
+                  onClick={() => setExpandedSource(expandedSource === sourceKey ? null : sourceKey)}
+                >
+                  {expandedSource === sourceKey ? "收起来源" : `查看来源 (${rel.sources.length} 篇)`}
+                </button>
+                {expandedSource === sourceKey && (
+                  <div className="mt-1 space-y-1">
+                    {rel.sources.map((src) => {
+                      const paper = papers[src - 1];
+                      if (!paper) return null;
+                      return (
+                        <div
+                          key={src}
+                          className="text-[10px] pl-2 border-l-2 border-teal/30 cursor-pointer hover:bg-teal/5 rounded-r py-0.5"
+                          onClick={() => scrollToPaper(src)}
+                        >
+                          <span className="font-medium text-teal">[{src}]</span>{" "}
+                          <span className="text-foreground/80">{paper.title}</span>
+                          <span className="text-muted-foreground ml-1">
+                            ({paper.year ?? "N/A"}{paper.venue ? ` — ${paper.venue}` : ""})
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1857,7 +1919,7 @@ ${fullTextContext}` : ""}`;
           </CardHeader>
           <Separator />
           <CardContent className="pt-4">
-            <AnalysisResultView content={analysisResult} />
+            <AnalysisResultView content={analysisResult} papers={displayedPapers} />
           </CardContent>
         </Card>
       )}
@@ -1994,6 +2056,7 @@ ${fullTextContext}` : ""}`;
             <div
               key={i}
               id={`paper-${i + 1}`}
+              data-paper-index={i}
               className="group border border-border/50 rounded-lg p-4 hover:border-teal/20 transition-all duration-150 bg-card scroll-mt-16"
             >
               {/* Row 1: checkbox + relevance score + title */}
