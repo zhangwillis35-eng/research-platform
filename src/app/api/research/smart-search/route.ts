@@ -56,6 +56,13 @@ export async function POST(request: Request) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
         }
 
+        // Keepalive ping every 30s to prevent nginx proxy_read_timeout (300s)
+        const keepalive = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(`: keepalive\n\n`));
+          } catch { /* stream already closed */ }
+        }, 30000);
+
         try {
           send({ type: "status", message: "AI 提取关键词中..." });
 
@@ -99,6 +106,7 @@ export async function POST(request: Request) {
           });
         }
 
+        clearInterval(keepalive);
         controller.close();
       },
     });

@@ -64,6 +64,25 @@ export interface SmartSearchResult {
 // limit=100: no journal filter, sorted by relevance + citations, cap at 100
 // limit=999: unlimited, keep all with relevance ≥ 5
 
+/** Check if a paper is from a quality source (ABS 3+, JCR Q1, arXiv) — used for pre-enrichment cap */
+function isQualitySource(p: UnifiedPaper): boolean {
+  const venue = p.venue?.toLowerCase() ?? "";
+  // arXiv preprints
+  if (venue.startsWith("arxiv") || venue.includes("arxiv")) return true;
+  // JCR Q1
+  if (p.journalMeta?.jcrQuartile === "Q1") return true;
+  // ABS 3 or above
+  const absOrder = ["1", "2", "3", "4", "4*"];
+  if (p.journalMeta?.absRating && absOrder.indexOf(p.journalMeta.absRating) >= 2) return true;
+  // SSCI / SCI indexed
+  if (p.journalMeta?.ssci || p.journalMeta?.sci) return true;
+  // UTD24 / FT50
+  if (p.journalRanking?.utd24 || p.journalRanking?.ft50) return true;
+  // Top conferences (CHI, CSCW, NeurIPS, ICML, etc.)
+  if (p.journalMeta?.conference?.tier === "Top" || p.journalMeta?.conference?.tier === "A") return true;
+  return false;
+}
+
 function isTopTierJournal(p: ScoredPaper): boolean {
   const meta = p.journalMeta;
   if (!meta) return false;
@@ -429,9 +448,18 @@ export async function smartSearch(
   }
 
   // Step 5.5: Cap papers before enrichment — never enrich more than we could need
-  // Sort by citations first (best proxy for relevance before scoring), cap at limit * 5
-  const allDeduped = Array.from(seen.values()).sort((a, b) => b.citationCount - a.citationCount);
-  const enrichCap = Math.min(allDeduped.length, Math.max(limit * 5, 150));
+  // Priority: quality-source papers first (ABS 3+, JCR Q1, arXiv), then by citations
+  // This preserves recent high-quality papers that have low citations due to recency
+  const allDeduped = Array.from(seen.values());
+  allDeduped.sort((a, b) => {
+    // Tier 1: Quality source papers always come first
+    const aQuality = isQualitySource(a) ? 1 : 0;
+    const bQuality = isQualitySource(b) ? 1 : 0;
+    if (aQuality !== bQuality) return bQuality - aQuality;
+    // Tier 2: Within same tier, sort by citations
+    return b.citationCount - a.citationCount;
+  });
+  const enrichCap = Math.min(allDeduped.length, Math.max(limit * 2, 80));
   const rawPapers = allDeduped.slice(0, enrichCap);
   if (allDeduped.length > enrichCap) {
     onProgress?.("enrich", `去重后 ${allDeduped.length} 篇，按引用量保留前 ${enrichCap} 篇，补全摘要 + 期刊元数据...`);
