@@ -1,12 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 export default function SettingsPage() {
+  const params = useParams();
+  const projectId = params.id as string;
   const [obsidianUrl, setObsidianUrl] = useState("http://127.0.0.1:27123");
   const [obsidianKey, setObsidianKey] = useState("");
   const [zoteroKey, setZoteroKey] = useState("");
@@ -14,6 +17,9 @@ export default function SettingsPage() {
   const [zoteroStatus, setZoteroStatus] = useState<string | null>(null);
   const [university, setUniversity] = useState("sysu");
   const [proxyEnabled, setProxyEnabled] = useState(false);
+  const [notebookUrl, setNotebookUrl] = useState("");
+  const [notebookStatus, setNotebookStatus] = useState<{ available: boolean; authenticated: boolean; error?: string } | null>(null);
+  const [notebookChecking, setNotebookChecking] = useState(false);
 
   useEffect(() => {
     setObsidianKey(localStorage.getItem("obsidian_api_key") ?? "");
@@ -23,7 +29,16 @@ export default function SettingsPage() {
     setProxyEnabled(localStorage.getItem("proxy_enabled") === "true");
     const savedUrl = localStorage.getItem("obsidian_base_url");
     if (savedUrl) setObsidianUrl(savedUrl);
+    // Load notebook URL from project
+    fetch(`/api/papers/journal-filter?projectId=${projectId}`)
+      .catch(() => {});
   }, []);
+
+  // Load NotebookLM config from project
+  useEffect(() => {
+    const savedNotebook = localStorage.getItem(`notebookUrl_${projectId}`);
+    if (savedNotebook) setNotebookUrl(savedNotebook);
+  }, [projectId]);
   const [obsidianStatus, setObsidianStatus] = useState<{
     connected: boolean;
     vaultName?: string;
@@ -396,6 +411,103 @@ export default function SettingsPage() {
               <span className={`text-xs ${zoteroStatus.includes("成功") ? "text-green-600" : "text-red-500"}`}>
                 {zoteroStatus}
               </span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* NotebookLM Integration */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-3 text-lg">
+            <span className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center text-orange-700 text-sm font-bold">
+              N
+            </span>
+            NotebookLM 集成
+            {notebookStatus && (
+              <Badge
+                variant="secondary"
+                className={
+                  notebookStatus.available && notebookStatus.authenticated
+                    ? "bg-green-100 text-green-700"
+                    : "bg-red-100 text-red-700"
+                }
+              >
+                {notebookStatus.available && notebookStatus.authenticated ? "已连接" : "未连接"}
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            连接 Google NotebookLM，将文献库批量导入 Notebook 获取 AI 分析，或作为分析引擎替代内置 AI。
+          </p>
+
+          <div className="bg-muted/50 rounded-lg p-4 text-sm space-y-2">
+            <p className="font-medium">设置步骤：</p>
+            <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+              <li>在服务器上安装：<code className="text-xs bg-muted px-1 py-0.5 rounded">pip install notebooklm-py</code></li>
+              <li>运行认证：<code className="text-xs bg-muted px-1 py-0.5 rounded">notebooklm login</code>（一次性浏览器登录）</li>
+              <li>在 <a href="https://notebooklm.google.com" target="_blank" rel="noopener noreferrer" className="text-teal underline">NotebookLM</a> 创建一个 Notebook</li>
+              <li>将 Notebook 的 URL 粘贴到下方</li>
+            </ol>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">
+              Notebook URL
+            </label>
+            <Input
+              value={notebookUrl}
+              onChange={(e) => {
+                setNotebookUrl(e.target.value);
+                localStorage.setItem(`notebookUrl_${projectId}`, e.target.value);
+              }}
+              placeholder="https://notebooklm.google.com/notebook/..."
+            />
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8"
+              disabled={notebookChecking}
+              onClick={async () => {
+                setNotebookChecking(true);
+                try {
+                  // Save notebook URL to project
+                  if (notebookUrl.trim()) {
+                    await fetch(`/api/papers/${projectId}`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ notebookUrl: notebookUrl.trim() }),
+                    }).catch(() => {});
+                  }
+                  // Check NotebookLM availability
+                  const res = await fetch("/api/integrations/notebooklm", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "check" }),
+                  });
+                  const data = await res.json();
+                  setNotebookStatus(data);
+                } catch {
+                  setNotebookStatus({ available: false, authenticated: false, error: "连接失败" });
+                }
+                setNotebookChecking(false);
+              }}
+            >
+              {notebookChecking ? "检测中..." : "测试连接"}
+            </Button>
+            {notebookStatus && !notebookStatus.available && (
+              <span className="text-xs text-red-500">{notebookStatus.error}</span>
+            )}
+            {notebookStatus?.available && !notebookStatus.authenticated && (
+              <span className="text-xs text-amber-500">notebooklm-py 已安装但未认证，请运行 notebooklm login</span>
+            )}
+            {notebookStatus?.available && notebookStatus.authenticated && (
+              <span className="text-xs text-green-600">连接成功</span>
             )}
           </div>
         </CardContent>

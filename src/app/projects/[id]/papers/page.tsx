@@ -9,6 +9,10 @@ import {
   AIProviderSelect,
   type AIProvider,
 } from "@/components/ai-provider-select";
+import {
+  AnalysisEngineSelect,
+  type AnalysisEngine,
+} from "@/components/analysis-engine-select";
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 import Link from "next/link";
@@ -40,11 +44,21 @@ export default function PapersPage() {
   const [overview, setOverview] = usePersistedState<string | null>(NS, "overview", null);
   const [overviewOpen, setOverviewOpen] = usePersistedState<boolean>(NS, "overviewOpen", false);
 
+  // Field analysis state
+  const [fieldEngine, setFieldEngine] = usePersistedState<AnalysisEngine>(NS, "fieldEngine", "builtin");
+  const [fieldTakeaways, setFieldTakeaways] = usePersistedState<string | null>(NS, "fieldTakeaways", null);
+  const [fieldTakeawaysOpen, setFieldTakeawaysOpen] = usePersistedState<boolean>(NS, "fieldTakeawaysOpen", false);
+  const [assumptions, setAssumptions] = usePersistedState<string | null>(NS, "assumptions", null);
+  const [assumptionsOpen, setAssumptionsOpen] = usePersistedState<boolean>(NS, "assumptionsOpen", false);
+  const [notebookConfigured, setNotebookConfigured] = useState(false);
+
   // Transient state
   const [loading, setLoading] = useState(true);
   const [digestLoading, setDigestLoading] = useState(false);
   const [digestResult, setDigestResult] = useState<string | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
+  const [fieldTakeawaysLoading, setFieldTakeawaysLoading] = useState(false);
+  const [assumptionsLoading, setAssumptionsLoading] = useState(false);
 
   // PDF upload state
   const [uploading, setUploading] = useState(false);
@@ -59,6 +73,8 @@ export default function PapersPage() {
   // Abort controllers
   const digestAbort = useAbort();
   const overviewAbort = useAbort();
+  const fieldAbort = useAbort();
+  const assumptionsAbort = useAbort();
 
   useEffect(() => {
     fetch(`/api/papers?projectId=${projectId}`)
@@ -66,7 +82,120 @@ export default function PapersPage() {
       .then((data) => setPapers(data.papers ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
+    // Check if NotebookLM is configured
+    fetch(`/api/papers?projectId=${projectId}&check=notebook`)
+      .catch(() => {});
+    // Simple check via project data
+    fetch(`/api/papers/journal-filter?projectId=${projectId}`)
+      .then(r => r.json())
+      .catch(() => {});
   }, [projectId]);
+
+  // Check notebook configuration
+  useEffect(() => {
+    fetch(`/api/integrations/notebooklm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "check" }),
+    })
+      .then((r) => r.json())
+      .then((d) => setNotebookConfigured(d.available && d.authenticated))
+      .catch(() => setNotebookConfigured(false));
+  }, []);
+
+  const fullTextPapers = papers.filter((p) => p.fullText);
+
+  async function generateFieldTakeaways() {
+    setFieldTakeawaysLoading(true);
+    setFieldTakeaways("");
+    setFieldTakeawaysOpen(true);
+    const signal = fieldAbort.reset();
+    try {
+      const res = await fetch("/api/papers/field-takeaways", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          provider: aiProvider,
+          engine: fieldEngine,
+        }),
+        signal,
+      });
+      if (!res.body) return;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let text = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === "text") {
+              text += event.text;
+              setFieldTakeaways(text);
+            }
+          } catch { /* skip */ }
+        }
+      }
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        setFieldTakeaways("生成失败: " + String(err));
+      }
+    }
+    setFieldTakeawaysLoading(false);
+  }
+
+  async function generateAssumptions() {
+    setAssumptionsLoading(true);
+    setAssumptions("");
+    setAssumptionsOpen(true);
+    const signal = assumptionsAbort.reset();
+    try {
+      const res = await fetch("/api/papers/assumptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          provider: aiProvider,
+          engine: fieldEngine,
+        }),
+        signal,
+      });
+      if (!res.body) return;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let text = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === "text") {
+              text += event.text;
+              setAssumptions(text);
+            }
+          } catch { /* skip */ }
+        }
+      }
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        setAssumptions("分析失败: " + String(err));
+      }
+    }
+    setAssumptionsLoading(false);
+  }
 
   async function toggleSelected(paperId: string, current: boolean) {
     await fetch(`/api/papers/${paperId}`, {
@@ -518,6 +647,97 @@ export default function PapersPage() {
               {overview}
             </div>
           ) : null}
+        </div>
+      )}
+
+      {/* Field Analysis section */}
+      {fullTextPapers.length > 0 && (
+        <div className="border border-border/50 rounded-lg bg-card">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-border/30">
+            <div className="flex items-center gap-3">
+              <h3 className="text-sm font-medium">领域分析</h3>
+              <span className="text-[10px] text-muted-foreground">{fullTextPapers.length} 篇全文可用</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <AnalysisEngineSelect value={fieldEngine} onChange={setFieldEngine} notebookConfigured={notebookConfigured} />
+              {fieldEngine === "builtin" && <AIProviderSelect value={aiProvider} onChange={setAiProvider} />}
+            </div>
+          </div>
+          <div className="px-4 py-3 flex items-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs h-7"
+              onClick={generateFieldTakeaways}
+              disabled={fieldTakeawaysLoading || fullTextPapers.length === 0}
+            >
+              {fieldTakeawaysLoading ? "生成中..." : "领域要点提炼"}
+            </Button>
+            <StopButton show={fieldTakeawaysLoading} onClick={fieldAbort.abort} />
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs h-7"
+              onClick={generateAssumptions}
+              disabled={assumptionsLoading || fullTextPapers.length === 0}
+            >
+              {assumptionsLoading ? "分析中..." : "假设对比分析"}
+            </Button>
+            <StopButton show={assumptionsLoading} onClick={assumptionsAbort.abort} />
+            {fieldTakeaways && (
+              <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setFieldTakeawaysOpen(!fieldTakeawaysOpen)}>
+                {fieldTakeawaysOpen ? "收起要点" : "展开要点"}
+              </button>
+            )}
+            {assumptions && (
+              <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setAssumptionsOpen(!assumptionsOpen)}>
+                {assumptionsOpen ? "收起假设" : "展开假设"}
+              </button>
+            )}
+          </div>
+          {/* Field Takeaways result */}
+          {fieldTakeawaysOpen && fieldTakeaways && (
+            <div className="px-4 pb-3">
+              <div className="border border-blue-200 rounded-lg bg-blue-50/50 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-medium text-blue-700">领域要点</h4>
+                  <div className="flex gap-1">
+                    <Link href={`/projects/${projectId}/ideas/generate`}>
+                      <button className="text-[10px] px-2 py-0.5 rounded border border-blue-300 text-blue-600 hover:bg-blue-100">
+                        发送空白到研究想法
+                      </button>
+                    </Link>
+                    <Link href={`/projects/${projectId}/review/generate`}>
+                      <button className="text-[10px] px-2 py-0.5 rounded border border-blue-300 text-blue-600 hover:bg-blue-100">
+                        发送到文献综述
+                      </button>
+                    </Link>
+                  </div>
+                </div>
+                <div className="prose prose-sm max-w-none text-sm whitespace-pre-wrap leading-relaxed">
+                  {fieldTakeaways}
+                </div>
+              </div>
+            </div>
+          )}
+          {/* Assumptions result */}
+          {assumptionsOpen && assumptions && (
+            <div className="px-4 pb-3">
+              <div className="border border-amber-200 rounded-lg bg-amber-50/50 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-medium text-amber-700">假设对比分析</h4>
+                  <Link href={`/projects/${projectId}/theories/integrate`}>
+                    <button className="text-[10px] px-2 py-0.5 rounded border border-amber-300 text-amber-600 hover:bg-amber-100">
+                      发送到理论整合
+                    </button>
+                  </Link>
+                </div>
+                <div className="prose prose-sm max-w-none text-sm whitespace-pre-wrap leading-relaxed">
+                  {assumptions}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

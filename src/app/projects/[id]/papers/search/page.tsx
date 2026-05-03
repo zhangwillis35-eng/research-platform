@@ -259,6 +259,105 @@ export default function PaperSearchPage() {
     keywords: true, precision: true, broad: true, filters: true, platforms: true,
   });
   const [leftPanelWidth, setLeftPanelWidth] = usePersistedState<number>(NS, "leftPanelWidth", 480);
+  const [journalFilterOpen, setJournalFilterOpen] = usePersistedState<boolean>(NS, "journalFilterOpen", false);
+
+  // ─── Journal filter state ───
+  const [journalFilters, setJournalFilters] = useState<Array<{ id: string; journalName: string; filterType: string }>>([]);
+  const [journalFilterMode, setJournalFilterMode] = useState<string | null>(null);
+  const [journalFilterInput, setJournalFilterInput] = useState("");
+  const [journalFilterLoading, setJournalFilterLoading] = useState(false);
+  const csvInputRef = useRef<HTMLInputElement>(null);
+
+  // Load journal filters on mount
+  useEffect(() => {
+    fetch(`/api/papers/journal-filter?projectId=${projectId}`)
+      .then((r) => r.json())
+      .then((d) => {
+        setJournalFilters(d.filters ?? []);
+        setJournalFilterMode(d.mode ?? null);
+      })
+      .catch(() => {});
+  }, [projectId]);
+
+  async function addJournalFilter(journals: string[], source = "manual") {
+    if (journals.length === 0) return;
+    const mode = journalFilterMode || "blacklist";
+    setJournalFilterLoading(true);
+    try {
+      await fetch("/api/papers/journal-filter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, journals, filterType: mode, source }),
+      });
+      // Reload filters
+      const r = await fetch(`/api/papers/journal-filter?projectId=${projectId}`);
+      const d = await r.json();
+      setJournalFilters(d.filters ?? []);
+      setJournalFilterMode(d.mode ?? null);
+    } catch { /* skip */ }
+    setJournalFilterLoading(false);
+  }
+
+  async function removeJournalFilter(filterId: string) {
+    await fetch("/api/papers/journal-filter", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, filterId }),
+    });
+    setJournalFilters((prev) => prev.filter((f) => f.id !== filterId));
+  }
+
+  async function clearJournalFilters() {
+    await fetch("/api/papers/journal-filter", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, clearAll: true }),
+    });
+    setJournalFilters([]);
+    setJournalFilterMode(null);
+  }
+
+  async function switchFilterMode(mode: "blacklist" | "whitelist") {
+    await fetch("/api/papers/journal-filter", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, mode }),
+    });
+    setJournalFilterMode(mode);
+  }
+
+  async function handleCsvUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const mode = journalFilterMode || "blacklist";
+    setJournalFilterLoading(true);
+    try {
+      await fetch("/api/papers/journal-filter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, csv: text, filterType: mode, source: "csv" }),
+      });
+      const r = await fetch(`/api/papers/journal-filter?projectId=${projectId}`);
+      const d = await r.json();
+      setJournalFilters(d.filters ?? []);
+      setJournalFilterMode(d.mode ?? null);
+    } catch { /* skip */ }
+    setJournalFilterLoading(false);
+    if (csvInputRef.current) csvInputRef.current.value = "";
+  }
+
+  async function loadPreset(preset: "ft50" | "utd24" | "abs4star") {
+    setJournalFilterLoading(true);
+    try {
+      const mod = await import("@/lib/sources/journal-rankings");
+      const journals = preset === "ft50" ? [...mod.FT50_JOURNALS]
+        : preset === "utd24" ? [...mod.UTD24_JOURNALS]
+        : [...mod.ABS4STAR_JOURNALS];
+      await addJournalFilter(journals, "preset");
+    } catch { /* skip */ }
+    setJournalFilterLoading(false);
+  }
 
   // ─── Transient state (resets on navigation — no need to persist) ───
   const [loading, setLoading] = useState(false);
@@ -747,6 +846,7 @@ ${fullTextContext}` : ""}`;
         limit: searchLimit,
         enableRelevanceScoring: enableRelevance,
         stream: true,
+        projectId,
       });
 
       return 0; // Result count updated via subscribe callback
@@ -1226,6 +1326,16 @@ ${fullTextContext}` : ""}`;
                   <option value={100}>100篇（不限刊）</option>
                   <option value={999}>不限量</option>
                 </select>
+                <button
+                  onClick={() => setJournalFilterOpen((v) => !v)}
+                  className={`h-5 px-1.5 text-[10px] border rounded transition-colors ${
+                    journalFilters.length > 0
+                      ? "border-teal text-teal bg-teal/5"
+                      : "border-input text-muted-foreground bg-background"
+                  }`}
+                >
+                  期刊过滤{journalFilters.length > 0 ? ` (${journalFilters.length})` : ""}
+                </button>
               </>
             )}
           </div>
@@ -1251,6 +1361,76 @@ ${fullTextContext}` : ""}`;
             )}
           </div>
         </div>
+
+        {/* Journal filter panel (collapsible) */}
+        {journalFilterOpen && (
+          <div className="border-b border-border/50 px-3 py-2 bg-muted/30 space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-medium text-foreground">模式：</span>
+              <button
+                onClick={() => switchFilterMode("blacklist")}
+                className={`text-[10px] px-2 py-0.5 rounded ${journalFilterMode === "blacklist" ? "bg-red-500 text-white" : "bg-muted text-muted-foreground"}`}
+              >
+                黑名单
+              </button>
+              <button
+                onClick={() => switchFilterMode("whitelist")}
+                className={`text-[10px] px-2 py-0.5 rounded ${journalFilterMode === "whitelist" ? "bg-emerald-500 text-white" : "bg-muted text-muted-foreground"}`}
+              >
+                白名单
+              </button>
+              <span className="text-[10px] text-muted-foreground mx-1">|</span>
+              <button onClick={() => loadPreset("ft50")} disabled={journalFilterLoading} className="text-[10px] px-1.5 py-0.5 rounded border border-amber-300 text-amber-600 hover:bg-amber-50">FT50</button>
+              <button onClick={() => loadPreset("utd24")} disabled={journalFilterLoading} className="text-[10px] px-1.5 py-0.5 rounded border border-red-300 text-red-600 hover:bg-red-50">UTD24</button>
+              <button onClick={() => loadPreset("abs4star")} disabled={journalFilterLoading} className="text-[10px] px-1.5 py-0.5 rounded border border-purple-300 text-purple-600 hover:bg-purple-50">ABS 4*</button>
+              <span className="text-[10px] text-muted-foreground mx-1">|</span>
+              <input
+                ref={csvInputRef}
+                type="file"
+                accept=".csv,.txt"
+                onChange={handleCsvUpload}
+                className="hidden"
+              />
+              <button onClick={() => csvInputRef.current?.click()} disabled={journalFilterLoading} className="text-[10px] px-1.5 py-0.5 rounded border border-input text-muted-foreground hover:bg-muted">
+                上传 CSV
+              </button>
+              {journalFilters.length > 0 && (
+                <button onClick={clearJournalFilters} className="text-[10px] px-1.5 py-0.5 rounded text-red-500 hover:bg-red-50">
+                  清空全部
+                </button>
+              )}
+            </div>
+            {/* Add journal manually */}
+            <div className="flex gap-1">
+              <input
+                value={journalFilterInput}
+                onChange={(e) => setJournalFilterInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && journalFilterInput.trim()) {
+                    addJournalFilter([journalFilterInput.trim()]);
+                    setJournalFilterInput("");
+                  }
+                }}
+                placeholder="输入期刊名称，按回车添加"
+                className="flex-1 h-6 px-2 text-[11px] border border-input rounded bg-background"
+              />
+            </div>
+            {/* Current filter list */}
+            {journalFilters.length > 0 && (
+              <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+                {journalFilters.map((f) => (
+                  <span key={f.id} className={`inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded ${
+                    f.filterType === "blacklist" ? "bg-red-50 text-red-700 border border-red-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                  }`}>
+                    {f.journalName.length > 30 ? f.journalName.slice(0, 30) + "..." : f.journalName}
+                    <button onClick={() => removeJournalFilter(f.id)} className="text-current hover:opacity-60 ml-0.5">&times;</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {journalFilterLoading && <div className="text-[10px] text-muted-foreground">加载中...</div>}
+          </div>
+        )}
 
         {/* Chat messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
