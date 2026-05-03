@@ -393,6 +393,8 @@ export default function PapersPage() {
 
     let totalUploaded = 0;
     let totalFailed = 0;
+    let totalMatched = 0;
+    let totalCreated = 0;
     const BATCH_SIZE = 10;
 
     for (let i = 0; i < files.length; i += BATCH_SIZE) {
@@ -410,6 +412,8 @@ export default function PapersPage() {
           const data = await res.json();
           totalUploaded += data.succeeded ?? 0;
           totalFailed += data.failed ?? 0;
+          totalMatched += data.matched ?? 0;
+          totalCreated += data.created ?? 0;
         } else {
           totalFailed += batch.length;
         }
@@ -423,7 +427,11 @@ export default function PapersPage() {
     const res = await fetch(`/api/papers?projectId=${projectId}`);
     const data = await res.json();
     setPapers(data.papers ?? []);
-    setUploadResult(`文件夹导入完成：成功 ${totalUploaded} 篇${totalFailed > 0 ? `，失败 ${totalFailed} 篇` : ""}`);
+    const parts = [];
+    if (totalMatched > 0) parts.push(`关联已有文献 ${totalMatched} 篇`);
+    if (totalCreated > 0) parts.push(`新建 ${totalCreated} 篇`);
+    if (totalFailed > 0) parts.push(`失败 ${totalFailed} 篇`);
+    setUploadResult(`文件夹导入完成：${parts.join("，") || `共 ${totalUploaded} 篇`}`);
     setFolderProgress(null);
     setUploading(false);
     if (folderInputRef.current) folderInputRef.current.value = "";
