@@ -55,6 +55,8 @@ export interface SmartSearchResult {
     durationMs: number;
     relevanceScored: boolean;
     googleScholarAvailable: boolean;
+    withFullText: number;
+    withAbstractOnly: number;
   };
 }
 
@@ -702,6 +704,10 @@ export async function smartSearch(
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const withFullText = finalPapers.filter((p: any) => p.hasFullText).length;
+  const withAbstract = finalPapers.filter((p) => p.abstract && p.abstract.length > 100).length;
+
   return {
     plan,
     papers: finalPapers,
@@ -713,6 +719,8 @@ export async function smartSearch(
       durationMs: Date.now() - startTime,
       relevanceScored,
       googleScholarAvailable: !(globalThis as Record<string, unknown>).__serpapi_exhausted,
+      withFullText,
+      withAbstractOnly: withAbstract - withFullText,
     },
   };
 }

@@ -92,6 +92,8 @@ interface SearchStats {
   byQuery: Record<string, number>;
   durationMs: number;
   relevanceScored: boolean;
+  withFullText?: number;
+  withAbstractOnly?: number;
 }
 
 type SortBy = "citations" | "year_desc" | "year_asc" | "relevance";
@@ -1758,7 +1760,7 @@ ${fullTextContext}` : ""}`;
 
       {/* Relevance scoring stats */}
       {searchStats?.relevanceScored && (
-        <div className="flex items-center gap-3 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs">
+        <div className="flex items-center gap-3 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs flex-wrap">
           <span className="font-medium text-emerald-700">AI 相关性评估完成</span>
           <span className="text-emerald-600">
             检索到 {searchStats.totalBeforeRelevance} 篇 → 经AI评估保留 {searchStats.total} 篇相关文献
@@ -1766,6 +1768,11 @@ ${fullTextContext}` : ""}`;
           <span className="text-emerald-500">
             用时 {(searchStats.durationMs / 1000).toFixed(1)}s
           </span>
+          {searchStats.withFullText != null && (
+            <span className="text-emerald-600 border-l border-emerald-300 pl-3">
+              全文 {searchStats.withFullText} 篇 · 仅摘要 {searchStats.withAbstractOnly ?? 0} 篇
+            </span>
+          )}
         </div>
       )}
 
@@ -2082,6 +2089,12 @@ ${fullTextContext}` : ""}`;
                     <span className="text-[8px] leading-none mt-0.5">{getRelevanceLabel(paper.relevanceScore).slice(0, 2)}</span>
                   </div>
                 )}
+                {/* Full text indicator */}
+                {paper.hasFullText ? (
+                  <span className="shrink-0 px-1 py-0.5 rounded text-[9px] font-medium bg-emerald-50 text-emerald-600 border border-emerald-200" title="已获取全文">全文</span>
+                ) : paper.abstract && paper.abstract.length > 100 ? (
+                  <span className="shrink-0 px-1 py-0.5 rounded text-[9px] font-medium bg-gray-50 text-gray-500 border border-gray-200" title="仅有摘要">摘要</span>
+                ) : null}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start gap-2">
                     <h3 className="font-medium text-[15px] leading-snug group-hover:text-teal transition-colors flex-1">
