@@ -156,6 +156,20 @@ class BackgroundSearchManager {
               ];
               this.notify();
               this.saveState();
+            } else if (evt.type === "fulltext_update") {
+              // Update a paper's full text status after results were already delivered
+              if (this.state.result?.papers) {
+                for (const p of this.state.result.papers) {
+                  if ((p.doi && p.doi === evt.doi) || p.title === evt.title) {
+                    p.hasFullText = true;
+                    p.fullTextSource = evt.fullTextSource;
+                    p.fullTextWordCount = evt.fullTextWordCount;
+                    p.fullText = evt.fullText;
+                    break;
+                  }
+                }
+                this.notify();
+              }
             } else if (evt.type === "papers_chunk") {
               // Accumulate paper chunks into result
               if (!this.state.result) {

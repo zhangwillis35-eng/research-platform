@@ -518,7 +518,7 @@ export async function smartSearch(
     // Tier 2: Within same tier, sort by citations
     return b.citationCount - a.citationCount;
   });
-  const enrichCap = Math.min(allDeduped.length, Math.max(limit * 2, 80));
+  const enrichCap = Math.min(allDeduped.length, Math.min(limit * 2, 80));
   const rawPapers = allDeduped.slice(0, enrichCap);
   if (allDeduped.length > enrichCap) {
     onProgress?.("enrich", `去重后 ${allDeduped.length} 篇，按引用量保留前 ${enrichCap} 篇，补全摘要 + 期刊元数据...`);

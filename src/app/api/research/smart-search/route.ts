@@ -115,13 +115,16 @@ export async function POST(request: Request) {
             });
           }
 
-          // Send metadata + done signal separately
+          // Send metadata + done signal — results are now visible to user
           send({
             type: "done",
             stats: result.stats,
             plan: result.plan,
             totalPapers: strippedPapers.length,
           });
+
+          // Full-text fetching is handled separately via /api/papers/fulltext
+          // endpoint when the user needs it (e.g., for deep analysis).
         } catch (error) {
           send({
             type: "error",
