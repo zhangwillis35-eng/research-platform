@@ -105,10 +105,58 @@ class BackgroundSearchManager {
         if (this.state.status === "searching") {
           this.state.status = this.state.result ? "done" : "idle";
         }
-      } else {
-        this.state.status = "error";
-        this.state.error = err instanceof Error ? err.message : String(err);
+        this.notify();
+        this.saveState();
+        return;
       }
+
+      // SSE stream failed — if we already have partial results, use them
+      if (this.state.result?.papers?.length > 0) {
+        console.log(`[search-manager] SSE stream failed but have ${this.state.result.papers.length} papers, treating as success`);
+        this.state.status = "done";
+        this.state.completedAt = Date.now();
+        this.state.consumed = false;
+        this.state.progress = this.state.progress.map((s) => ({ ...s, done: true }));
+        this.notify();
+        this.saveState();
+        this.saveResult();
+        return;
+      }
+
+      // No partial results — fall back to non-streaming request
+      console.log("[search-manager] SSE failed, retrying without streaming...");
+      this.state.progress = [
+        ...this.state.progress.map((s) => ({ ...s, done: true })),
+        { phase: "retry", message: "SSE 断开，正在重试（非流式）...", done: false },
+      ];
+      this.notify();
+
+      try {
+        const retryRes = await fetch("/api/research/smart-search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...body, stream: false }),
+          signal: this.abortController?.signal,
+        });
+
+        if (retryRes.ok) {
+          const data = await retryRes.json();
+          this.state.result = data;
+          this.state.status = "done";
+          this.state.completedAt = Date.now();
+          this.state.consumed = false;
+          this.state.progress = this.state.progress.map((s) => ({ ...s, done: true }));
+          this.notify();
+          this.saveState();
+          this.saveResult();
+          return;
+        }
+      } catch {
+        // Retry also failed
+      }
+
+      this.state.status = "error";
+      this.state.error = err instanceof Error ? err.message : String(err);
       this.notify();
       this.saveState();
     }
@@ -199,6 +247,18 @@ class BackgroundSearchManager {
       }
     } catch (err) {
       if (!(err instanceof Error && err.name === "AbortError")) {
+        // If we have partial results (papers received before stream broke), keep them
+        if (this.state.result?.papers?.length > 0) {
+          this.state.status = "done";
+          this.state.completedAt = Date.now();
+          this.state.consumed = false;
+          this.state.progress = this.state.progress.map((s) => ({ ...s, done: true }));
+          this.notify();
+          this.saveState();
+          this.saveResult();
+          return;
+        }
+        // No partial results — propagate error (will trigger non-streaming retry in startSearch)
         this.state.status = "error";
         this.state.error = err instanceof Error ? err.message : String(err);
         this.notify();

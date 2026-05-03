@@ -95,32 +95,53 @@ export async function POST(request: Request) {
 /** Extract title, abstract, authors from raw PDF text using heuristics */
 function extractMetadata(text: string, fileName: string) {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const hasLineBreaks = lines.length > 5;
 
-  // Title: first line that is 20-200 chars and not all-caps junk / numbers
   let title = fileName.replace(/\.pdf$/i, "");
-  for (const line of lines.slice(0, 20)) {
-    if (line.length >= 15 && line.length <= 250 && !/^[\d\s.]+$/.test(line) && !line.startsWith("http")) {
-      title = line;
-      break;
+  let abstract: string | undefined;
+  const authors: { name: string }[] = [];
+
+  if (hasLineBreaks) {
+    // Normal PDF: look for first meaningful line as title
+    for (const line of lines.slice(0, 20)) {
+      if (line.length >= 15 && line.length <= 250 && !/^[\d\s.]+$/.test(line) && !line.startsWith("http")) {
+        title = line;
+        break;
+      }
+    }
+  } else {
+    // Single-line PDF (no line breaks): extract title before "Abstract"
+    const beforeAbstract = text.match(/^(.*?)(?:\s*Abstract[\s—:.-])/i);
+    if (beforeAbstract) {
+      // Strip arXiv IDs, dates, author names from the front
+      let candidate = beforeAbstract[1]
+        .replace(/arXiv:\S+\s*/g, "")
+        .replace(/\[\w+\.\w+\]\s*/g, "")
+        .replace(/\d{1,2}\s+\w+\s+\d{4}\s*/g, "")
+        .trim();
+      // Cut before author names: "FirstName LastName*" or "FirstName LastName,"
+      const authorStart = candidate.search(/\s[A-Z][a-z]+\s+[A-Z][a-z]+\s*[\*†‡\d]/);
+      if (authorStart > 10) candidate = candidate.slice(0, authorStart).trim();
+      if (candidate.length >= 10 && candidate.length <= 300) title = candidate;
     }
   }
 
-  // Abstract: text between "Abstract" and "Keywords/Introduction/1."
+  // Abstract: text between "Abstract" and next section heading
   const abstractMatch = text.match(
-    /(?:abstract|摘\s*要)[:\s\n]+([\s\S]{80,2500}?)(?:\n\s*(?:keywords?|key\s*words?|introduction|1[\s.。]|关键词|引言|\n\n\n))/i
+    /(?:abstract|摘\s*要)[\s—:.-]*([\s\S]{80,3000}?)(?:\b(?:keywords?|key\s*words?|introduction|1[\s.。]|关键词|引言)\b|\n\n\n)/i
   );
-  const abstract = abstractMatch?.[1]?.replace(/\s+/g, " ").trim();
+  abstract = abstractMatch?.[1]?.replace(/\s+/g, " ").trim();
 
-  // Authors: lines between title and abstract that look like author names
-  const authors: { name: string }[] = [];
+  // Authors: look for "Name, Name" patterns in first 2000 chars
   const authorSection = text.slice(0, 2000);
-  const authorPattern = /^[A-Z][a-z]+([\s-][A-Z][a-z]+){1,4}(,\s*[A-Z][a-z]+([\s-][A-Z][a-z]+){1,4})*$/m;
-  const authorMatch = authorSection.match(authorPattern);
-  if (authorMatch) {
-    authorMatch[0].split(",").forEach((name) => {
-      const n = name.trim();
-      if (n.length > 3 && n.split(" ").length >= 2) authors.push({ name: n });
-    });
+  const authorPattern = /([A-Z][a-z]+(?:\s[A-Z][a-z]+){1,3})(?:\s*[\*†‡\d,]+\s*)/g;
+  let authorMatch;
+  while ((authorMatch = authorPattern.exec(authorSection)) !== null) {
+    const name = authorMatch[1].trim();
+    if (name.split(" ").length >= 2 && name.length <= 40 && !name.match(/^(Abstract|Introduction|University|Department)/)) {
+      authors.push({ name });
+    }
+    if (authors.length >= 10) break;
   }
 
   return { title, abstract, authors };
