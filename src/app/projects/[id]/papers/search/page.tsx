@@ -556,6 +556,10 @@ export default function PaperSearchPage() {
         signal,
       });
 
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(errData.error || `HTTP ${res.status}`);
+      }
       if (!res.body) throw new Error("No response body");
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
