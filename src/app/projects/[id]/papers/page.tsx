@@ -65,8 +65,10 @@ export default function PapersPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const attachInputRef = useRef<HTMLInputElement>(null);
   const [attachTarget, setAttachTarget] = useState<string | null>(null);
+  const [folderProgress, setFolderProgress] = useState<{ current: number; total: number; name: string } | null>(null);
 
   // Full text viewer state
   const [fullTextPaper, setFullTextPaper] = useState<Paper | null>(null);
@@ -380,6 +382,42 @@ export default function PapersPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
+  // Upload a folder of PDFs
+  async function handleFolderUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []).filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+    if (files.length === 0) return;
+
+    setUploading(true);
+    setUploadResult(null);
+    setFolderProgress({ current: 0, total: files.length, name: "" });
+
+    let uploaded = 0;
+    let failed = 0;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      setFolderProgress({ current: i + 1, total: files.length, name: file.name });
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("projectId", projectId);
+        const res = await fetch("/api/papers/upload", { method: "POST", body: formData });
+        if (res.ok) uploaded++;
+        else failed++;
+      } catch {
+        failed++;
+      }
+    }
+
+    const res = await fetch(`/api/papers?projectId=${projectId}`);
+    const data = await res.json();
+    setPapers(data.papers ?? []);
+    setUploadResult(`文件夹导入完成：成功 ${uploaded} 篇${failed > 0 ? `，失败 ${failed} 篇` : ""}`);
+    setFolderProgress(null);
+    setUploading(false);
+    if (folderInputRef.current) folderInputRef.current.value = "";
+  }
+
   // Attach PDF to an existing paper
   async function handleAttachPDF(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
@@ -548,6 +586,14 @@ export default function PapersPage() {
             className="hidden"
             onChange={handleAttachPDF}
           />
+          <input
+            ref={folderInputRef}
+            type="file"
+            className="hidden"
+            // @ts-expect-error webkitdirectory is not in React typings
+            webkitdirectory=""
+            onChange={handleFolderUpload}
+          />
           <Button
             variant="outline"
             size="sm"
@@ -555,7 +601,16 @@ export default function PapersPage() {
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
           >
-            {uploading ? "上传中..." : "上传 PDF"}
+            {uploading && !folderProgress ? "上传中..." : "上传 PDF"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs h-8"
+            onClick={() => folderInputRef.current?.click()}
+            disabled={uploading}
+          >
+            {folderProgress ? `${folderProgress.current}/${folderProgress.total}` : "批量导入文件夹"}
           </Button>
           <Button
             variant="outline"
@@ -584,9 +639,25 @@ export default function PapersPage() {
       </div>
 
       {/* Status messages */}
-      {(digestResult || uploadResult) && (
-        <div className="px-3 py-2 bg-teal/5 border border-teal/20 rounded-lg text-xs text-teal">
-          {digestResult || uploadResult}
+      {(digestResult || uploadResult || folderProgress) && (
+        <div className="px-3 py-2 bg-teal/5 border border-teal/20 rounded-lg text-xs text-teal space-y-1">
+          {folderProgress && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span>正在导入：{folderProgress.name}</span>
+                <span>{folderProgress.current} / {folderProgress.total}</span>
+              </div>
+              <div className="w-full bg-teal/10 rounded-full h-1">
+                <div
+                  className="bg-teal h-1 rounded-full transition-all"
+                  style={{ width: `${(folderProgress.current / folderProgress.total) * 100}%` }}
+                />
+              </div>
+            </div>
+          )}
+          {!folderProgress && (digestResult || uploadResult) && (
+            <span>{digestResult || uploadResult}</span>
+          )}
         </div>
       )}
 
