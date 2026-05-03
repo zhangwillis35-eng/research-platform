@@ -382,56 +382,60 @@ export default function PapersPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  // Upload a folder of PDFs via fast batch endpoint (no OSS, text-only)
+  // Upload a folder of PDFs — 1 file per request, 5 concurrent, real-time progress
   async function handleFolderUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []).filter((f) => f.name.toLowerCase().endsWith(".pdf"));
     if (files.length === 0) return;
 
     setUploading(true);
     setUploadResult(null);
+
+    let completed = 0;
+    let matched = 0;
+    let created = 0;
+    let failed = 0;
+    const CONCURRENCY = 5;
+
     setFolderProgress({ current: 0, total: files.length, name: "准备中..." });
 
-    let totalUploaded = 0;
-    let totalFailed = 0;
-    let totalMatched = 0;
-    let totalCreated = 0;
-    const BATCH_SIZE = 5;
-
-    for (let i = 0; i < files.length; i += BATCH_SIZE) {
-      const batch = files.slice(i, i + BATCH_SIZE);
-      const batchEnd = Math.min(i + BATCH_SIZE, files.length);
-      setFolderProgress({ current: i + 1, total: files.length, name: `第 ${i + 1}–${batchEnd} 篇...` });
-
+    async function uploadOne(file: File) {
+      const formData = new FormData();
+      formData.append("projectId", projectId);
+      formData.append("file", file);
       try {
-        const formData = new FormData();
-        formData.append("projectId", projectId);
-        for (const file of batch) formData.append("files[]", file);
-
         const res = await fetch("/api/papers/batch-upload", { method: "POST", body: formData });
         if (res.ok) {
           const data = await res.json();
-          totalUploaded += data.succeeded ?? 0;
-          totalFailed += data.failed ?? 0;
-          totalMatched += data.matched ?? 0;
-          totalCreated += data.created ?? 0;
+          if (data.matched) matched++; else created++;
         } else {
-          totalFailed += batch.length;
+          failed++;
         }
       } catch {
-        totalFailed += batch.length;
+        failed++;
       }
-
-      setFolderProgress({ current: batchEnd, total: files.length, name: `已完成 ${batchEnd} 篇` });
+      completed++;
+      setFolderProgress({ current: completed, total: files.length, name: file.name });
     }
+
+    // Run in sliding window of CONCURRENCY concurrent uploads
+    const queue = [...files];
+    const workers = Array.from({ length: CONCURRENCY }, async () => {
+      while (queue.length > 0) {
+        const file = queue.shift()!;
+        await uploadOne(file);
+      }
+    });
+    await Promise.all(workers);
 
     const res = await fetch(`/api/papers?projectId=${projectId}`);
     const data = await res.json();
     setPapers(data.papers ?? []);
+
     const parts = [];
-    if (totalMatched > 0) parts.push(`关联已有文献 ${totalMatched} 篇`);
-    if (totalCreated > 0) parts.push(`新建 ${totalCreated} 篇`);
-    if (totalFailed > 0) parts.push(`失败 ${totalFailed} 篇`);
-    setUploadResult(`文件夹导入完成：${parts.join("，") || `共 ${totalUploaded} 篇`}`);
+    if (matched > 0) parts.push(`关联已有文献 ${matched} 篇`);
+    if (created > 0) parts.push(`新建 ${created} 篇`);
+    if (failed > 0) parts.push(`失败 ${failed} 篇`);
+    setUploadResult(`文件夹导入完成：${parts.join("，") || `共 ${completed} 篇`}`);
     setFolderProgress(null);
     setUploading(false);
     if (folderInputRef.current) folderInputRef.current.value = "";

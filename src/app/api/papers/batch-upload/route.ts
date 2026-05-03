@@ -1,80 +1,142 @@
 import { NextResponse } from "next/server";
 import { requireProjectAccess } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { parseHeaderWithGrobid, isGrobidAvailable } from "@/lib/sources/grobid";
-import { extractText, getMeta } from "unpdf";
+import { extractText } from "unpdf";
 
 /**
- * POST /api/papers/batch-upload
+ * POST /api/papers/batch-upload — single-file, no GROBID, no OSS.
  *
- * Fast batch PDF upload:
- *   - GROBID processHeaderDocument (title/authors/abstract, ~1-2s) runs in parallel with
- *   - unpdf extractText (full body text, ~0.1-0.5s)
- *   - fullText truncated to 30,000 chars before DB write
- *   - Smart title matching: attach to existing catalog paper if found, else create new
+ * Pipeline per file:
+ *   unpdf (~150ms) → regex metadata → 1 DB upsert (~100ms) = ~300ms/file
  *
- * Accepts multipart/form-data:
- *   - files[]: PDF files (keep ≤5 per request for best performance)
- *   - projectId: project ID
+ * Frontend sends one file at a time with 5 concurrent fetches.
+ * Smart title matching: attach fullText to existing catalog paper if found.
+ *
+ * Body: multipart with `file` (single PDF) + `projectId`
  */
 
 const FULLTEXT_MAX = 30_000;
-const CONCURRENCY = 4;
 
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const projectId = formData.get("projectId") as string | null;
-    const files = formData.getAll("files[]") as File[];
+    const file = formData.get("file") as File | null;
 
-    if (!projectId || files.length === 0) {
-      return NextResponse.json({ error: "projectId and files[] required" }, { status: 400 });
+    if (!projectId || !file) {
+      return NextResponse.json({ error: "projectId and file required" }, { status: 400 });
     }
 
     const auth = await requireProjectAccess(projectId);
     if (auth instanceof NextResponse) return auth;
 
-    const grobidOk = await isGrobidAvailable();
-
-    // Preload existing catalog papers for title matching
-    const existingPapers = await prisma.paper.findMany({
-      where: { projectId },
-      select: { id: true, title: true, fullText: true },
-    });
-
-    const results: Array<{ name: string; ok: boolean; matched: boolean; error?: string }> = [];
-
-    for (let i = 0; i < files.length; i += CONCURRENCY) {
-      const batch = files.slice(i, i + CONCURRENCY);
-      const batchResults = await Promise.all(
-        batch.map((file) => processOne(file, projectId, grobidOk, existingPapers))
-      );
-      results.push(...batchResults);
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
+      return NextResponse.json({ error: "not a PDF" }, { status: 400 });
     }
 
-    const succeeded = results.filter((r) => r.ok).length;
-    const matched = results.filter((r) => r.ok && r.matched).length;
-    const created = results.filter((r) => r.ok && !r.matched).length;
-    const failed = results.filter((r) => !r.ok);
+    const arrayBuffer = await file.arrayBuffer();
+    const uint8 = new Uint8Array(arrayBuffer);
 
-    return NextResponse.json({ succeeded, matched, created, failed: failed.length, errors: failed, grobid: grobidOk });
+    // Extract text with unpdf (~150ms, no ML, no Java)
+    let rawText: string;
+    try {
+      const { text } = await extractText(uint8, { mergePages: true });
+      rawText = text ?? "";
+    } catch {
+      return NextResponse.json({ error: "could not extract text" }, { status: 422 });
+    }
+
+    if (rawText.trim().length < 100) {
+      return NextResponse.json({ error: "could not extract text (scanned PDF?)" }, { status: 422 });
+    }
+
+    const fullText = rawText.trim().slice(0, FULLTEXT_MAX);
+
+    // Extract metadata with regex (instant, no network)
+    const { title, abstract, authors } = extractMetadata(rawText, file.name);
+
+    // Single DB query: check for existing title match
+    const existing = await prisma.paper.findMany({
+      where: { projectId },
+      select: { id: true, title: true },
+    });
+
+    const match = findTitleMatch(title, existing);
+
+    if (match) {
+      await prisma.paper.update({
+        where: { id: match.id },
+        data: { fullText, pdfFileName: file.name, ...(abstract ? { abstract } : {}) },
+      });
+      return NextResponse.json({ ok: true, matched: true, title });
+    }
+
+    await prisma.paper.create({
+      data: {
+        projectId,
+        title,
+        abstract: abstract ?? fullText.slice(0, 500),
+        authors,
+        source: "manual",
+        citationCount: 0,
+        referenceCount: 0,
+        fullText,
+        pdfFileName: file.name,
+      },
+    });
+
+    return NextResponse.json({ ok: true, matched: false, title });
   } catch (error) {
     console.error("[batch-upload] error:", error);
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
 
+/** Extract title, abstract, authors from raw PDF text using heuristics */
+function extractMetadata(text: string, fileName: string) {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  // Title: first line that is 20-200 chars and not all-caps junk / numbers
+  let title = fileName.replace(/\.pdf$/i, "");
+  for (const line of lines.slice(0, 20)) {
+    if (line.length >= 15 && line.length <= 250 && !/^[\d\s.]+$/.test(line) && !line.startsWith("http")) {
+      title = line;
+      break;
+    }
+  }
+
+  // Abstract: text between "Abstract" and "Keywords/Introduction/1."
+  const abstractMatch = text.match(
+    /(?:abstract|摘\s*要)[:\s\n]+([\s\S]{80,2500}?)(?:\n\s*(?:keywords?|key\s*words?|introduction|1[\s.。]|关键词|引言|\n\n\n))/i
+  );
+  const abstract = abstractMatch?.[1]?.replace(/\s+/g, " ").trim();
+
+  // Authors: lines between title and abstract that look like author names
+  const authors: { name: string }[] = [];
+  const authorSection = text.slice(0, 2000);
+  const authorPattern = /^[A-Z][a-z]+([\s-][A-Z][a-z]+){1,4}(,\s*[A-Z][a-z]+([\s-][A-Z][a-z]+){1,4})*$/m;
+  const authorMatch = authorSection.match(authorPattern);
+  if (authorMatch) {
+    authorMatch[0].split(",").forEach((name) => {
+      const n = name.trim();
+      if (n.length > 3 && n.split(" ").length >= 2) authors.push({ name: n });
+    });
+  }
+
+  return { title, abstract, authors };
+}
+
 function normalizeTitle(t: string): string {
   return t.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, "");
 }
 
-function findMatch(
+function findTitleMatch(
   title: string,
-  existingPapers: Array<{ id: string; title: string; fullText: string | null }>
+  papers: Array<{ id: string; title: string }>
 ): { id: string } | null {
   const norm = normalizeTitle(title);
   if (norm.length < 10) return null;
-  for (const p of existingPapers) {
+  for (const p of papers) {
     const pNorm = normalizeTitle(p.title);
     if (pNorm.length < 10) continue;
     const shorter = Math.min(norm.length, pNorm.length);
@@ -86,92 +148,4 @@ function findMatch(
   return null;
 }
 
-async function processOne(
-  file: File,
-  projectId: string,
-  useGrobid: boolean,
-  existingPapers: Array<{ id: string; title: string; fullText: string | null }>
-): Promise<{ name: string; ok: boolean; matched: boolean; error?: string }> {
-  try {
-    if (!file.name.toLowerCase().endsWith(".pdf")) {
-      return { name: file.name, ok: false, matched: false, error: "not a PDF" };
-    }
-
-    const arrayBuffer = await file.arrayBuffer();
-    const uint8 = new Uint8Array(arrayBuffer);
-    const nodeBuf = Buffer.from(arrayBuffer);
-
-    // Run header parsing and text extraction in parallel
-    const [headerResult, textResult] = await Promise.allSettled([
-      useGrobid ? parseHeaderWithGrobid(nodeBuf) : Promise.resolve(null),
-      extractText(uint8, { mergePages: true }).catch(() => ({ text: "" })),
-    ]);
-
-    const header = headerResult.status === "fulfilled" ? headerResult.value : null;
-    const rawText = textResult.status === "fulfilled" ? textResult.value.text ?? "" : "";
-
-    if (!rawText || rawText.trim().length < 100) {
-      return { name: file.name, ok: false, matched: false, error: "could not extract text" };
-    }
-
-    // Truncate fullText — we only send 5-8k to LLM anyway; 30k covers all use cases
-    const fullText = rawText.trim().slice(0, FULLTEXT_MAX);
-
-    // Metadata: prefer GROBID header, fall back to PDF metadata, then filename
-    let title: string | undefined = header?.title?.trim();
-    let abstract: string | undefined = header?.abstract?.trim();
-    let authors: { name: string }[] = header?.authors?.map((n) => ({ name: n })) ?? [];
-
-    if (!title || authors.length === 0) {
-      try {
-        const meta = await getMeta(uint8);
-        if (!title) title = (meta.info?.Title as string | undefined)?.trim();
-        if (authors.length === 0) {
-          const pdfAuthor = meta.info?.Author as string | undefined;
-          if (pdfAuthor) {
-            authors = pdfAuthor.split(/[,;，；]/).map((n: string) => ({ name: n.trim() })).filter((a) => a.name.length > 1);
-          }
-        }
-      } catch { /* optional */ }
-    }
-
-    if (!abstract) {
-      const m = rawText.match(
-        /(?:abstract|摘\s*要)[:\s]*\n?([\s\S]{100,2000}?)(?:\n\s*(?:keywords|key\s*words|introduction|1[\s.]|关键词|引言))/i
-      );
-      abstract = m?.[1]?.trim();
-    }
-
-    const finalTitle = title || file.name.replace(/\.pdf$/i, "");
-
-    // Smart match: attach to existing paper or create new
-    const match = findMatch(finalTitle, existingPapers);
-    if (match) {
-      await prisma.paper.update({
-        where: { id: match.id },
-        data: { fullText, pdfFileName: file.name, ...(abstract ? { abstract } : {}) },
-      });
-      return { name: file.name, ok: true, matched: true };
-    }
-
-    await prisma.paper.create({
-      data: {
-        projectId,
-        title: finalTitle,
-        abstract: abstract ?? fullText.slice(0, 500),
-        authors,
-        source: "manual",
-        citationCount: 0,
-        referenceCount: 0,
-        fullText,
-        pdfFileName: file.name,
-      },
-    });
-
-    return { name: file.name, ok: true, matched: false };
-  } catch (err) {
-    return { name: file.name, ok: false, matched: false, error: String(err) };
-  }
-}
-
-export const maxDuration = 120;
+export const maxDuration = 30;
