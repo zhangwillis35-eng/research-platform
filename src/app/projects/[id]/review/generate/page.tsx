@@ -14,8 +14,13 @@ import {
   AIProviderSelect,
   type AIProvider,
 } from "@/components/ai-provider-select";
+import {
+  AnalysisEngineSelect,
+  type AnalysisEngine,
+} from "@/components/analysis-engine-select";
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
+import { consumeCrossFeatureData } from "@/lib/cross-feature";
 
 interface Paper {
   id: string;
@@ -57,12 +62,13 @@ export default function ReviewGeneratePage() {
   const [outline, setOutline] = usePersistedState<ReviewOutline | null>(NS, "outline", null);
   const [reviewText, setReviewText] = usePersistedState<string>(NS, "reviewText", "");
   const [papers, setPapers] = usePersistedState<Paper[]>(NS, "papers", []);
-  const [analysisEngine] = usePersistedState<"storm">(NS, "engine", "storm");
+  const [analysisEngine, setAnalysisEngine] = usePersistedState<AnalysisEngine>(NS, "engine", "builtin");
 
   // Transient state
   const [phase, setPhase] = useState<Phase>("idle");
   const [papersLoading, setPapersLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [crossFeatureBanner, setCrossFeatureBanner] = useState<string | null>(null);
   const xAbort = useAbort();
 
   // Load papers with full text from project library
@@ -73,6 +79,15 @@ export default function ReviewGeneratePage() {
       .then((d) => setPapers(d.papers ?? []))
       .catch(() => {})
       .finally(() => setPapersLoading(false));
+  }, [projectId]);
+
+  // Check for cross-feature data (field takeaways context)
+  useEffect(() => {
+    const data = consumeCrossFeatureData("review", projectId);
+    if (data) {
+      setCrossFeatureBanner("来自「领域要点」的分析结果已导入，可作为综述撰写的参考");
+      sessionStorage.setItem(`${NS}:crossContext`, data.content);
+    }
   }, [projectId]);
 
   const activePapers = papers;
@@ -172,6 +187,12 @@ export default function ReviewGeneratePage() {
 
   return (
     <div className="space-y-6">
+      {crossFeatureBanner && (
+        <div className="flex items-center justify-between px-4 py-2 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-700">
+          <span>{crossFeatureBanner}</span>
+          <button onClick={() => setCrossFeatureBanner(null)} className="text-blue-400 hover:text-blue-600">&times;</button>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-heading text-2xl font-bold">
@@ -181,6 +202,7 @@ export default function ReviewGeneratePage() {
             STORM 式多视角综述 · 自动检索 · 引文追踪
           </p>
         </div>
+        <AnalysisEngineSelect value={analysisEngine} onChange={setAnalysisEngine} />
         <AIProviderSelect value={provider} onChange={setProvider} />
       </div>
 

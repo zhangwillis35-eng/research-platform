@@ -13,6 +13,10 @@ import {
   AIProviderSelect,
   type AIProvider,
 } from "@/components/ai-provider-select";
+import {
+  AnalysisEngineSelect,
+  type AnalysisEngine,
+} from "@/components/analysis-engine-select";
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 
@@ -37,7 +41,7 @@ export default function ProposalPage() {
   const NS = `proposal-${projectId}`;
   const [aiProvider, setAiProvider] = usePersistedState<AIProvider>(NS, "provider", "deepseek-pro");
   const [papers, setPapers] = usePersistedState<Paper[]>(NS, "papers", []);
-  const [analysisEngine] = usePersistedState<"storm">(NS, "engine", "storm");
+  const [analysisEngine, setAnalysisEngine] = usePersistedState<AnalysisEngine>(NS, "engine", "builtin");
   const [proposalText, setProposalText] = usePersistedState<string>(NS, "proposalText", "");
   const [topic, setTopic] = usePersistedState<string>(NS, "topic", "");
   const [ideas, setIdeas] = usePersistedState<string>(NS, "ideas", "");
@@ -213,6 +217,7 @@ export default function ProposalPage() {
             基于文献库 · AI 辅助生成结构化研究计划书
           </p>
         </div>
+        <AnalysisEngineSelect value={analysisEngine} onChange={setAnalysisEngine} />
         <AIProviderSelect value={aiProvider} onChange={setAiProvider} />
       </div>
 

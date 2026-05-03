@@ -26,6 +26,10 @@ import {
   AIProviderSelect,
   type AIProvider,
 } from "@/components/ai-provider-select";
+import {
+  AnalysisEngineSelect,
+  type AnalysisEngine,
+} from "@/components/analysis-engine-select";
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 import { usePersistedState } from "@/hooks/use-persisted-state";
@@ -109,7 +113,7 @@ export default function ConceptualModelPage() {
   const [aiProvider, setAiProvider] = usePersistedState<AIProvider>(`model-${projectId}`, "aiProvider", "gemini-pro");
   const [generating, setGenerating] = useState(false);
   const [hypothesisCount, setHypothesisCount] = useState(2);
-  const [analysisEngine] = useState<"storm">("storm");
+  const [analysisEngine, setAnalysisEngine] = usePersistedState<AnalysisEngine>(`model-${projectId}`, "engine", "builtin");
   const [papers, setPapers] = useState<{ id: string; title: string; abstract?: string; authors: { name: string }[]; year?: number; venue?: string; citationCount: number; isSelected: boolean; fullText?: string | null; pdfFileName?: string | null }[]>([]);
   const [paperCount, setPaperCount] = useState(0);
   const reactFlowRef = useRef<HTMLDivElement>(null);
@@ -331,6 +335,7 @@ ${paperContext || "（无文献，请基于常见管理学变量关系生成示�
             拖拽变量 · 连线假设 · AI 自动生成 · 双击编辑标签
           </p>
         </div>
+        <AnalysisEngineSelect value={analysisEngine} onChange={setAnalysisEngine} />
         <AIProviderSelect value={aiProvider} onChange={setAiProvider} />
       </div>
 

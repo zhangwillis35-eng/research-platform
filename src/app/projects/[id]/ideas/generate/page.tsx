@@ -12,8 +12,13 @@ import {
   AIProviderSelect,
   type AIProvider,
 } from "@/components/ai-provider-select";
+import {
+  AnalysisEngineSelect,
+  type AnalysisEngine,
+} from "@/components/analysis-engine-select";
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
+import { consumeCrossFeatureData } from "@/lib/cross-feature";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 
 interface Paper {
@@ -94,13 +99,24 @@ export default function IdeasGeneratePage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [papers, setPapers] = useState<Paper[]>([]);
   const [papersLoading, setPapersLoading] = useState(true);
-  const [analysisEngine] = useState<"storm">("storm");
+  const [analysisEngine, setAnalysisEngine] = usePersistedState<AnalysisEngine>(`ideas-${projectId}`, "engine", "builtin");
   const [dimensions, setDimensions] = usePersistedState<Dimensions | null>(`ideas-${projectId}`, "dimensions", null);
   const [ideas, setIdeas] = usePersistedState<Idea[]>(`ideas-${projectId}`, "ideas", []);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [obsidianPushed, setObsidianPushed] = useState<Set<string>>(new Set());
+  const [crossFeatureBanner, setCrossFeatureBanner] = useState<string | null>(null);
   const xAbort = useAbort();
+
+  // Check for cross-feature data (gaps from field analysis)
+  useEffect(() => {
+    const data = consumeCrossFeatureData("ideas", projectId);
+    if (data) {
+      setCrossFeatureBanner(`来自「${data.source === "field-takeaways" ? "领域要点" : data.source}」的研究空白已导入，可作为想法生成的种子`);
+      // Pre-fill could be used as context for idea generation
+      sessionStorage.setItem(`ideas-${projectId}:crossContext`, data.content);
+    }
+  }, [projectId]);
 
   // Load papers from project library
   useEffect(() => {
@@ -206,6 +222,12 @@ export default function IdeasGeneratePage() {
 
   return (
     <div className="space-y-6">
+      {crossFeatureBanner && (
+        <div className="flex items-center justify-between px-4 py-2 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-700">
+          <span>{crossFeatureBanner}</span>
+          <button onClick={() => setCrossFeatureBanner(null)} className="text-blue-400 hover:text-blue-600">&times;</button>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-heading text-2xl font-bold">
@@ -215,6 +237,7 @@ export default function IdeasGeneratePage() {
             基于文献库 · 理论×情境×方法 · 模拟同行评审
           </p>
         </div>
+        <AnalysisEngineSelect value={analysisEngine} onChange={setAnalysisEngine} />
         <AIProviderSelect value={provider} onChange={setProvider} />
       </div>
 

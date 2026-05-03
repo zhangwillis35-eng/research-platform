@@ -13,6 +13,10 @@ import {
   AIProviderSelect,
   type AIProvider,
 } from "@/components/ai-provider-select";
+import {
+  AnalysisEngineSelect,
+  type AnalysisEngine,
+} from "@/components/analysis-engine-select";
 import { KnowledgeGraph } from "@/components/graph/KnowledgeGraph";
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
@@ -129,7 +133,7 @@ export default function GraphPage() {
   const NS = `graph-${projectId}`;
   const [provider, setProvider] = usePersistedState<AIProvider>(NS, "provider", "deepseek-pro");
   const [papers, setPapers] = usePersistedState<Paper[]>(NS, "papers", []);
-  const [analysisEngine] = usePersistedState<"storm">(NS, "analysisEngine", "storm");
+  const [analysisEngine, setAnalysisEngine] = usePersistedState<AnalysisEngine>(NS, "analysisEngine", "builtin");
   const [nodes, setNodes] = usePersistedState<GraphNode[]>(NS, "nodes", []);
   const [edges, setEdges] = usePersistedState<GraphEdge[]>(NS, "edges", []);
   const [metaSummary, setMetaSummary] = usePersistedState<MetaSummary | null>(NS, "metaSummary", null);
@@ -290,6 +294,7 @@ export default function GraphPage() {
             元分析式编码 · 变量关系图谱 · 效应一致性评估 · 领域全景报告
           </p>
         </div>
+        <AnalysisEngineSelect value={analysisEngine} onChange={setAnalysisEngine} />
         <AIProviderSelect value={provider} onChange={setProvider} />
       </div>
 

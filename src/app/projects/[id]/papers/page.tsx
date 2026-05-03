@@ -16,6 +16,7 @@ import {
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 import Link from "next/link";
+import { setCrossFeatureData } from "@/lib/cross-feature";
 
 interface Paper {
   id: string;
@@ -702,12 +703,12 @@ export default function PapersPage() {
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="text-xs font-medium text-blue-700">领域要点</h4>
                   <div className="flex gap-1">
-                    <Link href={`/projects/${projectId}/ideas/generate`}>
+                    <Link href={`/projects/${projectId}/ideas/generate`} onClick={() => setCrossFeatureData("ideas", projectId, "field-takeaways", fieldTakeaways ?? "")}>
                       <button className="text-[10px] px-2 py-0.5 rounded border border-blue-300 text-blue-600 hover:bg-blue-100">
                         发送空白到研究想法
                       </button>
                     </Link>
-                    <Link href={`/projects/${projectId}/review/generate`}>
+                    <Link href={`/projects/${projectId}/review/generate`} onClick={() => setCrossFeatureData("review", projectId, "field-takeaways", fieldTakeaways ?? "")}>
                       <button className="text-[10px] px-2 py-0.5 rounded border border-blue-300 text-blue-600 hover:bg-blue-100">
                         发送到文献综述
                       </button>
@@ -726,7 +727,7 @@ export default function PapersPage() {
               <div className="border border-amber-200 rounded-lg bg-amber-50/50 p-4">
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="text-xs font-medium text-amber-700">假设对比分析</h4>
-                  <Link href={`/projects/${projectId}/theories/integrate`}>
+                  <Link href={`/projects/${projectId}/theories/integrate`} onClick={() => setCrossFeatureData("theories", projectId, "assumptions", assumptions ?? "")}>
                     <button className="text-[10px] px-2 py-0.5 rounded border border-amber-300 text-amber-600 hover:bg-amber-100">
                       发送到理论整合
                     </button>

@@ -13,9 +13,14 @@ import {
   AIProviderSelect,
   type AIProvider,
 } from "@/components/ai-provider-select";
+import {
+  AnalysisEngineSelect,
+  type AnalysisEngine,
+} from "@/components/analysis-engine-select";
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 import { usePersistedState } from "@/hooks/use-persisted-state";
+import { consumeCrossFeatureData } from "@/lib/cross-feature";
 
 interface Paper {
   id: string;
@@ -70,13 +75,14 @@ export default function TheoriesIntegratePage() {
   const [loading, setLoading] = useState(false);
   const [papers, setPapers] = useState<Paper[]>([]);
   const [papersLoading, setPapersLoading] = useState(true);
-  const [analysisEngine] = useState<"storm">("storm");
+  const [analysisEngine, setAnalysisEngine] = usePersistedState<AnalysisEngine>(`theories-${projectId}`, "engine", "builtin");
   const [stormStatus, setStormStatus] = useState<string | null>(null);
   const [theories, setTheories] = usePersistedState<Theory[]>(`theories-${projectId}`, "theories", []);
   const [connections, setConnections] = usePersistedState<Connection[]>(`theories-${projectId}`, "connections", []);
   const [framework, setFramework] = usePersistedState<Framework | null>(`theories-${projectId}`, "framework", null);
   const [selectedTheory, setSelectedTheory] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [crossFeatureBanner, setCrossFeatureBanner] = useState<string | null>(null);
   const xAbort = useAbort();
 
   // Load papers from project library
@@ -87,6 +93,15 @@ export default function TheoriesIntegratePage() {
       .then((d) => setPapers(d.papers ?? []))
       .catch(() => {})
       .finally(() => setPapersLoading(false));
+  }, [projectId]);
+
+  // Check for cross-feature data (assumptions from field analysis)
+  useEffect(() => {
+    const data = consumeCrossFeatureData("theories", projectId);
+    if (data) {
+      setCrossFeatureBanner("来自「假设对比分析」的结果已导入，可作为理论整合的参考");
+      sessionStorage.setItem(`theories-${projectId}:crossContext`, data.content);
+    }
   }, [projectId]);
 
   const activePapers = papers;
@@ -167,6 +182,12 @@ export default function TheoriesIntegratePage() {
 
   return (
     <div className="space-y-6">
+      {crossFeatureBanner && (
+        <div className="flex items-center justify-between px-4 py-2 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-700">
+          <span>{crossFeatureBanner}</span>
+          <button onClick={() => setCrossFeatureBanner(null)} className="text-amber-400 hover:text-amber-600">&times;</button>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-heading text-2xl font-bold">
@@ -176,6 +197,7 @@ export default function TheoriesIntegratePage() {
             基于文献库 · 识别理论框架 · 发现跨理论连接 · 生成整合框架
           </p>
         </div>
+        <AnalysisEngineSelect value={analysisEngine} onChange={setAnalysisEngine} />
         <AIProviderSelect value={provider} onChange={setProvider} />
       </div>
 
