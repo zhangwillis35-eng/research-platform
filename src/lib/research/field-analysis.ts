@@ -52,6 +52,12 @@ export async function* streamFieldTakeaways(
   notebookUrl?: string | null,
 ): AsyncGenerator<string> {
   if (engine === "storm") {
+    const { checkStormAvailable } = await import("@/lib/integrations/storm");
+    const check = await checkStormAvailable();
+    if (!check.available) {
+      yield `⚠️ STORM 不可用：${check.error}\n\n服务器 Docker 容器中未安装 Python3 和 knowledge-storm。请使用「Built-in AI」引擎代替。`;
+      return;
+    }
     const result = await runStormAnalysis(
       "Field synthesis",
       papers.map(formatPaperForStorm),
@@ -126,6 +132,12 @@ export async function* streamAssumptionsAnalysis(
   notebookUrl?: string | null,
 ): AsyncGenerator<string> {
   if (engine === "storm") {
+    const { checkStormAvailable } = await import("@/lib/integrations/storm");
+    const check = await checkStormAvailable();
+    if (!check.available) {
+      yield `⚠️ STORM 不可用：${check.error}\n\n请使用「Built-in AI」引擎代替。`;
+      return;
+    }
     const result = await runStormAnalysis(
       "Assumptions analysis",
       papers.map(formatPaperForStorm),

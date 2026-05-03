@@ -106,7 +106,7 @@ export default function PapersPage() {
       .catch(() => setNotebookConfigured(false));
   }, []);
 
-  const fullTextPapers = papers.filter((p) => p.fullText);
+  // fullTextPapers defined after displayPapers below
 
   async function generateFieldTakeaways() {
     setFieldTakeawaysLoading(true);
@@ -119,11 +119,18 @@ export default function PapersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
+          paperIds: fullTextPapers.map((p) => p.id),
           provider: aiProvider,
           engine: fieldEngine,
         }),
         signal,
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        setFieldTakeaways("生成失败: " + (err.error || res.status));
+        setFieldTakeawaysLoading(false);
+        return;
+      }
       if (!res.body) return;
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -165,11 +172,18 @@ export default function PapersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
+          paperIds: fullTextPapers.map((p) => p.id),
           provider: aiProvider,
           engine: fieldEngine,
         }),
         signal,
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        setAssumptions("分析失败: " + (err.error || res.status));
+        setAssumptionsLoading(false);
+        return;
+      }
       if (!res.body) return;
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -645,6 +659,7 @@ export default function PapersPage() {
   const weeklyPapers = papers.filter((p) => p.folder?.includes("AI 前沿"));
   const catalogPapers = papers.filter((p) => !p.folder?.includes("AI 前沿"));
   const displayPapers = activeTab === "weekly" ? weeklyPapers : catalogPapers;
+  const fullTextPapers = displayPapers.filter((p) => p.fullText);
   const uploadedCount = papers.filter((p) => p.fullText).length;
 
   return (
