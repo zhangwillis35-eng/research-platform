@@ -8,13 +8,13 @@ RUN apk add --no-cache python3 py3-pip && \
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm config set registry https://registry.npmmirror.com && npm ci --omit=dev
 
 # Build the application
 FROM base AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm config set registry https://registry.npmmirror.com && npm ci
 COPY . .
 
 # Generate Prisma client
