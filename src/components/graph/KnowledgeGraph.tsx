@@ -55,6 +55,53 @@ function getPos(n: string | GraphNode): { x: number; y: number } {
   return { x: 0, y: 0 };
 }
 
+interface Cluster {
+  id: number;
+  nodes: GraphNode[];
+  label: string;
+  color: string;
+}
+
+/** Detect connected components via BFS */
+function findClusters(nodes: GraphNode[], edges: GraphEdge[]): Cluster[] {
+  const adj = new Map<string, Set<string>>();
+  for (const n of nodes) adj.set(n.id, new Set());
+  for (const e of edges) {
+    const s = getNodeId(e.source), t = getNodeId(e.target);
+    adj.get(s)?.add(t);
+    adj.get(t)?.add(s);
+  }
+
+  const visited = new Set<string>();
+  const clusters: Cluster[] = [];
+  const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+
+  for (const n of nodes) {
+    if (visited.has(n.id)) continue;
+    const queue = [n.id];
+    const members: GraphNode[] = [];
+    visited.add(n.id);
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      const node = nodeMap.get(id);
+      if (node) members.push(node);
+      for (const neighbor of adj.get(id) ?? []) {
+        if (!visited.has(neighbor)) { visited.add(neighbor); queue.push(neighbor); }
+      }
+    }
+    // Label = the highest-frequency node in the cluster
+    const center = members.sort((a, b) => b.frequency - a.frequency)[0];
+    clusters.push({
+      id: clusters.length,
+      nodes: members,
+      label: center?.id ?? `Cluster ${clusters.length + 1}`,
+      color: NODE_COLORS[center?.type ?? "IV"],
+    });
+  }
+
+  return clusters.sort((a, b) => b.nodes.length - a.nodes.length);
+}
+
 export function KnowledgeGraph({ nodes, edges, onNodeClick, onEdgeClick }: KnowledgeGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const minimapRef = useRef<SVGSVGElement>(null);
@@ -62,7 +109,42 @@ export function KnowledgeGraph({ nodes, edges, onNodeClick, onEdgeClick }: Knowl
   const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
   const [layout, setLayout] = useState<"force" | "radial">("force");
   const [selectedEdgeIdx, setSelectedEdgeIdx] = useState<number | null>(null);
+  const [activeCluster, setActiveCluster] = useState<number | null>(null);
   const transformRef = useRef(d3.zoomIdentity);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const zoomRef = useRef<any>(null);
+
+  function zoomToCluster(cluster: Cluster) {
+    if (!svgRef.current || cluster.nodes.length === 0) return;
+    setActiveCluster(cluster.id);
+
+    const xs = cluster.nodes.map((n) => n.x ?? 0);
+    const ys = cluster.nodes.map((n) => n.y ?? 0);
+    const minX = Math.min(...xs) - 60, maxX = Math.max(...xs) + 60;
+    const minY = Math.min(...ys) - 60, maxY = Math.max(...ys) + 60;
+    const w = maxX - minX, h = maxY - minY;
+
+    const svg = d3.select(svgRef.current);
+    const svgW = svgRef.current.clientWidth;
+    const svgH = svgRef.current.clientHeight;
+    const scale = Math.min(svgW / w, svgH / h, 2) * 0.85;
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    const tx = svgW / 2 - cx * scale, ty = svgH / 2 - cy * scale;
+
+    const transform = d3.zoomIdentity.translate(tx, ty).scale(scale);
+    if (zoomRef.current) {
+      svg.transition().duration(600).call(zoomRef.current.transform, transform);
+    }
+  }
+
+  function zoomToFit() {
+    if (!svgRef.current || nodes.length === 0) return;
+    setActiveCluster(null);
+    const svg = d3.select(svgRef.current);
+    if (zoomRef.current) {
+      svg.transition().duration(600).call(zoomRef.current.transform, d3.zoomIdentity);
+    }
+  }
 
   const toggleType = useCallback((type: string) => {
     setHiddenTypes((prev) => {
@@ -81,6 +163,7 @@ export function KnowledgeGraph({ nodes, edges, onNodeClick, onEdgeClick }: Knowl
   const visibleEdges = edges.filter(
     (e) => visibleNodeIds.has(getNodeId(e.source)) && visibleNodeIds.has(getNodeId(e.target))
   );
+  const clusters = findClusters(visibleNodes, visibleEdges);
 
   useEffect(() => {
     if (!svgRef.current || visibleNodes.length === 0) return;
@@ -129,6 +212,7 @@ export function KnowledgeGraph({ nodes, edges, onNodeClick, onEdgeClick }: Knowl
       updateMinimap();
     });
     svg.call(zoomBehavior as never);
+    zoomRef.current = zoomBehavior;
 
     // Simulation
     const simulation = d3.forceSimulation<GraphNode>(visibleNodes);
@@ -354,6 +438,29 @@ export function KnowledgeGraph({ nodes, edges, onNodeClick, onEdgeClick }: Knowl
       </div>
 
       <svg ref={svgRef} className="w-full h-full" />
+
+      {/* Cluster navigation panel */}
+      {clusters.length > 1 && (
+        <div className="absolute top-2 right-2 z-10 bg-white/90 backdrop-blur-sm border border-gray-200 rounded-lg p-2 max-h-[60%] overflow-y-auto w-44">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-semibold text-gray-700">子图导航（{clusters.length}）</span>
+            <button onClick={zoomToFit} className="text-[9px] text-blue-500 hover:text-blue-700">全览</button>
+          </div>
+          {clusters.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => zoomToCluster(c)}
+              className={`w-full text-left px-2 py-1.5 rounded text-[10px] mb-0.5 flex items-center gap-1.5 transition-colors ${
+                activeCluster === c.id ? "bg-blue-50 border border-blue-300" : "hover:bg-gray-50 border border-transparent"
+              }`}
+            >
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+              <span className="truncate font-medium text-gray-700">{c.label}</span>
+              <span className="ml-auto text-gray-400 shrink-0">{c.nodes.length}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Minimap */}
       <div className="absolute bottom-2 right-2 z-10 border border-gray-300 rounded bg-white/80 backdrop-blur-sm overflow-hidden">
