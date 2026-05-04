@@ -1,8 +1,10 @@
 FROM node:22-alpine AS base
 
-# Install Python3 + pip for STORM bridge (litellm only — knowledge-storm too heavy for pip)
-RUN apk add --no-cache python3 py3-pip && \
-    python3 -m pip install --break-system-packages --no-cache-dir litellm
+# Install Python3 + uv (fast resolver) + STORM dependencies
+RUN apk add --no-cache python3 py3-pip curl && \
+    curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    export PATH="/root/.local/bin:$PATH" && \
+    uv pip install --system --no-cache litellm knowledge-storm
 
 # Install dependencies only when needed
 FROM base AS deps
