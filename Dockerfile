@@ -1,10 +1,12 @@
 FROM node:22-alpine AS base
 
-# Install Python3 + uv (fast resolver) + STORM dependencies
-RUN apk add --no-cache python3 py3-pip curl && \
+# Install Python3 + STORM dependencies in venv
+RUN apk add --no-cache python3 py3-pip py3-virtualenv curl && \
+    python3 -m venv /opt/storm-venv && \
     curl -LsSf https://astral.sh/uv/install.sh | sh && \
     export PATH="/root/.local/bin:$PATH" && \
-    uv pip install --system --no-cache litellm knowledge-storm
+    /root/.local/bin/uv pip install --python /opt/storm-venv/bin/python --no-cache litellm knowledge-storm
+ENV PATH="/opt/storm-venv/bin:$PATH"
 
 # Install dependencies only when needed
 FROM base AS deps
