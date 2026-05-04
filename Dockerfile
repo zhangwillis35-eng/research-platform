@@ -1,8 +1,8 @@
 FROM node:22-alpine AS base
 
-# Install Python3 + pip for STORM bridge
+# Install Python3 + pip for STORM bridge (litellm only — knowledge-storm too heavy for pip)
 RUN apk add --no-cache python3 py3-pip && \
-    python3 -m pip install --break-system-packages litellm knowledge-storm
+    python3 -m pip install --break-system-packages --no-cache-dir litellm
 
 # Install dependencies only when needed
 FROM base AS deps
