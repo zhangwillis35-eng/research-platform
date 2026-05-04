@@ -15,7 +15,7 @@ import { extractText } from "unpdf";
  * Body: multipart with `file` (single PDF) + `projectId`
  */
 
-const FULLTEXT_MAX = 30_000;
+// No character limit — store full text for complete analysis
 
 export async function POST(request: Request) {
   try {
@@ -46,11 +46,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "could not extract text" }, { status: 422 });
     }
 
-    if (rawText.trim().length < 100) {
-      return NextResponse.json({ error: "could not extract text (scanned PDF?)" }, { status: 422 });
+    if (rawText.trim().length < 50) {
+      return NextResponse.json({ error: "文本过少，可能是扫描版 PDF" }, { status: 422 });
     }
 
-    const fullText = rawText.trim().slice(0, FULLTEXT_MAX);
+    const fullText = rawText.trim();
 
     // Extract metadata with regex (instant, no network)
     const { title, abstract, authors } = extractMetadata(rawText, file.name);

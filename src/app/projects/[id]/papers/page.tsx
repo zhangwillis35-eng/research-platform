@@ -405,9 +405,9 @@ export default function PapersPage() {
     setUploadResult(null);
 
     let completed = 0;
-    let matched = 0;
     let created = 0;
     let failed = 0;
+    const failedNames: string[] = [];
     const CONCURRENCY = 3;
 
     setFolderProgress({ current: 0, total: files.length, name: "加载 PDF 解析器..." });
@@ -455,11 +455,11 @@ export default function PapersPage() {
       try {
         let fullText = "";
         try {
-          fullText = (await extractTextFromPdf(file)).trim().slice(0, 30000);
+          fullText = (await extractTextFromPdf(file)).trim();
         } catch { /* pdf.js extraction failed */ }
 
-        if (fullText.length >= 100) {
-          // Fast path: send only text JSON (~50KB)
+        if (fullText.length >= 50) {
+          // Fast path: send extracted text as JSON
           const lines = fullText.split("\n").map((l: string) => l.trim()).filter(Boolean);
           let title = file.name.replace(/\.pdf$/i, "");
           for (const line of lines.slice(0, 20)) {
@@ -473,9 +473,11 @@ export default function PapersPage() {
             body: JSON.stringify({ projectId, title, abstract: fullText.slice(0, 500), fullText, pdfFileName: file.name, authors: [] }),
           });
           if (res.ok) {
-            const data = await res.json();
-            if (data.matched) matched++; else created++;
-          } else { failed++; }
+            created++;
+          } else {
+            failed++;
+            failedNames.push(file.name);
+          }
         } else {
           // Fallback: upload PDF binary to server for extraction
           const formData = new FormData();
@@ -483,12 +485,16 @@ export default function PapersPage() {
           formData.append("file", file);
           const res = await fetch("/api/papers/batch-upload", { method: "POST", body: formData });
           if (res.ok) {
-            const data = await res.json();
-            if (data.matched) matched++; else created++;
-          } else { failed++; }
+            created++;
+          } else {
+            const errData = await res.json().catch(() => ({}));
+            failed++;
+            failedNames.push(`${file.name}（${errData.error ?? "解析失败"}）`);
+          }
         }
-      } catch {
+      } catch (err) {
         failed++;
+        failedNames.push(`${file.name}（${(err as Error).message?.slice(0, 50) ?? "未知错误"}）`);
       }
       completed++;
       setFolderProgress({ current: completed, total: files.length, name: file.name });
@@ -508,7 +514,10 @@ export default function PapersPage() {
     const data = await res.json();
     setPapers(data.papers ?? []);
 
-    setUploadResult(`文件夹导入完成：成功 ${completed - failed} 篇${failed > 0 ? `，失败 ${failed} 篇` : ""}`);
+    setUploadResult(
+      `文件夹导入完成：成功 ${created} 篇${failed > 0 ? `，失败 ${failed} 篇` : ""}` +
+      (failedNames.length > 0 ? `\n失败详情：${failedNames.join("；")}` : "")
+    );
     setFolderProgress(null);
     setUploading(false);
     if (folderInputRef.current) folderInputRef.current.value = "";

@@ -30,7 +30,7 @@ export async function POST(request: Request) {
         source: "manual",
         citationCount: 0,
         referenceCount: 0,
-        fullText: fullText.slice(0, 30000),
+        fullText,
         pdfFileName,
       },
     });
