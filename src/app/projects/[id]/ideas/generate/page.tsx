@@ -20,6 +20,7 @@ import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 import { consumeCrossFeatureData, setCrossFeatureData } from "@/lib/cross-feature";
 import { usePersistedState } from "@/hooks/use-persisted-state";
+import { useSavedAnalysis } from "@/hooks/use-saved-analysis";
 import { AnalysisChat } from "@/components/analysis-chat";
 
 interface Paper {
@@ -109,6 +110,17 @@ export default function IdeasGeneratePage() {
   const [crossFeatureBanner, setCrossFeatureBanner] = useState<string | null>(null);
   const xAbort = useAbort();
 
+  const { savedData: savedIdeas, savedAt: ideasSavedAt, save: saveIdeas, loaded: ideasLoaded } = useSavedAnalysis<{ dimensions: any; ideas: any[] }>(projectId, "ideas");
+
+  // Restore saved data on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (ideasLoaded && savedIdeas && ideas.length === 0) {
+      if (savedIdeas.ideas) setIdeas(savedIdeas.ideas as any);
+      if (savedIdeas.dimensions) setDimensions(savedIdeas.dimensions as any);
+    }
+  }, [ideasLoaded, savedIdeas]);
+
   // Check for cross-feature data (gaps from field analysis)
   useEffect(() => {
     const data = consumeCrossFeatureData("ideas", projectId);
@@ -188,6 +200,7 @@ export default function IdeasGeneratePage() {
       await new Promise((r) => setTimeout(r, 300));
       setIdeas(data.ideas);
       setPhase("done");
+      saveIdeas({ dimensions: data.dimensions, ideas: data.ideas });
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") { setPhase("idle"); return; }
       setError(String(err));
@@ -367,8 +380,9 @@ export default function IdeasGeneratePage() {
       {ideas.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="font-heading text-lg font-semibold">
+            <h2 className="font-heading text-lg font-semibold flex items-center gap-2">
               生成的研究想法
+              {ideasSavedAt && <span className="text-[10px] text-muted-foreground">已保存 {new Date(ideasSavedAt).toLocaleString("zh-CN")}</span>}
             </h2>
             <span className="text-xs text-muted-foreground">
               按综合评分排序 · 前3名含模拟评审

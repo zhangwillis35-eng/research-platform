@@ -20,6 +20,7 @@ import {
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 import { usePersistedState } from "@/hooks/use-persisted-state";
+import { useSavedAnalysis } from "@/hooks/use-saved-analysis";
 import { consumeCrossFeatureData } from "@/lib/cross-feature";
 import { AnalysisChat } from "@/components/analysis-chat";
 
@@ -85,6 +86,18 @@ export default function TheoriesIntegratePage() {
   const [error, setError] = useState<string | null>(null);
   const [crossFeatureBanner, setCrossFeatureBanner] = useState<string | null>(null);
   const xAbort = useAbort();
+
+  const { savedData: savedTheories, savedAt: theoriesSavedAt, save: saveTheories, loaded: theoriesLoaded } = useSavedAnalysis<{ theories: any[]; connections: any[]; framework: any }>(projectId, "theories");
+
+  // Restore saved data on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (theoriesLoaded && savedTheories && theories.length === 0) {
+      if (savedTheories.theories) setTheories(savedTheories.theories as any);
+      if (savedTheories.connections) setConnections(savedTheories.connections as any);
+      if (savedTheories.framework) setFramework(savedTheories.framework as any);
+    }
+  }, [theoriesLoaded, savedTheories]);
 
   // Load papers from project library
   useEffect(() => {
@@ -168,6 +181,7 @@ export default function TheoriesIntegratePage() {
       setTheories(data.theories ?? []);
       setConnections(data.connections ?? []);
       setFramework(data.framework ?? null);
+      saveTheories({ theories: data.theories ?? [], connections: data.connections ?? [], framework: data.framework ?? null });
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") { setLoading(false); return; }
       setError(String(err));
@@ -263,6 +277,11 @@ export default function TheoriesIntegratePage() {
       )}
 
       {theories.length > 0 && (
+        <div className="space-y-1">
+          {theoriesSavedAt && <span className="text-[10px] text-muted-foreground">已保存 {new Date(theoriesSavedAt).toLocaleString("zh-CN")}</span>}
+        </div>
+    )}
+    {theories.length > 0 && (
         <div className="grid lg:grid-cols-[1fr_320px] gap-6">
           {/* Main area */}
           <div className="space-y-6">

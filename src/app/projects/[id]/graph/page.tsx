@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { usePersistedState } from "@/hooks/use-persisted-state";
+import { useSavedAnalysis } from "@/hooks/use-saved-analysis";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -132,6 +133,7 @@ export default function GraphPage() {
   const projectId = params.id as string;
 
   const NS = `graph-${projectId}`;
+  const { savedData: savedGraph, savedAt: graphSavedAt, save: saveGraph, loaded: graphLoaded } = useSavedAnalysis<{ nodes: GraphNode[]; edges: GraphEdge[]; metaSummary: MetaSummary | null; landscape: string | null }>(projectId, "graph");
   const [provider, setProvider] = usePersistedState<AIProvider>(NS, "provider", "deepseek-fast");
   const [papers, setPapers] = usePersistedState<Paper[]>(NS, "papers", []);
   const [analysisEngine, setAnalysisEngine] = usePersistedState<AnalysisEngine>(NS, "analysisEngine", "builtin");
@@ -158,6 +160,17 @@ export default function GraphPage() {
       .catch(() => {})
       .finally(() => setPapersLoading(false));
   }, [projectId]);
+
+  // Restore saved graph data
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (graphLoaded && savedGraph && nodes.length === 0) {
+      if (savedGraph.nodes) setNodes(savedGraph.nodes);
+      if (savedGraph.edges) setEdges(savedGraph.edges);
+      if (savedGraph.metaSummary) setMetaSummary(savedGraph.metaSummary);
+      if (savedGraph.landscape) setLandscape(savedGraph.landscape);
+    }
+  }, [graphLoaded, savedGraph]);
 
   const activePapers = papers;
 
@@ -251,6 +264,7 @@ export default function GraphPage() {
                 setEdges(evt.edges ?? []);
                 setMetaSummary(evt.metaSummary ?? null);
                 setLandscape(evt.landscape ?? null);
+                saveGraph({ nodes: evt.nodes ?? [], edges: evt.edges ?? [], metaSummary: evt.metaSummary ?? null, landscape: evt.landscape ?? null });
               } else if (evt.type === "error") {
                 throw new Error(evt.message);
               }
@@ -264,6 +278,7 @@ export default function GraphPage() {
         setEdges(graph.edges ?? []);
         setMetaSummary(graph.metaSummary ?? null);
         setLandscape(graph.landscape ?? null);
+        saveGraph({ nodes: graph.nodes ?? [], edges: graph.edges ?? [], metaSummary: graph.metaSummary ?? null, landscape: graph.landscape ?? null });
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") { setLoading(false); setLoadingPhase(""); return; }
@@ -295,6 +310,11 @@ export default function GraphPage() {
             元分析式编码 · 变量关系图谱 · 效应一致性评估 · 领域全景报告
           </p>
         </div>
+        {graphSavedAt && (
+          <span className="text-[10px] text-muted-foreground">
+            已保存 {new Date(graphSavedAt).toLocaleString("zh-CN")}
+          </span>
+        )}
         <AnalysisEngineSelect value={analysisEngine} onChange={setAnalysisEngine} />
         <AIProviderSelect value={provider} onChange={setProvider} />
       </div>
