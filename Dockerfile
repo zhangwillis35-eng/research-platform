@@ -8,13 +8,13 @@ RUN apk add --no-cache python3 py3-pip && \
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm config set registry https://registry.npmmirror.com && npm ci --omit=dev
+RUN npm ci --omit=dev --maxsockets=3 --fetch-retries=5 --fetch-retry-mintimeout=20000
 
 # Build the application
 FROM base AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm config set registry https://registry.npmmirror.com && npm ci
+RUN npm ci --maxsockets=3 --fetch-retries=5 --fetch-retry-mintimeout=20000
 COPY . .
 
 # Generate Prisma client
