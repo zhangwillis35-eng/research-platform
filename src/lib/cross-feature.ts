@@ -10,7 +10,7 @@
  *   Field takeaways → Review page (pre-filled context)
  */
 
-export type CrossFeatureTarget = "ideas" | "theories" | "review" | "graph";
+export type CrossFeatureTarget = "ideas" | "theories" | "review" | "graph" | "search";
 
 interface CrossFeatureData {
   source: string; // e.g. "field-takeaways", "assumptions"

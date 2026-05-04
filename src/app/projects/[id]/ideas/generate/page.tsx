@@ -18,7 +18,7 @@ import {
 } from "@/components/analysis-engine-select";
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
-import { consumeCrossFeatureData } from "@/lib/cross-feature";
+import { consumeCrossFeatureData, setCrossFeatureData } from "@/lib/cross-feature";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { AnalysisChat } from "@/components/analysis-chat";
 
@@ -479,6 +479,24 @@ export default function IdeasGeneratePage() {
                       )}
 
                       <div className="flex gap-2">
+                        <Link
+                          href={`/projects/${projectId}/papers/search`}
+                          onClick={() => {
+                            setCrossFeatureData("search", projectId, "research-idea", JSON.stringify({
+                              title: idea.title,
+                              theory: idea.theory,
+                              context: idea.context,
+                              method: idea.method,
+                              hypothesis: idea.hypothesis,
+                              contribution: idea.contribution,
+                              scores: idea.scores,
+                            }));
+                          }}
+                        >
+                          <Button size="sm" variant="outline" className="text-xs border-teal/40 text-teal hover:bg-teal/10">
+                            搜索相关文献
+                          </Button>
+                        </Link>
                         <Button
                           size="sm"
                           variant="outline"

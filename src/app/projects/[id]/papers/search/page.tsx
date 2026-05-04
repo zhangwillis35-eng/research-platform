@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { searchManager, type SearchJobState } from "@/lib/search-manager";
+import { consumeCrossFeatureData } from "@/lib/cross-feature";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -439,6 +440,27 @@ export default function PaperSearchPage() {
     stats: { total: number; found: number; notFound: number };
   } | null>(null);
   const refAbort = useAbort();
+  const [ideaContext, setIdeaContext] = useState<string | null>(null);
+
+  // Consume cross-feature data from research ideas page (one-time)
+  useEffect(() => {
+    const data = consumeCrossFeatureData("search", projectId);
+    if (data?.source === "research-idea" && data.content) {
+      try {
+        const idea = JSON.parse(data.content);
+        const context = `【来自研究想法】\n标题: ${idea.title}\n理论: ${idea.theory}\n情境: ${idea.context}\n方法: ${idea.method}\n假设: ${idea.hypothesis}\n贡献: ${idea.contribution}`;
+        setIdeaContext(context);
+        // Auto-fill search query with the idea's key terms
+        const searchTerm = idea.title?.replace(/[（(].+?[)）]/g, "").trim() ?? "";
+        if (searchTerm) setQuery(searchTerm);
+        // Add context message to chat
+        setChatMessages([
+          { role: "assistant", content: `📋 已从「研究想法」导入上下文：\n\n**${idea.title}**\n- 理论: ${idea.theory}\n- 情境: ${idea.context}\n- 方法: ${idea.method}\n- 假设: ${idea.hypothesis}\n\n你可以直接搜索该方向的文献，或向我提问该想法的可行性和相关研究。` },
+        ]);
+      } catch { /* invalid JSON */ }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── Journal filter state ───
   const [journalFilters, setJournalFilters] = useState<Array<{ id: string; journalName: string; filterType: string }>>([]);
@@ -806,7 +828,11 @@ export default function PaperSearchPage() {
         .slice(-5)
         .join("; ");
       const systemPrompt = `你是管理学文献分析助手，具有完整的对话记忆能力。
-
+${ideaContext ? `
+## 研究想法上下文（从「研究想法」页面导入）
+${ideaContext}
+请基于这个研究想法来分析检索到的文献，说明文献与该想法的关联性。
+` : ""}
 ## 当前检索主题
 「${query}」
 
@@ -1642,6 +1668,16 @@ ${fullTextContext}` : ""}`;
             )}
           </div>
         </div>
+
+        {/* Idea context banner */}
+        {ideaContext && (
+          <div className="border-b border-blue-200 px-3 py-2 bg-blue-50/50 flex items-center justify-between">
+            <span className="text-xs text-blue-700">
+              📋 已导入研究想法上下文 — AI 对话将自动关联该想法分析文献
+            </span>
+            <button onClick={() => setIdeaContext(null)} className="text-xs text-blue-400 hover:text-blue-600">&times; 关闭</button>
+          </div>
+        )}
 
         {/* Journal filter panel (collapsible) */}
         {journalFilterOpen && (
