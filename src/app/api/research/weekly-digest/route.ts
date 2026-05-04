@@ -18,7 +18,7 @@ import type { UnifiedPaper } from "@/lib/sources/types";
 // ─── OpenAlex Source IDs for target journals ──────
 // Using source IDs (not name search) for reliable filtering
 const TARGET_SOURCES = {
-  // Nature / Science family
+  // ─── Nature / Science family ───
   "S137773608": "Nature",
   "S3880285": "Science",
   "S2912241403": "Nature Machine Intelligence",
@@ -28,7 +28,7 @@ const TARGET_SOURCES = {
   "S4210239724": "Nature Electronics",
   "S2737427234": "Science Advances",
   "S4210213233": "Science Robotics",
-  // Top management / IS journals (ABS 4* and 4)
+  // ─── UTD24 ───
   "S33323087": "Management Science",
   "S57293258": "MIS Quarterly",
   "S202812398": "Information Systems Research",
@@ -36,21 +36,36 @@ const TARGET_SOURCES = {
   "S24092667": "Academy of Management Review",
   "S206124708": "Organization Science",
   "S102949365": "Strategic Management Journal",
-  "S91740795": "Journal of Management",
   "S142990027": "Journal of Marketing",
+  "S45984537": "Journal of Operations Management",
+  "S197444251": "Journal of International Business Studies",
+  "S15424610": "Journal of Consumer Research",
+  "S154084757": "Marketing Science",
+  "S6029591": "Journal of Marketing Research",
+  "S126327022": "Journal of Financial Economics",
+  "S24807437": "The Journal of Finance",
+  "S57842340": "The Review of Financial Studies",
+  "S108965736": "The Accounting Review",
+  "S2736418965": "Journal of Accounting Research",
+  "S144979982": "Journal of Accounting and Economics",
+  "S43732947": "Operations Research",
+  "S4210234925": "Manufacturing & Service Operations Management",
+  "S200117655": "Production and Operations Management",
+  "S2735959307": "Administrative Science Quarterly",
+  "S198078456": "INFORMS Journal on Computing",
+  // ─── FT50 (additional, not in UTD24) ───
+  "S91740795": "Journal of Management",
   "S182017137": "Journal of Applied Psychology",
   "S150700104": "Journal of Business Ethics",
   "S68862796": "Research Policy",
   "S56749031": "Journal of Management Studies",
   "S2735964968": "Journal of the Academy of Marketing Science",
-  "S197444251": "Journal of International Business Studies",
-  "S45984537": "Journal of Operations Management",
   "S194828483": "Journal of Business Research",
-  // ABS 3 IS journals
-  "S75074749": "Information Systems Frontiers",
-  "S130564218": "Decision Support Systems",
-  "S143948427": "Electronic Commerce Research and Applications",
-  "S4210175918": "Internet Research",
+  "S86510944": "Harvard Business Review",
+  "S21395134": "Entrepreneurship Theory and Practice",
+  "S184685830": "Journal of Business Venturing",
+  "S107490763": "Human Resource Management",
+  "S71406753": "Journal of Management Information Systems",
 };
 
 const AI_KEYWORDS = [
@@ -402,22 +417,17 @@ async function runDigest(projectId: string, daysBack: number = 30) {
   const weekLabel = getWeekLabel();
   const folderName = `AI 前沿周刊 ${weekLabel}`;
 
-  // Fetch from all sources IN PARALLEL
-  console.log(`[weekly-digest] Fetching papers from last ${daysBack} days...`);
-  const [targetPapers, broadPapers, arxivPapers, scholarPapers] = await Promise.all([
-    fetchFromOpenAlex(daysBack),
-    fetchBroadAI(daysBack),
-    fetchArxivAI(daysBack),
-    fetchGoogleScholarAI(),
-  ]);
+  // Fetch ONLY from UTD24 + FT50 + Nature/Science (via OpenAlex targeted search)
+  console.log(`[weekly-digest] Fetching AI papers from UTD24/FT50/Nature/Science, last ${daysBack} days...`);
+  const targetPapers = await fetchFromOpenAlex(daysBack);
 
-  console.log(`[weekly-digest] Found: ${targetPapers.length} target, ${broadPapers.length} broad, ${arxivPapers.length} arXiv, ${scholarPapers.length} scholar`);
+  console.log(`[weekly-digest] Found: ${targetPapers.length} papers from top journals`);
 
-  // Strict year filter: only keep papers from current year or last year (to handle year boundary)
+  // Strict year filter
   const currentYear = new Date().getFullYear();
   const minYear = currentYear - 1;
 
-  const allPapers = dedupByTitle([...targetPapers, ...broadPapers, ...arxivPapers, ...scholarPapers])
+  const allPapers = dedupByTitle(targetPapers)
     .filter((p) => !p.year || p.year >= minYear);
   console.log(`[weekly-digest] After dedup + year filter (>=${minYear}): ${allPapers.length}`);
 
@@ -465,9 +475,6 @@ async function runDigest(projectId: string, daysBack: number = 30) {
     folder: folderName,
     sources: {
       targetJournals: targetPapers.length,
-      broadSearch: broadPapers.length,
-      arxiv: arxivPapers.length,
-      googleScholar: scholarPapers.length,
     },
   };
 }
