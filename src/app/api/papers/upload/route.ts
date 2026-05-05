@@ -36,16 +36,17 @@ export async function POST(request: Request) {
       );
     }
 
-    // Read PDF buffer
+    // Read PDF buffer — copy to avoid detached ArrayBuffer after extractText
     const arrayBuffer = await file.arrayBuffer();
-    const buffer = new Uint8Array(arrayBuffer);
+    const pdfBytes = Buffer.from(arrayBuffer);
+    const buffer = new Uint8Array(pdfBytes);
 
     // Extract text
     const { text: fullText } = await extractText(buffer, { mergePages: true });
 
-    if (!fullText || fullText.trim().length < 100) {
+    if (!fullText || fullText.trim().length < 50) {
       return NextResponse.json(
-        { error: "Could not extract text from PDF. The file may be scanned or image-based." },
+        { error: "文本过少，可能是扫描版 PDF 或加密文档" },
         { status: 422 }
       );
     }
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
     if (paperId) {
       // Upload PDF to OSS
       const key = pdfKey(projectId, paperId, file.name);
-      const ossKey = await uploadPdf(key, Buffer.from(arrayBuffer));
+      const ossKey = await uploadPdf(key, pdfBytes);
 
       // Attach fullText + OSS key to existing paper
       const paper = await prisma.paper.update({
@@ -78,7 +79,7 @@ export async function POST(request: Request) {
           pdfFileName: file.name,
           pdfOssKey: ossKey,
           // Keep pdfData as fallback if OSS upload failed
-          ...(ossKey ? { pdfData: null } : { pdfData: Buffer.from(arrayBuffer) }),
+          ...(ossKey ? { pdfData: null } : { pdfData: pdfBytes }),
         },
       });
 
@@ -111,14 +112,14 @@ export async function POST(request: Request) {
 
     // Upload PDF to OSS
     const key = pdfKey(projectId, paper.id, file.name);
-    const ossKey = await uploadPdf(key, Buffer.from(arrayBuffer));
+    const ossKey = await uploadPdf(key, pdfBytes);
 
     // Update paper with OSS key (or fallback to pdfData)
     await prisma.paper.update({
       where: { id: paper.id },
       data: ossKey
         ? { pdfOssKey: ossKey }
-        : { pdfData: Buffer.from(arrayBuffer) },
+        : { pdfData: pdfBytes },
     });
 
     return NextResponse.json({
