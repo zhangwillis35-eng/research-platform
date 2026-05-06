@@ -218,29 +218,49 @@ For RELATIONAL queries:
 - Include the full relationship as one term (e.g. "ESG corporate innovation")
 - Include each variable separately for broader coverage
 
-STEP 4 — SYNONYMS: For each key term, list 8-12 English synonyms and closely related terms actually used in academic papers. Be MAXIMALLY EXHAUSTIVE — think from ALL possible angles:
-- Direct synonyms (e.g. "AI washing" → "AI greenwashing")
-- Broader category terms (e.g. "AI washing" → "technology greenwashing", "digital washing")
-- Related misconduct terms (e.g. "AI washing" → "AI fraud", "AI snake oil", "AI theater")
-- Academic jargon variants (e.g. "AI washing" → "performative AI adoption", "symbolic AI")
-- Abbreviated or informal forms used in papers
-- Terms used in adjacent research streams that study the same phenomenon
-- FORMAL ACADEMIC TERMS that might not be obvious translations (e.g. "AI谄媚" → "AI sycophancy" which is the FORMAL term, NOT just "AI flattery")
-- Terms used in TOP JOURNALS like Nature, Science (these often use specific terminology)
-- Related concepts from AI safety/alignment research (e.g. "reward hacking", "specification gaming", "alignment tax")
+STEP 4 — SYNONYMS (CRITICAL — most important step): For each key term, list 10-15 English synonyms and semantically related terms. Be MAXIMALLY EXHAUSTIVE — cover ALL 8 dimensions below:
 
-CRITICAL: For Chinese concepts, you MUST include the MOST FORMAL and TECHNICAL English translation, not just the colloquial one.
-Example: "AI谄媚" → MUST include "sycophancy", "sycophantic behavior", "AI sycophancy" — these are the terms used in Nature/Science papers.
-Example: "AI幻觉" → MUST include "hallucination" AND "confabulation" — both are used in top journals.
-Example: "大模型对齐" → MUST include "alignment", "RLHF", "constitutional AI", "value alignment"
+Dimension 1: DIRECT SYNONYMS — exact same concept, different wording
+  e.g. "AI washing" → "AI greenwashing", "artificial intelligence washing"
 
-The goal is to catch ALL relevant papers especially those in Nature/Science/top venues. Missing a relevant synonym = missing a landmark paper.
-For METHODOLOGICAL queries, synonyms should include concrete technique names, not just rephrasing.
+Dimension 2: BROADER CATEGORY — parent concepts or umbrella terms
+  e.g. "AI washing" → "technology greenwashing", "digital deception", "corporate digital fraud"
+
+Dimension 3: NARROWER SUBTYPES — specific instances or manifestations
+  e.g. "AI sycophancy" → "reward hacking", "specification gaming", "preference falsification", "people-pleasing AI"
+
+Dimension 4: ADJACENT RESEARCH STREAMS — different fields studying the SAME phenomenon
+  e.g. "AI sycophancy" → "AI alignment", "AI safety", "value misalignment", "RLHF failure modes", "human feedback bias"
+  e.g. "AI谄媚" → researchers in HCI call it "AI agreeableness", in philosophy it's "epistemic deference"
+
+Dimension 5: FORMAL ACADEMIC TERMS — the precise terminology used in Nature/Science/top journals
+  e.g. "AI谄媚" → "sycophancy" (NOT just "flattery"), "sycophantic behavior", "AI sycophant"
+  e.g. "AI幻觉" → "hallucination" AND "confabulation" AND "factual grounding failure"
+  e.g. "大模型对齐" → "alignment", "RLHF", "constitutional AI", "preference optimization"
+
+Dimension 6: CAUSE/EFFECT/MECHANISM terms — what causes it or what it leads to
+  e.g. "AI sycophancy" → "output bias from RLHF", "human feedback loop", "reward model overoptimization"
+
+Dimension 7: MEASUREMENT/METHOD terms — how researchers study this phenomenon
+  e.g. "AI sycophancy" → "sycophancy benchmark", "opinion conformity test", "user study AI agreement"
+
+Dimension 8: HISTORICAL/FOUNDATIONAL terms — how the concept was referred to before the current term emerged
+  e.g. "AI sycophancy" → "yes-man AI", "AI obsequiousness" (older/informal), "social desirability bias in AI"
+
+CRITICAL RULES:
+- For Chinese concepts, ALWAYS include the MOST FORMAL English academic term, not just literal translation
+- Think: "What would a Nature/Science paper title say?" — use THAT term
+- Each key term MUST have at least 10 synonyms covering at least 5 of the 8 dimensions above
+- Missing a synonym = missing a landmark paper from a top journal
+- For emerging topics (2023+), include BOTH the new term AND the older terms the concept was known by
 
 STEP 5 — BUILD QUERIES: Construct precision and broad search queries.
+- precisionQueries (5-8): Each key term + top synonyms as exact-phrase searches. Include at least one query using Dimension 4 (adjacent stream) and Dimension 5 (formal academic term) synonyms.
+- broadQueries (3-5): OR-combined synonym groups. Ensure one query covers Dimensions 1-3, another covers Dimensions 4-6, and a third covers Dimensions 5-8. This maximizes coverage across different research communities.
+
 For METHODOLOGICAL queries, also include queries like:
 - "methodology" OR "method" combined with the domain
-- Specific technique names (e.g. "text mining", "machine learning", "NLP") combined with the domain data source
+- Specific technique names combined with the domain data source
 
 STEP 6 — EXTRACT FILTERS: If the user specifies quality requirements OR time ranges, extract them as filters. These are NOT search terms.
 
@@ -315,8 +335,8 @@ RULES:
 - ENGLISH ONLY: ALL keyTerms, synonyms, precisionQueries, and broadQueries MUST be in English. The search targets English-language journals (SSCI, SCI, UTD24, FT50, etc.). NEVER include Chinese terms in any search query — Chinese is reserved exclusively for CNKI searches.
 - keyTerms = complete English academic phrases, NEVER single letters or broken words
 - synonyms: 5-8 per key term, ALL IN ENGLISH. Cover direct synonyms, broader terms, related concepts, academic jargon variants
-- precisionQueries = each keyTerm as exact phrase + top 2-3 most important synonyms as exact phrases (3-5 total), ALL IN ENGLISH
-- broadQueries = ALL English synonyms connected with OR; different concept groups connected with AND. Generate 2-3 broad queries with different synonym combinations to maximize coverage
+- precisionQueries = each keyTerm as exact phrase + top synonyms as exact phrases (5-8 total), ALL IN ENGLISH. Include terms from Dimensions 4 and 5 (adjacent streams + formal terms)
+- broadQueries = ALL English synonyms connected with OR; different concept groups connected with AND. Generate 3-5 broad queries covering different synonym dimensions to maximize coverage across research communities
 - If only one concept, broadQuery = all English synonyms joined with OR (include ALL of them)
 - filters: only include fields the user explicitly mentioned. If no filters mentioned, return empty object {}
 - SEPARATE search terms from quality requirements. "ABS3星以上" is a FILTER, not a search term
@@ -479,8 +499,8 @@ export async function smartSearch(
     const gsPrecisionQuery = precisionQueries.join(" OR ");
     const gsBroadQuery = broadQueries.join(" OR ");
     const gsQueries = [gsPrecisionQuery, gsBroadQuery].filter(Boolean);
-    // Cap free queries at 4 to avoid 50+ API calls
-    const freeQueries = [...precisionQueries.slice(0, 2), ...broadQueries.slice(0, 2)];
+    // Free source queries: 3 precision + 2 broad = 5 (covers more synonym dimensions)
+    const freeQueries = [...precisionQueries.slice(0, 3), ...broadQueries.slice(0, 2)];
     const freeLimit = Math.max(20, Math.ceil((limit * 3) / (freeQueries.length || 1)));
 
     const totalQueries = gsQueries.length + freeQueries.length;
