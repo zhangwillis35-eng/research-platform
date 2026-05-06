@@ -37,12 +37,11 @@ export interface ScoredPaper extends UnifiedPaper {
 const SCORING_CONCURRENCY = 80;
 const BATCH_SCORING_THRESHOLD = 20; // Use batch mode above this count (more aggressive batching)
 
-/** Adaptive batch size — larger batches for larger sets to reduce API overhead */
+/** Aggressive batch size — minimize API calls, maximize parallelism */
 function getBatchSize(paperCount: number): number {
-  if (paperCount >= 200) return 25; // 200+ papers: 25/call
-  if (paperCount >= 100) return 20; // 100-199: 20/call
-  if (paperCount >= 50) return 15;  // 50-99: 15/call
-  return 10;                         // 20-49: 10/call
+  if (paperCount >= 80) return 40;  // 80+: 40/call → 2-3 calls total
+  if (paperCount >= 40) return 25;  // 40-79: 25/call → 2-3 calls
+  return 15;                         // <40: 15/call → 2-3 calls
 }
 const SCORING_DEFAULT_PROVIDER: AIProvider = "deepseek-fast";
 

@@ -354,7 +354,6 @@ export async function buildSmartSearchPlan(
       system,
       messages: [{ role: "user", content: input }],
       jsonMode: true,
-      noThinking: true,
       temperature: 0.2,
     });
 

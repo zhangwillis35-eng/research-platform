@@ -1964,11 +1964,7 @@ ${fullTextContext}` : ""}`;
           <span className="text-emerald-500">
             用时 {(searchStats.durationMs / 1000).toFixed(1)}s
           </span>
-          {searchStats.withFullText != null && (
-            <span className="text-emerald-600 border-l border-emerald-300 pl-3">
-              全文 {searchStats.withFullText} 篇 · 仅摘要 {searchStats.withAbstractOnly ?? 0} 篇
-            </span>
-          )}
+          {/* Full-text stats removed — full text is fetched on demand, not during search */}
         </div>
       )}
 
