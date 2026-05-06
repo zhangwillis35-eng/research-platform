@@ -76,6 +76,7 @@ async function extractDimensions(
 每个维度提取 4-8 项，研究空白至少 3 个。理论、情境、方法各自独立列出。`,
     messages: [{ role: "user", content: content + (engineContext ? `\n\n## 深度分析结果\n\n${engineContext}\n\n请结合以上分析来提取更精确的维度。` : "") }],
     jsonMode: true,
+    noThinking: true,
     temperature: 0.2,
   });
 

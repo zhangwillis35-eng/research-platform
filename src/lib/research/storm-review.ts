@@ -77,6 +77,7 @@ paperRefs 中的数字对应文献编号 [1], [2] 等。确保每个发现都有
       },
     ],
     jsonMode: true,
+    noThinking: true,
     temperature: 0.3,
   });
 

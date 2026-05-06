@@ -258,7 +258,7 @@ function mergeSubGraphs(subGraphs: SubGraph[], paperOffsets: number[]): SubGraph
 
 // ─── Batch size for parallel sub-agent extraction ─────
 const BATCH_SIZE = 8; // Papers per sub-agent (sweet spot for LLM context quality)
-const EXTRACTION_CONCURRENCY = 5; // Parallel sub-agent count
+const EXTRACTION_CONCURRENCY = 8; // Parallel sub-agent count (increased from 5)
 
 export async function POST(request: Request) {
   try {
@@ -308,6 +308,7 @@ async function handleDirect(papers: Paper[], provider: AIProvider, externalConte
     system: GRAPH_SYSTEM,
     messages: [{ role: "user", content: `以下是 ${papers.length} 篇文献，请进行元分析式编码：\n\n${fullContent}` }],
     jsonMode: true,
+    noThinking: true,
     temperature: 0.2,
     maxTokens: 8000,
   });
@@ -326,6 +327,7 @@ async function handleDirect(papers: Paper[], provider: AIProvider, externalConte
       system: META_SYSTEM,
       messages: [{ role: "user", content: `图谱数据：\n${JSON.stringify({ nodes: graph.nodes, edges: graph.edges }, null, 2).slice(0, 6000)}\n\n原始文献共 ${papers.length} 篇。` }],
       jsonMode: true,
+      noThinking: true,
       temperature: 0.2,
       maxTokens: 4000,
     }),
@@ -397,6 +399,7 @@ async function handleParallel(papers: Paper[], provider: AIProvider, externalCon
               content: `以下是第 ${batch.offset + 1}-${batch.offset + batch.papers.length} 篇文献（共 ${papers.length} 篇），请进行元分析式编码：\n\n${batchContent}`,
             }],
             jsonMode: true,
+            noThinking: true,
             temperature: 0.2,
             maxTokens: 6000,
           });
@@ -453,6 +456,7 @@ async function handleParallel(papers: Paper[], provider: AIProvider, externalCon
             content: `以下是合并后的图谱数据（来自 ${papers.length} 篇文献，${subGraphs.length} 个子代理的提取结果）：\n${graphSummary.slice(0, 6000)}\n\n请生成元分析综合摘要。`,
           }],
           jsonMode: true,
+          noThinking: true,
           temperature: 0.2,
           maxTokens: 4000,
         }),

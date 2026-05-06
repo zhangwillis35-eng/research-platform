@@ -23,8 +23,18 @@ function baseHeaders(apiKey: string): Record<string, string> {
 }
 
 function buildBody(options: AIRequestOptions, stream: boolean) {
-  const messages: Array<{ role: string; content: string }> = [];
-  if (options.system) messages.push({ role: "system", content: options.system });
+  const messages: Array<{ role: string; content: unknown }> = [];
+  if (options.system) {
+    // Use cache_control for system prompts > ~1024 tokens (90% cost reduction on cache hit)
+    if (options.system.length > 3000) {
+      messages.push({
+        role: "system",
+        content: [{ type: "text", text: options.system, cache_control: { type: "ephemeral" } }],
+      });
+    } else {
+      messages.push({ role: "system", content: options.system });
+    }
+  }
   for (const m of options.messages) {
     if (m.role === "system") continue;
     messages.push({ role: m.role, content: m.content });

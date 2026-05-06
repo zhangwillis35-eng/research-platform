@@ -93,8 +93,16 @@ export async function callDeepSeek(options: AIRequestOptions): Promise<AIRespons
   const data = (await res.json()) as {
     choices: Array<{ message: { content: string; reasoning_content?: string } }>;
     model: string;
-    usage?: { prompt_tokens: number; completion_tokens: number };
+    usage?: { prompt_tokens: number; completion_tokens: number; prompt_cache_hit_tokens?: number; prompt_cache_miss_tokens?: number };
   };
+
+  // Log prefix cache hit rate (DeepSeek auto-caches common prefixes)
+  if (data.usage?.prompt_cache_hit_tokens) {
+    const hit = data.usage.prompt_cache_hit_tokens;
+    const miss = data.usage.prompt_cache_miss_tokens ?? 0;
+    const rate = Math.round((hit / (hit + miss)) * 100);
+    console.log(`[deepseek] Cache: ${hit} hit / ${miss} miss (${rate}%)`);
+  }
 
   return {
     content: data.choices[0]?.message?.content ?? "",
