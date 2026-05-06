@@ -68,7 +68,7 @@ export interface SmartSearchResult {
 
 /** Check if a paper is from a quality source (ABS 3+, JCR Q1, arXiv) — used for pre-enrichment cap */
 function isQualitySource(p: UnifiedPaper): boolean {
-  const venue = p.venue?.toLowerCase() ?? "";
+  const venue = String(p.venue ?? "").toLowerCase() ?? "";
   // arXiv preprints
   if (venue.startsWith("arxiv") || venue.includes("arxiv")) return true;
   // JCR Q1
@@ -90,7 +90,7 @@ function isTopTierJournal(p: ScoredPaper): boolean {
   if (!meta) return false;
 
   // arXiv preprints always pass
-  if (p.venue?.toLowerCase().startsWith("arxiv")) return true;
+  if (String(p.venue ?? "").toLowerCase().startsWith("arxiv")) return true;
 
   // JCR Q1 (covers both SSCI Q1 and SCI Q1)
   if (meta.jcrQuartile === "Q1") return true;
@@ -619,7 +619,7 @@ export async function smartSearch(
         const hasCCFAB = meta?.ccfRating === "A" || meta?.ccfRating === "B";
         const hasHighIF = (meta?.impactFactor ?? 0) >= 3;
 
-        const isArxivPreprint = p.venue?.toLowerCase().startsWith("arxiv");
+        const isArxivPreprint = String(p.venue ?? "").toLowerCase().startsWith("arxiv");
         const isHighQuality =
           meta?.ssci || meta?.sci || meta?.cssci || meta?.pkuCore || meta?.fms ||
           ranking?.utd24 || ranking?.ft50 ||
