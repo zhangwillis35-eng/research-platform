@@ -73,6 +73,9 @@ export default function PapersPage() {
   // Full text viewer state
   const [fullTextPaper, setFullTextPaper] = useState<Paper | null>(null);
 
+  // Multi-select delete state
+  const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(new Set());
+
   // Abort controllers
   const digestAbort = useAbort();
   const overviewAbort = useAbort();
@@ -228,6 +231,35 @@ export default function PapersPage() {
   async function deletePaper(paperId: string) {
     await fetch(`/api/papers/${paperId}`, { method: "DELETE" });
     setPapers((prev) => prev.filter((p) => p.id !== paperId));
+  }
+
+  async function batchDelete() {
+    if (selectedForDelete.size === 0) return;
+    if (!confirm(`确定删除选中的 ${selectedForDelete.size} 篇文献？`)) return;
+    await Promise.all(
+      Array.from(selectedForDelete).map((id) =>
+        fetch(`/api/papers/${id}`, { method: "DELETE" })
+      )
+    );
+    setPapers((prev) => prev.filter((p) => !selectedForDelete.has(p.id)));
+    setSelectedForDelete(new Set());
+  }
+
+  function toggleSelectForDelete(paperId: string) {
+    setSelectedForDelete((prev) => {
+      const next = new Set(prev);
+      if (next.has(paperId)) next.delete(paperId);
+      else next.add(paperId);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selectedForDelete.size === displayPapers.length) {
+      setSelectedForDelete(new Set());
+    } else {
+      setSelectedForDelete(new Set(displayPapers.map((p) => p.id)));
+    }
   }
 
   async function runWeeklyDigest() {
@@ -792,7 +824,7 @@ export default function PapersPage() {
           className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
             activeTab === "catalog" ? "border-teal text-teal" : "border-transparent text-muted-foreground hover:text-foreground"
           }`}
-          onClick={() => { setActiveTab("catalog"); setFullTextPaper(null); }}
+          onClick={() => { setActiveTab("catalog"); setFullTextPaper(null); setSelectedForDelete(new Set()); }}
         >
           文献目录（{catalogPapers.length}）
         </button>
@@ -800,7 +832,7 @@ export default function PapersPage() {
           className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
             activeTab === "weekly" ? "border-teal text-teal" : "border-transparent text-muted-foreground hover:text-foreground"
           }`}
-          onClick={() => { setActiveTab("weekly"); setFullTextPaper(null); }}
+          onClick={() => { setActiveTab("weekly"); setFullTextPaper(null); setSelectedForDelete(new Set()); }}
         >
           AI 前沿周刊（{weeklyPapers.length}）
         </button>
@@ -978,6 +1010,31 @@ export default function PapersPage() {
         </div>
       ) : (
         <div className="space-y-2">
+          {/* Multi-select toolbar */}
+          <div className="flex items-center gap-3 px-1">
+            <input
+              type="checkbox"
+              checked={displayPapers.length > 0 && selectedForDelete.size === displayPapers.length}
+              onChange={toggleSelectAll}
+              className="accent-destructive"
+              title="全选/取消全选"
+            />
+            <span className="text-xs text-muted-foreground">
+              {selectedForDelete.size > 0
+                ? `已选 ${selectedForDelete.size} 篇`
+                : "多选删除"}
+            </span>
+            {selectedForDelete.size > 0 && (
+              <Button
+                size="sm"
+                variant="destructive"
+                className="text-xs h-6 px-2"
+                onClick={batchDelete}
+              >
+                删除选中（{selectedForDelete.size}）
+              </Button>
+            )}
+          </div>
           {displayPapers.map((p) => (
             <PaperRow
               key={p.id}
@@ -989,6 +1046,8 @@ export default function PapersPage() {
                 setAttachTarget(p.id);
                 attachInputRef.current?.click();
               }}
+              selectedForDelete={selectedForDelete.has(p.id)}
+              onToggleDelete={() => toggleSelectForDelete(p.id)}
             />
           ))}
         </div>
@@ -1020,12 +1079,16 @@ function PaperRow({
   onDelete,
   onViewFullText,
   onAttachPDF,
+  selectedForDelete,
+  onToggleDelete,
 }: {
   paper: Paper;
   onToggle: () => void;
   onDelete: () => void;
   onViewFullText?: () => void;
   onAttachPDF: () => void;
+  selectedForDelete?: boolean;
+  onToggleDelete?: () => void;
 }) {
   const [analysisOpen, setAnalysisOpen] = useState(true);
   const [abstractOpen, setAbstractOpen] = useState(false);
@@ -1035,6 +1098,13 @@ function PaperRow({
   return (
     <div className="border border-border/50 rounded-lg hover:border-border transition-colors">
       <div className="flex items-start gap-3 p-3">
+        <input
+          type="checkbox"
+          checked={!!selectedForDelete}
+          onChange={onToggleDelete}
+          className="accent-destructive shrink-0 mt-1"
+          title="选中以批量删除"
+        />
         <input
           type="checkbox"
           checked={paper.isSelected}
@@ -1116,21 +1186,12 @@ function PaperRow({
         {/* Right side: upload status + actions */}
         <div className="flex items-center gap-2 shrink-0">
           {hasUploaded ? (
-            <>
-              <button
-                onClick={onViewFullText}
-                className="text-[10px] px-2 py-0.5 rounded border border-teal/40 bg-teal/10 text-teal cursor-pointer hover:bg-teal/20"
-              >
-                查看原文
-              </button>
-              <a
-                href={`/api/papers/${paper.id}?pdf=true`}
-                download={paper.pdfFileName ?? "paper.pdf"}
-                className="text-[10px] px-2 py-0.5 rounded border border-border/50 text-muted-foreground hover:border-teal/40 hover:text-teal"
-              >
-                下载 PDF
-              </a>
-            </>
+            <button
+              onClick={onViewFullText}
+              className="text-[10px] px-2 py-0.5 rounded border border-teal/40 bg-teal/10 text-teal cursor-pointer hover:bg-teal/20"
+            >
+              查看原文
+            </button>
           ) : (
             <button
               onClick={onAttachPDF}

@@ -519,8 +519,36 @@ export async function smartSearch(
   const seen = new Map<string, UnifiedPaper>();
   const byQuery: Record<string, number> = {};
 
-  // Label results for logging
-  const allLabels = allResults.map((_, i) => `query-${i}`);
+  // Build human-readable labels for each result set
+  let allLabels: string[];
+  if (journalLang === "zh") {
+    const cnkiQueries = [...plan.precisionQueries.slice(0, 2), ...plan.broadQueries.slice(0, 2)];
+    const freeQueries = [...plan.precisionQueries.slice(0, 2), ...plan.broadQueries.slice(0, 1)];
+    const translatedQuery = plan.translatedInput || input;
+    allLabels = [
+      ...cnkiQueries.map((q) => `CNKI: ${q}`),
+      `GS: ${cnkiQueries.join(" OR ")}`,
+      ...freeQueries.map((q) => `S2+OA: ${q}`),
+      `翻译: ${translatedQuery}`,
+    ];
+  } else {
+    const precisionQs = plan.precisionQueries.slice(0, limit >= 999 ? 15 : 8);
+    const broadQs = plan.broadQueries.slice(0, limit >= 999 ? 8 : 5);
+    const gsPrecisionQuery = precisionQs.join(" OR ");
+    const gsBroadQuery = broadQs.join(" OR ");
+    const gsQueries = [gsPrecisionQuery, gsBroadQuery].filter(Boolean);
+    const freeQs = [...precisionQs.slice(0, 2), ...broadQs.slice(0, 2)];
+    const truncate = (s: string, max: number) => s.length > max ? s.slice(0, max - 3) + "..." : s;
+    allLabels = [
+      ...(gsPrecisionQuery ? [`GS精确: ${truncate(gsPrecisionQuery, 50)}`] : []),
+      ...(gsBroadQuery ? [`GS广度: ${truncate(gsBroadQuery, 50)}`] : []),
+      ...freeQs.map((q) => `S2+OA: ${truncate(q, 35)}`),
+    ];
+    // Ensure labels count matches gsQueries + freeQs (gsQueries filters empty)
+    if (allLabels.length !== gsQueries.length + freeQs.length) {
+      allLabels = allResults.map((_, i) => `query-${i}`);
+    }
+  }
 
   for (let i = 0; i < allResults.length; i++) {
     const result = allResults[i];

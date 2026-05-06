@@ -1623,6 +1623,11 @@ ${fullTextContext}` : ""}`;
                   <option value="en">英文期刊</option>
                   <option value="zh">中文期刊</option>
                 </select>
+                {journalLang === "zh" && (
+                  <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                    由于无法直连 CNKI，中文文献存在较大缺失，仅通过 Google Scholar / OpenAlex / S2 检索
+                  </span>
+                )}
                 <button
                   onClick={() => setJournalFilterOpen((v) => !v)}
                   className={`h-5 px-1.5 text-[10px] border rounded transition-colors ${
@@ -1980,15 +1985,20 @@ ${fullTextContext}` : ""}`;
               {searchStats?.relevanceScored && searchStats.totalBeforeRelevance > searchStats.total &&
                 ` · AI过滤了 ${searchStats.totalBeforeRelevance - searchStats.total} 篇不相关文献`}
             </span>
-            {meta?.sources.map((s) => (
-              <Badge
-                key={s.source}
-                variant="secondary"
-                className={`text-xs ${sourceColors[s.source] ?? ""}`}
-              >
-                {sourceLabels[s.source] ?? s.source}: {s.count}
-              </Badge>
-            ))}
+            {meta?.sources.map((s) => {
+              const label = sourceLabels[s.source] ?? s.source;
+              const shortLabel = label.length > 35 ? label.slice(0, 32) + "..." : label;
+              return (
+                <Badge
+                  key={s.source}
+                  variant="secondary"
+                  className={`text-xs ${sourceColors[s.source] ?? ""}`}
+                  title={label}
+                >
+                  {shortLabel}: {s.count}
+                </Badge>
+              );
+            })}
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {/* Sort */}

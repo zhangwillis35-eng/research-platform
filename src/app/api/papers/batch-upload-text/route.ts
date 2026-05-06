@@ -17,6 +17,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "projectId, title, fullText required" }, { status: 400 });
     }
 
+    // Strip null bytes — PostgreSQL TEXT rejects \x00
+    const cleanText = typeof fullText === "string" ? fullText.replace(/\x00/g, "") : fullText;
+
     const auth = await requireProjectAccess(projectId);
     if (auth instanceof NextResponse) return auth;
 
@@ -25,12 +28,12 @@ export async function POST(request: Request) {
       data: {
         projectId,
         title,
-        abstract: abstract ?? fullText.slice(0, 500),
+        abstract: (abstract ?? cleanText.slice(0, 500)).replace(/\x00/g, ""),
         authors: authors ?? [],
         source: "manual",
         citationCount: 0,
         referenceCount: 0,
-        fullText,
+        fullText: cleanText,
         pdfFileName,
       },
     });

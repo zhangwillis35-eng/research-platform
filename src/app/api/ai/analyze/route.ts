@@ -4,33 +4,33 @@ import type { AIProvider } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
 
 const ANALYSIS_PROMPTS: Record<string, string> = {
-  variables: `You are a management research methodology expert. Extract ALL variable relationships from the provided papers.
+  variables: `你是管理学研究方法论专家。请从提供的论文中提取所有变量关系。
 
-IMPORTANT: Each paper is labeled [1], [2], etc. You MUST track which paper(s) each relationship comes from using the "sources" field with paper numbers. If the same relationship appears in multiple papers, list ALL source paper numbers.
+重要：每篇论文标记为[1]、[2]等。你必须使用"sources"字段记录每个关系来源于哪篇论文。如果同一关系出现在多篇论文中，列出所有来源编号。
 
-Output STRICTLY in this JSON format:
+请严格按以下JSON格式输出：
 {
   "relations": [
     {
-      "independentVar": "independent variable name",
-      "dependentVar": "dependent variable name",
-      "mediators": ["mediator variable 1"],
-      "moderators": ["moderator variable 1"],
+      "independentVar": "自变量名称",
+      "dependentVar": "因变量名称",
+      "mediators": ["中介变量1"],
+      "moderators": ["调节变量1"],
       "direction": "positive/negative/mixed/unknown",
-      "effectSize": "if mentioned",
-      "sampleContext": "sample context description",
+      "effectSize": "效应量（如有提及）",
+      "sampleContext": "样本情境描述",
       "sources": [1, 3]
     }
   ]
 }
 
-Rules:
-- "sources" MUST contain the paper number(s) [1], [2], etc. where this relationship is found
-- If the same IV→DV relationship appears in multiple papers, create ONE entry with ALL source numbers
-- If different papers find different directions for the same relationship, note this in the direction field as "mixed" and list all sources
-- Output in English for variable names, Chinese is OK for sampleContext
-- If no relations found, return {"relations": []}
-- Output ONLY JSON, no other text.`,
+规则：
+- "sources"必须包含该关系所在论文的编号[1]、[2]等
+- 如果同一自变量→因变量关系出现在多篇论文中，合并为一条记录并列出所有来源编号
+- 如果不同论文对同一关系发现了不同方向，在direction字段标注"mixed"并列出所有来源
+- 变量名称和描述请使用中文
+- 如果未发现关系，返回 {"relations": []}
+- 仅输出JSON，不要输出其他文字。`,
 
   review: `你是管理学文献综述专家。基于以下文献信息，生成结构化文献综述。
 

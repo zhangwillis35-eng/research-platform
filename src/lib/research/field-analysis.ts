@@ -29,21 +29,21 @@ export interface FieldPaper {
 // Field Takeaways
 // ────────────────────────────────────────────
 
-const FIELD_TAKEAWAYS_PROMPT = `You are a senior academic researcher synthesizing the key takeaways from a collection of papers within a specific research field.
+const FIELD_TAKEAWAYS_PROMPT = `你是一位资深学术研究者，负责对一组特定研究领域的论文进行领域级别的综合提炼。
 
-Generate a comprehensive field-level synthesis covering:
+请生成全面的领域综合分析，涵盖以下五个方面：
 
-1. **核心发现与共识** — Most important findings, where papers converge. Cite by [number].
-2. **主流方法论趋势** — Dominant research designs, data sources, emerging methodological innovations.
-3. **主要争论与张力** — Where papers disagree, unresolved debates, conflicting evidence.
-4. **新兴趋势** — New directions gaining traction, cross-disciplinary influences.
-5. **研究空白** — Important unanswered questions, understudied contexts/variables. Ground each gap in the reviewed literature.
+1. **核心发现与共识** — 最重要的研究发现，各文献的共识之处。使用[编号]引用具体文献。
+2. **主流方法论趋势** — 主要的研究设计、数据来源、方法论创新。
+3. **主要争论与张力** — 文献之间的分歧、未解决的争论、矛盾的证据。
+4. **新兴趋势** — 正在兴起的新方向、跨学科影响。
+5. **研究空白** — 重要的未解答问题、研究不足的情境和变量。每个空白需有文献依据。
 
-Requirements:
-- Respond in Chinese (学术写作风格)
-- Cite papers using [number] format matching the input order
-- Be synthetic — identify field-level patterns, not individual paper summaries
-- Minimum 2500 Chinese characters`;
+要求：
+- 全部使用中文输出，保持学术写作风格
+- 使用[编号]格式引用文献，编号与输入顺序一致
+- 进行综合性分析，识别领域级别的模式，而非逐篇总结
+- 至少2500字`;
 
 export async function* streamFieldTakeaways(
   papers: FieldPaper[],
@@ -104,26 +104,26 @@ export async function* streamFieldTakeaways(
 // Assumptions Analysis
 // ────────────────────────────────────────────
 
-const ASSUMPTIONS_PROMPT = `You are an expert at identifying and comparing research assumptions across academic papers.
+const ASSUMPTIONS_PROMPT = `你是一位研究假设识别与对比分析专家。
 
-## Part 1: Per-Paper Assumption Extraction
-For EACH paper, identify:
-1. **理论假设** — Theoretical frameworks taken as given, assumed causal mechanisms
-2. **方法论假设** — Measurement validity, data distribution, statistical assumptions
-3. **边界条件** — Contexts where findings are assumed to hold, scope limitations
-4. **隐含假设** — What is taken for granted but not explicitly stated
+## 第一部分：逐篇假设提取
+对每一篇论文，识别以下内容：
+1. **理论假设** — 被视为前提的理论框架、假定的因果机制
+2. **方法论假设** — 测量效度、数据分布、统计假设
+3. **边界条件** — 研究发现被假定成立的情境、适用范围限制
+4. **隐含假设** — 未明确陈述但被默认接受的前提
 
-## Part 2: Cross-Paper Comparison
-1. **共享假设** — Assumptions held across most/all papers, whether well-grounded or conventional
-2. **冲突假设** — Contradictory assumptions, implications, which is better supported
-3. **独特假设** — Assumptions unique to specific papers, innovation vs. limitation
+## 第二部分：跨文献假设对比
+1. **共享假设** — 大多数或全部文献共同持有的假设，无论是否有充分依据
+2. **冲突假设** — 矛盾的假设、其影响、哪个更有证据支持
+3. **独特假设** — 某篇论文特有的假设，属于创新还是局限
 
-Requirements:
-- Respond in Chinese (学术写作风格)
-- Cite papers using [number] format
-- Be analytical — compare and evaluate, don't just list
-- Highlight the most consequential assumption differences
-- Minimum 2000 Chinese characters`;
+要求：
+- 全部使用中文输出，保持学术写作风格
+- 使用[编号]格式引用文献
+- 要有分析性——比较和评估，而非简单罗列
+- 突出最具影响力的假设差异
+- 至少2000字`;
 
 export async function* streamAssumptionsAnalysis(
   papers: FieldPaper[],

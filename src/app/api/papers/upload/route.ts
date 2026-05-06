@@ -42,7 +42,9 @@ export async function POST(request: Request) {
     const buffer = new Uint8Array(pdfBytes);
 
     // Extract text
-    const { text: fullText } = await extractText(buffer, { mergePages: true });
+    let { text: fullText } = await extractText(buffer, { mergePages: true });
+    // Strip null bytes — PostgreSQL TEXT rejects \x00
+    if (fullText) fullText = fullText.replace(/\x00/g, "");
 
     if (!fullText || fullText.trim().length < 50) {
       return NextResponse.json(

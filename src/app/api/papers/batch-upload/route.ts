@@ -46,6 +46,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "could not extract text" }, { status: 422 });
     }
 
+    // Strip null bytes — PostgreSQL TEXT rejects \x00
+    rawText = rawText.replace(/\x00/g, "");
+
     if (rawText.trim().length < 50) {
       return NextResponse.json({ error: "文本过少，可能是扫描版 PDF" }, { status: 422 });
     }

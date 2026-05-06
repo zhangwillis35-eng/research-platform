@@ -9,6 +9,7 @@ const navItems = [
   { label: "① 文献检索", href: "/papers/search", icon: "◎" },
   { label: "② 文献库", href: "/papers", icon: "▤" },
   { label: "③ 文献综述", href: "/review/generate", icon: "¶" },
+  { label: "③+ 综述优化", href: "/review/enhance", icon: "✎" },
   { label: "④ 知识图谱", href: "/graph", icon: "◈" },
   { label: "⑤ 研究想法", href: "/ideas/generate", icon: "✦" },
   { label: "⑥ 理论整合", href: "/theories/integrate", icon: "⬡" },
