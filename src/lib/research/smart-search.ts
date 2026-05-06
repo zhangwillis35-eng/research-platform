@@ -132,7 +132,15 @@ function sortByQuality(papers: ScoredPaper[]): ScoredPaper[] {
   });
 }
 
-function applyTieredLimit(papers: ScoredPaper[], limit: number, relevanceScored: boolean): ScoredPaper[] {
+function applyTieredLimit(papers: ScoredPaper[], limit: number, relevanceScored: boolean, journalLang: JournalLang = "en"): ScoredPaper[] {
+  // Chinese journals don't have UTD24/FT50/ABS rankings — skip quality filter
+  if (journalLang === "zh") {
+    const sorted = sortByQuality(papers);
+    if (relevanceScored) {
+      return sorted.filter(p => (p.relevanceScore ?? 0) >= 3).slice(0, limit >= 999 ? sorted.length : limit);
+    }
+    return sorted.slice(0, limit >= 999 ? sorted.length : limit);
+  }
   const sorted = sortByQuality(papers);
 
   if (limit >= 999) {
@@ -677,7 +685,7 @@ export async function smartSearch(
   }
 
   // Step 9: Tiered quality filtering based on user-selected limit
-  const finalPapers = applyTieredLimit(scoredPapers, limit, relevanceScored);
+  const finalPapers = applyTieredLimit(scoredPapers, limit, relevanceScored, journalLang);
 
   // Step 10: Optional SPECTER2 semantic re-ranking for quality tiers
   if (isQualityTier && finalPapers.length > 0) {
