@@ -51,7 +51,8 @@ interface BasketItem {
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
-  suggestions?: BasketItem[]; // parsed suggestions from AI response
+  suggestions?: BasketItem[];
+  modifiedReview?: string; // AI's directly modified review text
 }
 
 export default function ReviewEnhancePage() {
@@ -310,26 +311,49 @@ export default function ReviewEnhancePage() {
 
     const signal = chatAbort.reset();
     try {
-      const systemPrompt = `You are a literature review enhancement expert. The user has a draft review and you are helping them refine the revision plan.
+      const hasReview = !!enhancedReview;
+      const reviewText = enhancedReview || draftText;
 
-IMPORTANT: When you suggest changes, format EACH suggestion as a numbered item starting with【建议N】like:
-【建议1】[expand] 第3节"共情客服": 补充AI共情在B2B场景的研究，引入 Smith (2024) 的实证发现
-【建议2】[add] 新增"跨文化比较"小节: 对比中西方消费者对情感AI的接受度差异
-【建议3】[add-paper] 推荐文献: Wang et al. (2024) "Emotional AI in retail" → 适合放入第2节
+      const systemPrompt = hasReview
+        ? `You are a literature review editor. The user has an enhanced review and wants you to directly modify it.
 
-Each suggestion must have: [action] where action is add/expand/restructure/add-paper, then the section heading, then a colon, then the description.
+You have TWO modes:
+
+MODE 1 — DIRECT EDIT: When the user asks to delete, add, modify, rewrite, or restructure any part of the review, output the COMPLETE modified review wrapped in <modified-review> tags:
+<modified-review>
+(完整的修改后综述文本，包含所有章节)
+</modified-review>
+
+After the tags, briefly explain what you changed (1-2 sentences).
+
+MODE 2 — SUGGESTIONS: When the user asks for advice, recommendations, or analysis (NOT direct edits), format suggestions as:
+【建议1】[action] 章节: 描述
+where action is add/expand/restructure/add-paper.
+
+RULES:
+- The review text below is the COMPLETE current version. You CAN and SHOULD directly modify it.
+- When editing, preserve all unchanged sections exactly as-is. Only modify what the user asks for.
+- Answer in Chinese. Use markdown headings (##, ###).
+- For deletions: simply remove the section/paragraph the user specifies.
+- For additions: add new content at the appropriate location.
+- For rewrites: replace the specified section with improved text.`
+        : `You are a literature review enhancement expert helping refine revision plans.
+
+Format suggestions as:
+【建议1】[action] 章节: 描述
+where action is add/expand/restructure/add-paper.
 
 Answer in Chinese. Be specific and actionable.`;
 
       const context = [
-        draftAnalysis ? `Research topic: ${draftAnalysis.topic}\nStructure: ${draftAnalysis.structureOutline.map(s => s.heading).join(", ")}` : "",
-        basket.length > 0 ? `\nCurrent basket (${basket.length} items):\n${basket.map(b => `- [${b.action}] ${b.heading}: ${b.description}`).join("\n")}` : "",
-        enhancedReview ? `\nCurrent enhanced review (first 6000 chars):\n${enhancedReview.slice(0, 6000)}` : `\nDraft review (first 6000 chars):\n${draftText.slice(0, 6000)}`,
+        draftAnalysis ? `Research topic: ${draftAnalysis.topic}` : "",
+        basket.length > 0 ? `\nRevision basket (${basket.length} items):\n${basket.map(b => `- [${b.action}] ${b.heading}: ${b.description}`).join("\n")}` : "",
+        `\n## 当前综述全文 (${reviewText.length} 字)\n\n${reviewText.slice(0, 15000)}`,
       ].filter(Boolean).join("\n");
 
       const messages = [
-        { role: "system" as const, content: systemPrompt + "\n\nContext:\n" + context },
-        ...chatMessages.filter(m => !m.suggestions).map(m => ({ role: m.role as "user" | "assistant", content: m.content })),
+        { role: "system" as const, content: systemPrompt + "\n\n" + context },
+        ...chatMessages.filter(m => !m.suggestions).map(m => ({ role: m.role as "user" | "assistant", content: typeof m.content === "string" ? m.content.replace(/<modified-review>[\s\S]*<\/modified-review>/g, "[已输出修改版本]") : m.content })),
         { role: "user" as const, content: text },
       ];
 
@@ -368,14 +392,30 @@ Answer in Chinese. Be specific and actionable.`;
         }
       }
 
-      // Parse suggestions from the response
-      const suggestions = parseSuggestions(fullText, round);
-      if (suggestions.length > 0) {
+      // Check for direct review modification
+      const modifiedMatch = fullText.match(/<modified-review>([\s\S]*?)<\/modified-review>/);
+      if (modifiedMatch) {
+        const modifiedText = modifiedMatch[1].trim();
+        // Store the modified version in the message for "apply" button
         setChatMessages(prev => {
           const updated = [...prev];
-          updated[updated.length - 1] = { role: "assistant", content: fullText, suggestions };
+          updated[updated.length - 1] = {
+            role: "assistant",
+            content: fullText,
+            modifiedReview: modifiedText,
+          };
           return updated;
         });
+      } else {
+        // Parse suggestions from the response
+        const suggestions = parseSuggestions(fullText, round);
+        if (suggestions.length > 0) {
+          setChatMessages(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = { role: "assistant", content: fullText, suggestions };
+            return updated;
+          });
+        }
       }
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
@@ -761,33 +801,58 @@ Answer in Chinese. Be specific and actionable.`;
           <CardContent className="space-y-3">
             {/* Messages */}
             <div ref={chatScrollRef} className="max-h-[400px] overflow-y-auto space-y-3">
-              {chatMessages.map((msg, i) => (
-                <div key={i}>
-                  <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[85%] rounded-lg px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap ${
-                      msg.role === "user" ? "bg-teal text-white" : "bg-muted"
-                    }`}>
-                      {msg.content}
+              {chatMessages.map((msg, i) => {
+                // Strip <modified-review> tags from display, show clean explanation
+                const displayContent = msg.content
+                  .replace(/<modified-review>[\s\S]*?<\/modified-review>/g, "")
+                  .trim();
+                return (
+                  <div key={i}>
+                    <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                      <div className={`max-w-[85%] rounded-lg px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap ${
+                        msg.role === "user" ? "bg-teal text-white" : "bg-muted"
+                      }`}>
+                        {displayContent || (msg.modifiedReview ? "已生成修改版本，点击下方按钮应用。" : msg.content)}
+                      </div>
                     </div>
+                    {/* Apply modified review button */}
+                    {msg.modifiedReview && (
+                      <div className="mt-2 ml-2 flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          className="bg-teal text-teal-foreground hover:bg-teal/90 h-7 text-xs"
+                          onClick={() => {
+                            setEnhancedReview(msg.modifiedReview!);
+                            setStatusMsg("已应用修改");
+                            setTimeout(() => setStatusMsg(""), 2000);
+                          }}
+                        >
+                          应用修改到综述
+                        </Button>
+                        <span className="text-[10px] text-muted-foreground">
+                          修改版 {msg.modifiedReview.length.toLocaleString()} 字
+                        </span>
+                      </div>
+                    )}
+                    {/* Extracted suggestions with checkboxes */}
+                    {msg.suggestions && msg.suggestions.length > 0 && (
+                      <div className="mt-2 ml-2 space-y-1">
+                        <p className="text-[10px] text-teal font-medium">提取的修改建议（勾选添加到修改篮）：</p>
+                        {msg.suggestions.map((s) => {
+                          const checked = isInBasket(s.id);
+                          return (
+                            <div key={s.id} className={`flex items-start gap-2 p-1.5 rounded border text-xs transition-colors ${checked ? "border-teal/40 bg-teal/5" : "border-border/30"}`}>
+                              <input type="checkbox" checked={checked} onChange={() => toggleBasketItem(s)} className="accent-teal shrink-0 mt-0.5" />
+                              <Badge className={`text-[8px] shrink-0 ${actionBadge[s.action]?.color ?? ""}`}>{actionBadge[s.action]?.label ?? s.action}</Badge>
+                              <span><span className="font-medium">{s.heading}</span>: {s.description}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                  {/* Extracted suggestions with checkboxes */}
-                  {msg.suggestions && msg.suggestions.length > 0 && (
-                    <div className="mt-2 ml-2 space-y-1">
-                      <p className="text-[10px] text-teal font-medium">提取的修改建议（勾选添加到修改篮）：</p>
-                      {msg.suggestions.map((s) => {
-                        const checked = isInBasket(s.id);
-                        return (
-                          <div key={s.id} className={`flex items-start gap-2 p-1.5 rounded border text-xs transition-colors ${checked ? "border-teal/40 bg-teal/5" : "border-border/30"}`}>
-                            <input type="checkbox" checked={checked} onChange={() => toggleBasketItem(s)} className="accent-teal shrink-0 mt-0.5" />
-                            <Badge className={`text-[8px] shrink-0 ${actionBadge[s.action]?.color ?? ""}`}>{actionBadge[s.action]?.label ?? s.action}</Badge>
-                            <span><span className="font-medium">{s.heading}</span>: {s.description}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Input */}
@@ -796,7 +861,7 @@ Answer in Chinese. Be specific and actionable.`;
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleChatSend(); } }}
-                placeholder="输入修改意见，AI 会生成可勾选的修改建议..."
+                placeholder={enhancedReview ? "直接输入修改指令，如「删掉8.2节」「把第3段改短」「补充一段关于跨文化的讨论」..." : "输入修改意见，AI 会生成可勾选的修改建议..."}
                 className="flex-1 min-h-[40px] max-h-[120px] resize-y text-xs p-2 border border-input rounded bg-background"
                 disabled={chatStreaming}
               />
