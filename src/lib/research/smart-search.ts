@@ -573,11 +573,26 @@ export async function smartSearch(
   }
 
   // Step 5.5: Cap papers before enrichment — never enrich more than we could need
-  // Priority: quality-source papers first (ABS 3+, JCR Q1, arXiv), then by citations
-  // This preserves recent high-quality papers that have low citations due to recency
+  // Priority: top venue papers first (Nature/Science/top journals by name), then quality source, then citations
+  // NOTE: journalMeta is NOT yet populated at this stage, so we check venue name directly
+  const TOP_VENUE_KEYWORDS = [
+    "nature", "science", "cell", "lancet", "nejm", "new england",
+    "management science", "mis quarterly", "information systems research",
+    "journal of marketing", "journal of finance", "academy of management",
+    "strategic management", "organization science", "operations research",
+  ];
+  function isTopVenueByName(p: UnifiedPaper): boolean {
+    const v = String(p.venue ?? "").toLowerCase();
+    return TOP_VENUE_KEYWORDS.some(k => v.includes(k));
+  }
+
   const allDeduped = Array.from(seen.values());
   allDeduped.sort((a, b) => {
-    // Tier 1: Quality source papers always come first
+    // Tier 0: Top venues by name (Nature, Science, etc.) — always first, even with 0 citations
+    const aTop = isTopVenueByName(a) ? 2 : 0;
+    const bTop = isTopVenueByName(b) ? 2 : 0;
+    if (aTop !== bTop) return bTop - aTop;
+    // Tier 1: Quality source papers (arXiv, JCR Q1, etc.)
     const aQuality = isQualitySource(a) ? 1 : 0;
     const bQuality = isQualitySource(b) ? 1 : 0;
     if (aQuality !== bQuality) return bQuality - aQuality;
