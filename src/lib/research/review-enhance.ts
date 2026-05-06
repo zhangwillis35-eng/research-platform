@@ -27,11 +27,19 @@ export interface GapPaper {
   suggestedSection: string;
 }
 
+export interface TopicGroup {
+  topic: string;
+  description: string;
+  papers: (GapPaper & { aiAnalysis?: string })[];
+}
+
 export interface GapAnalysis {
-  newPapers: GapPaper[];
+  topicGroups: TopicGroup[];
   coverageGaps: { theme: string; description: string; severity: "high" | "medium" | "low" }[];
   weakSections: { heading: string; issue: string; suggestion: string }[];
   libraryUnused: string[];
+  // Legacy flat list for backward compat
+  newPapers: GapPaper[];
 }
 
 export interface RevisionPlan {
@@ -113,21 +121,19 @@ export async function analyzeDraft(
 
 const GAP_ANALYSIS_PROMPT = `You are a literature review gap analysis expert. You are given:
 1. A draft literature review's analysis (topic, themes, cited references, structure)
-2. A list of newly discovered papers from academic database search
-3. A list of papers in the user's library that may not be cited in the draft
+2. A list of newly discovered papers with AI analysis from academic database search
+3. A list of papers in the user's library
 
-Your task: Identify gaps and recommend improvements.
+Your task: Group the found papers by research topic, identify gaps, and recommend improvements.
+
+IMPORTANT: Include ALL relevant papers, grouped by topic. Do NOT limit to 15 — include as many as are relevant.
 
 Output strict JSON:
 {
-  "newPapers": [{
-    "title": "...",
-    "authors": "...",
-    "year": 2024,
-    "venue": "...",
-    "abstract": "...",
-    "relevanceReason": "为什么这篇论文应该被纳入（中文）",
-    "suggestedSection": "建议添加到哪个章节（中文）"
+  "topicGroups": [{
+    "topic": "话题名称（中文）",
+    "description": "该话题与综述的关联说明（中文，1-2句）",
+    "paperIndices": [0, 3, 7]
   }],
   "coverageGaps": [{
     "theme": "缺失的主题（中文）",
@@ -143,21 +149,23 @@ Output strict JSON:
 }
 
 Rules:
-- Only recommend genuinely relevant papers. Quality over quantity.
-- Max 15 new papers, focus on high-impact ones.
-- libraryUnused: only list library papers that ARE relevant but NOT cited.
-- All descriptions in Chinese.`;
+- topicGroups.paperIndices: indices into the Newly Found Papers list (0-based)
+- Group papers into 3-8 topics based on research themes
+- Each paper can appear in multiple topic groups if relevant
+- Include ALL papers that are relevant to the draft (no cap)
+- libraryUnused: only list library papers that ARE relevant but NOT cited
+- All descriptions in Chinese`;
 
 export async function analyzeGaps(
   draftAnalysis: DraftAnalysis,
-  searchPapers: { title: string; authors: string; year: number; venue: string; abstract: string }[],
+  searchPapers: { title: string; authors: string; year: number; venue: string; abstract: string; aiAnalysis?: string }[],
   libraryPapers: LibraryPaper[],
   provider: AIProvider,
 ): Promise<GapAnalysis> {
-  const draftContext = `Topic: ${draftAnalysis.topic}\nThemes: ${draftAnalysis.keyThemes.join(", ")}\nCited references (${draftAnalysis.citedReferences.length}):\n${draftAnalysis.citedReferences.slice(0, 50).join("\n")}\nStructure:\n${draftAnalysis.structureOutline.map(s => `- ${s.heading} (${s.citationCount} citations): ${s.summary}`).join("\n")}\nWeak sections: ${draftAnalysis.weakSections.join("; ")}`;
+  const draftContext = `Topic: ${draftAnalysis.topic}\nThemes: ${draftAnalysis.keyThemes.join(", ")}\nCited references (${draftAnalysis.citedReferences.length}):\n${draftAnalysis.citedReferences.slice(0, 30).join("\n")}\nStructure:\n${draftAnalysis.structureOutline.map(s => `- ${s.heading} (${s.citationCount} citations): ${s.summary}`).join("\n")}\nWeak sections: ${draftAnalysis.weakSections.join("; ")}`;
 
-  const searchContext = searchPapers.slice(0, 20).map((p, i) =>
-    `[New-${i + 1}] ${p.title} (${p.year}) — ${p.authors}\n${p.venue} | ${p.abstract?.slice(0, 200) ?? "N/A"}`
+  const searchContext = searchPapers.map((p, i) =>
+    `[${i}] ${p.title} (${p.year}) — ${p.authors} | ${p.venue}${p.aiAnalysis ? `\nAI分析: ${p.aiAnalysis.slice(0, 150)}` : `\n摘要: ${(p.abstract ?? "").slice(0, 150)}`}`
   ).join("\n");
 
   const libraryContext = libraryPapers.slice(0, 20).map((p, i) => {
@@ -178,7 +186,45 @@ export async function analyzeGaps(
     maxTokens: 4096,
   });
 
-  return JSON.parse(response.content);
+  const raw = JSON.parse(response.content);
+
+  // Build topic groups with full paper data
+  const topicGroups: TopicGroup[] = (raw.topicGroups ?? []).map((tg: { topic: string; description: string; paperIndices: number[] }) => ({
+    topic: tg.topic,
+    description: tg.description,
+    papers: (tg.paperIndices ?? [])
+      .filter((i: number) => i >= 0 && i < searchPapers.length)
+      .map((i: number) => {
+        const p = searchPapers[i];
+        return {
+          title: p.title,
+          authors: p.authors,
+          year: p.year,
+          venue: p.venue,
+          abstract: p.abstract,
+          relevanceReason: "",
+          suggestedSection: tg.topic,
+          aiAnalysis: (p as { aiAnalysis?: string }).aiAnalysis,
+        };
+      }),
+  }));
+
+  // Flat list for backward compat
+  const allPapers = topicGroups.flatMap(tg => tg.papers);
+  const seen = new Set<string>();
+  const newPapers = allPapers.filter(p => {
+    if (seen.has(p.title)) return false;
+    seen.add(p.title);
+    return true;
+  });
+
+  return {
+    topicGroups,
+    newPapers,
+    coverageGaps: raw.coverageGaps ?? [],
+    weakSections: raw.weakSections ?? [],
+    libraryUnused: raw.libraryUnused ?? [],
+  };
 }
 
 // ─── Phase 3: Revision Plan ──────────────────────
