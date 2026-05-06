@@ -415,16 +415,22 @@ export async function smartSearch(
   let allResults: Array<{ papers: UnifiedPaper[]; results: SearchResult[] }>;
 
   if (journalLang === "zh") {
-    // ── Chinese mode: CNKI (via Serper site:cnki.net) + Google Scholar with Chinese keywords ──
+    // ── Chinese mode: CNKI + Google Scholar + OpenAlex + Semantic Scholar ──
     const { searchCNKI } = await import("@/lib/sources/cnki");
 
-    const cnkiQueries = [...precisionQueries, ...broadQueries];
+    // Use top 4 queries for CNKI, top 2 for free sources
+    const cnkiQueries = [...precisionQueries.slice(0, 2), ...broadQueries.slice(0, 2)];
+    const freeQueries = [...precisionQueries.slice(0, 2), ...broadQueries.slice(0, 1)];
     const gsChineseQuery = cnkiQueries.join(" OR ");
 
-    onProgress?.("search", `中文检索：CNKI + Google Scholar（${cnkiQueries.length} 个查询）...`);
+    // Also prepare English translation for OpenAlex/S2 (they index Chinese papers with English metadata)
+    const translatedQuery = plan.translatedInput || input;
 
-    const [cnkiResults, gsResults] = await Promise.all([
-      // CNKI: search each query independently
+    const totalQ = cnkiQueries.length + freeQueries.length + 2;
+    onProgress?.("search", `中文检索：CNKI + Google Scholar + OpenAlex + S2（${totalQ} 个查询）...`);
+
+    const searchPromise = Promise.all([
+      // CNKI via Serper (site:cnki.net)
       Promise.all(
         cnkiQueries.map((q) =>
           searchCNKI({ query: q, limit: Math.max(20, limit), yearFrom, yearTo })
@@ -432,23 +438,32 @@ export async function smartSearch(
             .catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
         )
       ),
-      // Google Scholar with Chinese keywords (catches papers indexed by Google but not via site:cnki.net)
+      // Google Scholar with Chinese keywords
       searchAllSourcesRaw({
         query: gsChineseQuery, limit: Math.max(40, limit), yearFrom, yearTo,
         sources: ["google_scholar"],
       }).catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] })),
+      // OpenAlex + Semantic Scholar with Chinese keywords (they index Chinese journals)
+      Promise.all(
+        freeQueries.map((q) =>
+          searchAllSourcesRaw({ query: q, limit: 20, yearFrom, yearTo, freeOnly: true })
+            .catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
+        )
+      ),
+      // Also search with English translation (many Chinese papers have English metadata in OpenAlex/S2)
+      searchAllSourcesRaw({ query: translatedQuery, limit: 30, yearFrom, yearTo, freeOnly: true })
+        .catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] })),
     ]);
 
-    // Direct search with original Chinese input
-    const directResults = await Promise.all(
-      plan.keyTerms.slice(0, 3).map((term) =>
-        searchCNKI({ query: term, limit: 10, yearFrom, yearTo })
-          .then((r) => ({ papers: r.papers, results: [r] as SearchResult[] }))
-          .catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
-      )
-    );
+    // 30s hard timeout
+    const [cnkiResults, gsResults, freeResults, translatedResults] = await Promise.race([
+      searchPromise,
+      new Promise<[never[], { papers: never[]; results: never[] }, never[], { papers: never[]; results: never[] }]>((resolve) =>
+        setTimeout(() => resolve([[], { papers: [], results: [] }, [], { papers: [], results: [] }]), 30000)
+      ),
+    ]);
 
-    allResults = [...cnkiResults, gsResults, ...directResults];
+    allResults = [...(cnkiResults ?? []), ...(gsResults ? [gsResults] : []), ...(freeResults ?? []), ...(translatedResults ? [translatedResults] : [])];
   } else {
     // ── English mode: original pipeline ──
     // Google Scholar: merge all precision queries into 1 call, all broad into 1 call
