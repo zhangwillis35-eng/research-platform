@@ -796,6 +796,12 @@ export default function PaperSearchPage() {
       // Fetch full text for referenced papers that have DOI/PDF
       let fullTextContext = "";
       if (referencedIndices.size > 0 && referencedIndices.size <= 5) {
+        // Show "fetching" indicator
+        setChatMessages(prev => {
+          const u = [...prev];
+          u[u.length - 1] = { role: "assistant", content: `正在获取 ${referencedIndices.size} 篇论文全文...` };
+          return u;
+        });
         const fetchPromises = Array.from(referencedIndices)
           .filter(i => i < displayedPapers.length)
           .map(async (i) => {
@@ -817,7 +823,19 @@ export default function PaperSearchPage() {
             } catch { return null; }
           });
         const results = await Promise.all(fetchPromises);
-        fullTextContext = results.filter(Boolean).join("");
+        const fetched = results.filter(Boolean);
+        fullTextContext = fetched.join("");
+        // Update indicator
+        setChatMessages(prev => {
+          const u = [...prev];
+          u[u.length - 1] = {
+            role: "assistant",
+            content: fetched.length > 0
+              ? `已获取 ${fetched.length} 篇全文，正在深度分析...`
+              : "全文获取失败（可能为付费文献），基于摘要分析...",
+          };
+          return u;
+        });
       }
 
       const papersContext = buildPapersContext();
@@ -1815,6 +1833,11 @@ ${fullTextContext}` : ""}`;
                     : "请先开启「学术检索」检索文献，再关闭开关进行深度问答"
                 }
               </p>
+              {!searchMode && papers.length > 0 && (
+                <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-1.5 max-w-md mx-auto">
+                  提示：在提问中引用文献编号（如 [1]、[3,5]），AI 将自动获取该论文全文进行深度分析
+                </p>
+              )}
               <div className="flex flex-wrap justify-center gap-2">
                 {searchMode ? [
                   "ESG disclosure and corporate financial performance, ABS3星以上",
@@ -1834,6 +1857,7 @@ ${fullTextContext}` : ""}`;
                   "这个领域的研究空白是什么？",
                   "请比较引用量最高的三篇文献",
                   "这些文献涉及哪些理论框架？",
+                  "深入分析 [1] 的研究方法和数据来源",
                 ].map((suggestion) => (
                   <button
                     key={suggestion}
