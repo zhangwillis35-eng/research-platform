@@ -254,11 +254,12 @@ export async function POST(request: Request) {
 
   // ── rewrite ──
   if (action === "rewrite") {
-    const { draftText, revisionPlan, libraryPapers, searchPapers } = body as {
+    const { draftText, revisionPlan, libraryPapers, searchPapers, wordCount } = body as {
       draftText: string;
       revisionPlan: { sections: { action: string; heading: string; description: string; papersToAdd: string[]; priority: string }[]; overallStrategy: string; estimatedChanges: string };
       libraryPapers: LibraryPaper[];
       searchPapers: { title: string; authors: string; year: number; venue: string; abstract: string }[];
+      wordCount?: { min: number; max: number };
     };
 
     return createSSEStream(async (send) => {
@@ -269,6 +270,7 @@ export async function POST(request: Request) {
         libraryPapers,
         searchPapers,
         provider,
+        wordCount,
       );
       for await (const chunk of gen) {
         send({ type: "text", text: chunk });

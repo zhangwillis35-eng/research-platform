@@ -324,6 +324,7 @@ export async function* rewriteReviewStream(
   libraryPapers: LibraryPaper[],
   searchPapers: { title: string; authors: string; year: number; venue: string; abstract: string }[],
   provider: AIProvider,
+  wordCount?: { min: number; max: number },
 ): AsyncGenerator<string> {
   const planContext = revisionPlan.sections
     .filter(s => s.action !== "keep")
@@ -346,11 +347,11 @@ export async function* rewriteReviewStream(
       { role: "system", content: REWRITE_PROMPT },
       {
         role: "user",
-        content: `## Overall Strategy:\n${revisionPlan.overallStrategy}\n\n## Revision Plan:\n${planContext}\n\n## Original Draft:\n${draftText.slice(0, 12000)}\n\n## Available Papers:\n${papersContext}`,
+        content: `## Target Word Count: ${wordCount ? `${wordCount.min}-${wordCount.max}` : "8000-12000"}字\n\n## Overall Strategy:\n${revisionPlan.overallStrategy}\n\n## Revision Plan:\n${planContext}\n\n## Original Draft:\n${draftText.slice(0, 12000)}\n\n## Available Papers:\n${papersContext}`,
       },
     ],
     temperature: 0.4,
-    maxTokens: 8192,
+    maxTokens: wordCount ? Math.max(8192, Math.ceil(wordCount.max * 1.5)) : 8192,
   });
 
   for await (const chunk of stream) {

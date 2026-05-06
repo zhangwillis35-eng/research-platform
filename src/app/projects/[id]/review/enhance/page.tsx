@@ -64,6 +64,8 @@ export default function ReviewEnhancePage() {
   // Persisted state
   const [provider, setProvider] = usePersistedState<AIProvider>(NS, "provider", "deepseek-fast");
   const [engine, setEngine] = usePersistedState<AnalysisEngine>(NS, "engine", "builtin");
+  const [wordCountMin, setWordCountMin] = usePersistedState<number>(NS, "wcMin", 8000);
+  const [wordCountMax, setWordCountMax] = usePersistedState<number>(NS, "wcMax", 12000);
   const [draftText, setDraftText] = usePersistedState<string>(NS, "draftText", "");
   const [draftAnalysis, setDraftAnalysis] = usePersistedState<DraftAnalysis | null>(NS, "draftAnalysis", null);
   const [gapAnalysis, setGapAnalysis] = usePersistedState<GapAnalysis | null>(NS, "gapAnalysis", null);
@@ -285,6 +287,7 @@ export default function ReviewEnhancePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "rewrite", draftText, revisionPlan: basketPlan, provider,
+          wordCount: { min: wordCountMin, max: wordCountMax },
           libraryPapers: libraryPapers.slice(0, 20).map(p => ({ id: p.id, title: p.title, abstract: p.abstract, authors: p.authors, year: p.year, venue: p.venue, fullText: p.fullText?.slice(0, 5000) })),
           searchPapers,
         }),
@@ -631,9 +634,19 @@ Answer in Chinese. Be specific and actionable.`;
               </Button>
             )}
             {basket.length > 0 && (
-              <Button onClick={handleRewrite} disabled={isWorking} className="bg-teal text-teal-foreground hover:bg-teal/90 h-8 text-xs">
-                执行优化（{basket.length} 项）
-              </Button>
+              <>
+                <Button onClick={handleRewrite} disabled={isWorking} className="bg-teal text-teal-foreground hover:bg-teal/90 h-8 text-xs">
+                  执行优化（{basket.length} 项）
+                </Button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <input type="number" value={wordCountMin} onChange={(e) => setWordCountMin(Number(e.target.value) || 5000)}
+                    className="w-16 h-8 px-2 text-xs border border-input rounded bg-background text-center" min={2000} max={30000} step={1000} title="最少字数" />
+                  <span className="text-xs text-muted-foreground">-</span>
+                  <input type="number" value={wordCountMax} onChange={(e) => setWordCountMax(Number(e.target.value) || 15000)}
+                    className="w-16 h-8 px-2 text-xs border border-input rounded bg-background text-center" min={3000} max={50000} step={1000} title="最多字数" />
+                  <span className="text-xs text-muted-foreground">字</span>
+                </div>
+              </>
             )}
             <input type="file" accept=".docx" className="hidden" ref={fileRef} onChange={handleUploadDocx} />
             <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => fileRef.current?.click()}>重新上传初稿</Button>
