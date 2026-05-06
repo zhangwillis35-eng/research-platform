@@ -9,16 +9,18 @@ FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm config set registry https://registry.npmmirror.com && \
-    npm ci --omit=dev --maxsockets=2 --fetch-retries=10 --fetch-retry-mintimeout=30000 --fetch-retry-maxtimeout=120000 || \
-    (npm config set registry https://registry.npmjs.org && npm ci --omit=dev --maxsockets=2 --fetch-retries=10)
+    npm ci --omit=dev --maxsockets=1 --fetch-retries=15 --fetch-retry-mintimeout=60000 --fetch-retry-maxtimeout=300000 --fetch-timeout=600000 || \
+    (npm config set registry https://registry.npmmirror.com && npm install --omit=dev --maxsockets=1 --fetch-retries=10) || \
+    (npm config set registry https://registry.npmjs.org && npm install --omit=dev --maxsockets=1 --fetch-retries=10)
 
 # Build the application
 FROM base AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm config set registry https://registry.npmmirror.com && \
-    npm ci --maxsockets=2 --fetch-retries=10 --fetch-retry-mintimeout=30000 --fetch-retry-maxtimeout=120000 || \
-    (npm config set registry https://registry.npmjs.org && npm ci --maxsockets=2 --fetch-retries=10)
+    npm ci --maxsockets=1 --fetch-retries=15 --fetch-retry-mintimeout=60000 --fetch-retry-maxtimeout=300000 --fetch-timeout=600000 || \
+    (npm config set registry https://registry.npmmirror.com && npm install --maxsockets=1 --fetch-retries=10) || \
+    (npm config set registry https://registry.npmjs.org && npm install --maxsockets=1 --fetch-retries=10)
 COPY . .
 
 # Generate Prisma client
