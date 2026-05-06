@@ -3,6 +3,8 @@ import { callClaude, streamClaude } from "./claude-client";
 import { callGemini, streamGemini } from "./gemini-client";
 import { callDeepSeek, streamDeepSeek } from "./deepseek-client";
 import { callOpenAI, streamOpenAI } from "./openai-client";
+import { callQwen, streamQwen } from "./qwen-client";
+import { callGLM, streamGLM } from "./glm-client";
 import { logTokenUsage } from "../token-logger";
 
 export type { AIProvider, AIRequestOptions, AIResponse } from "./types";
@@ -39,14 +41,24 @@ export const AI_PROVIDERS: {
     description: "Google Gemini，快速且能力强（大陆需代理）",
   },
   {
+    id: "qwen",
+    name: "通义千问 Qwen Plus",
+    description: "阿里云大模型，国产免代理",
+  },
+  {
+    id: "glm",
+    name: "智谱 GLM-4 Plus",
+    description: "智谱大模型，国产免代理",
+  },
+  {
     id: "chatgpt",
-    name: "GPT-4o",
-    description: "OpenAI 旗舰模型（大陆需代理）",
+    name: "GPT-4o（暂停）",
+    description: "OpenAI 旗舰模型（大陆需代理，暂未开放）",
   },
   {
     id: "claude",
-    name: "Claude Sonnet 4",
-    description: "Anthropic Claude，结构化输出强（大陆需代理）",
+    name: "Claude Sonnet 4（暂停）",
+    description: "Anthropic Claude（大陆需代理，暂未开放）",
   },
 ];
 
@@ -92,6 +104,12 @@ export async function callAI(options: AIRequestOptions): Promise<AIResponse> {
     case "chatgpt":
       response = await callOpenAI(options);
       break;
+    case "qwen":
+      response = await callQwen(options);
+      break;
+    case "glm":
+      response = await callGLM(options);
+      break;
     default:
       throw new Error(`Unknown provider: ${options.provider}`);
   }
@@ -119,6 +137,12 @@ export async function* streamAI(
       break;
     case "chatgpt":
       gen = streamOpenAI(options);
+      break;
+    case "qwen":
+      gen = streamQwen(options);
+      break;
+    case "glm":
+      gen = streamGLM(options);
       break;
     default:
       throw new Error(`Unknown provider: ${options.provider}`);

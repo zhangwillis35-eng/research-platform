@@ -1,15 +1,17 @@
-export type AIProvider = "claude" | "gemini" | "gemini-pro" | "gemini-flash" | "deepseek" | "deepseek-fast" | "deepseek-pro" | "chatgpt";
+export type AIProvider = "claude" | "gemini" | "gemini-pro" | "gemini-flash" | "deepseek" | "deepseek-fast" | "deepseek-pro" | "chatgpt" | "qwen" | "glm";
 
 // Map provider IDs to actual model names
 export const PROVIDER_MODELS: Record<AIProvider, string> = {
-  "gemini": "gemini-3-flash-preview",      // default / fast
-  "gemini-pro": "gemini-3.1-pro-preview", // most capable
-  "gemini-flash": "gemini-3-flash-preview", // fast
+  "gemini": "gemini-3-flash-preview",
+  "gemini-pro": "gemini-3.1-pro-preview",
+  "gemini-flash": "gemini-3-flash-preview",
   claude: "claude-sonnet-4-20250514",
   chatgpt: "gpt-4o",
-  deepseek: "deepseek-reasoner",           // deep reasoning, slow (deprecated 2026/07)
-  "deepseek-fast": "deepseek-v4-flash",   // V4 Flash: fastest structured extraction
-  "deepseek-pro": "deepseek-v4-pro",      // V4 Pro: strongest DeepSeek model
+  deepseek: "deepseek-reasoner",
+  "deepseek-fast": "deepseek-v4-flash",
+  "deepseek-pro": "deepseek-v4-pro",
+  qwen: "qwen-plus",
+  glm: "glm-4-plus",
 };
 
 export interface AIMessage {
