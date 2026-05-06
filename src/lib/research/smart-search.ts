@@ -66,47 +66,71 @@ export interface SmartSearchResult {
 // limit=100: no journal filter, sorted by relevance + citations, cap at 100
 // limit=999: unlimited, keep all with relevance ≥ 5
 
-/** Check if a paper is from a quality source (ABS 3+, JCR Q1, arXiv) — used for pre-enrichment cap */
-function isQualitySource(p: UnifiedPaper): boolean {
-  const venue = String(p.venue ?? "").toLowerCase() ?? "";
-  // arXiv preprints
-  if (venue.startsWith("arxiv") || venue.includes("arxiv")) return true;
+// ─── Three-tier priority system ──────────────────
+//
+// P1 (最高): Nature及子刊, Science及子刊, ABS3*+, JCR Q1 → 不看引用量，永远最前
+// P2 (次高): 高引论文（年份动态阈值）
+// P3 (第三): arXiv 2026年发表且引用>0
+
+const NATURE_SCIENCE_KEYWORDS = [
+  "nature", "science", "cell", "lancet", "new england journal",
+  "nature human behav", "nature machine intel", "nature biomedical",
+  "nature commun", "nature medicine", "nature neurosci", "nature climate",
+  "nature energy", "nature sustain", "nature food", "nature comput",
+  "science advances", "science robotics",
+];
+
+/** P1: Top journal — by venue name (pre-enrichment) or journalMeta (post-enrichment) */
+function isPriority1(p: UnifiedPaper | ScoredPaper): boolean {
+  const venue = String(p.venue ?? "").toLowerCase();
+  // Nature/Science family by name
+  if (NATURE_SCIENCE_KEYWORDS.some(k => venue.includes(k))) return true;
   // JCR Q1
   if (p.journalMeta?.jcrQuartile === "Q1") return true;
-  // ABS 3 or above
+  // ABS 3*+
   const absOrder = ["1", "2", "3", "4", "4*"];
   if (p.journalMeta?.absRating && absOrder.indexOf(p.journalMeta.absRating) >= 2) return true;
-  // SSCI / SCI indexed
-  if (p.journalMeta?.ssci || p.journalMeta?.sci) return true;
   // UTD24 / FT50
   if (p.journalRanking?.utd24 || p.journalRanking?.ft50) return true;
-  // Top conferences (CHI, CSCW, NeurIPS, ICML, etc.)
+  return false;
+}
+
+/** P2: High citation relative to year */
+function isPriority2(p: UnifiedPaper | ScoredPaper): boolean {
+  const year = p.year ?? 0;
+  const cited = p.citationCount ?? 0;
+  const currentYear = new Date().getFullYear();
+  if (year >= currentYear && cited > 0) return true;         // 2026+: > 0
+  if (year === currentYear - 1 && cited > 30) return true;   // 2025: > 30
+  if (year === currentYear - 2 && cited > 100) return true;  // 2024: > 100
+  if (year <= currentYear - 3 && cited > 200) return true;   // 2023-: > 200
+  return false;
+}
+
+/** P3: Recent arXiv with citations */
+function isPriority3(p: UnifiedPaper | ScoredPaper): boolean {
+  const venue = String(p.venue ?? "").toLowerCase();
+  const isArxiv = venue.startsWith("arxiv") || venue.includes("arxiv");
+  return isArxiv && (p.year ?? 0) >= new Date().getFullYear() && (p.citationCount ?? 0) > 0;
+}
+
+/** Get priority tier (0=highest) */
+function getPriorityTier(p: UnifiedPaper | ScoredPaper): number {
+  if (isPriority1(p)) return 0;
+  if (isPriority2(p)) return 1;
+  if (isPriority3(p)) return 2;
+  return 3; // no priority
+}
+
+/** Also consider SSCI/SCI/top conferences as quality sources for pre-enrichment cap */
+function isQualitySource(p: UnifiedPaper): boolean {
+  if (getPriorityTier(p) <= 2) return true;
+  if (p.journalMeta?.ssci || p.journalMeta?.sci) return true;
   if (p.journalMeta?.conference?.tier === "Top" || p.journalMeta?.conference?.tier === "A") return true;
   return false;
 }
 
-function isTopTierJournal(p: ScoredPaper): boolean {
-  const meta = p.journalMeta;
-  if (!meta) return false;
-
-  // arXiv preprints always pass
-  if (String(p.venue ?? "").toLowerCase().startsWith("arxiv")) return true;
-
-  // JCR Q1 (covers both SSCI Q1 and SCI Q1)
-  if (meta.jcrQuartile === "Q1") return true;
-
-  // ABS 3 star and above
-  const absOrder = ["1", "2", "3", "4", "4*"];
-  if (meta.absRating && absOrder.indexOf(meta.absRating) >= 2) return true;
-
-  return false;
-}
-
-function isQ2Journal(p: ScoredPaper): boolean {
-  return p.journalMeta?.jcrQuartile === "Q2";
-}
-
-/** Sort by relevance (desc), then journal grade (desc), then IF (desc), then citations (desc) */
+/** Sort: relevance → priority tier → journal grade → IF → citations */
 function sortByQuality(papers: ScoredPaper[]): ScoredPaper[] {
   return papers.sort((a, b) => {
     // Primary: relevance score
@@ -114,7 +138,12 @@ function sortByQuality(papers: ScoredPaper[]): ScoredPaper[] {
     const scoreB = b.relevanceScore ?? 0;
     if (scoreB !== scoreA) return scoreB - scoreA;
 
-    // Secondary: journal grade (UTD24/FT50 > JCR Q1 > Q2 > ...)
+    // Secondary: priority tier
+    const aTier = getPriorityTier(a);
+    const bTier = getPriorityTier(b);
+    if (aTier !== bTier) return aTier - bTier;
+
+    // Tertiary: journal grade (UTD24/FT50 > JCR Q1 > Q2)
     const jcrOrder: Record<string, number> = { Q1: 4, Q2: 3, Q3: 2, Q4: 1 };
     const aGrade = (a.journalRanking?.utd24 ? 10 : 0) + (a.journalRanking?.ft50 ? 10 : 0) +
       (jcrOrder[a.journalMeta?.jcrQuartile ?? ""] ?? 0);
@@ -122,64 +151,42 @@ function sortByQuality(papers: ScoredPaper[]): ScoredPaper[] {
       (jcrOrder[b.journalMeta?.jcrQuartile ?? ""] ?? 0);
     if (bGrade !== aGrade) return bGrade - aGrade;
 
-    // Tertiary: impact factor
+    // Quaternary: impact factor
     const aIF = a.journalMeta?.impactFactor ?? 0;
     const bIF = b.journalMeta?.impactFactor ?? 0;
     if (aIF !== bIF) return bIF - aIF;
 
-    // Quaternary: citations
+    // Last: citations
     return b.citationCount - a.citationCount;
   });
 }
 
 function applyTieredLimit(papers: ScoredPaper[], limit: number, relevanceScored: boolean, journalLang: JournalLang = "en"): ScoredPaper[] {
-  // Chinese journals don't have UTD24/FT50/ABS rankings — skip quality filter
+  // Chinese journals: skip quality filter
   if (journalLang === "zh") {
     const sorted = sortByQuality(papers);
-    if (relevanceScored) {
-      return sorted.filter(p => (p.relevanceScore ?? 0) >= 3).slice(0, limit >= 999 ? sorted.length : limit);
-    }
+    if (relevanceScored) return sorted.filter(p => (p.relevanceScore ?? 0) >= 3).slice(0, limit >= 999 ? sorted.length : limit);
     return sorted.slice(0, limit >= 999 ? sorted.length : limit);
   }
+
   const sorted = sortByQuality(papers);
 
   if (limit >= 999) {
-    // Unlimited: keep all with relevance ≥ 5 (if scored), no journal filter
-    if (relevanceScored) {
-      return sorted.filter(p => (p.relevanceScore ?? 0) >= 5);
-    }
-    return sorted;
+    return relevanceScored ? sorted.filter(p => (p.relevanceScore ?? 0) >= 5) : sorted;
   }
 
   if (limit >= 100) {
-    // 100: no journal filter, top 100 by quality + backfill recent arXiv
+    // 100 (不限刊): keep all three tiers, up to 100
     return sorted.slice(0, 100);
   }
 
-  // 20 or 50: strict quality filter, backfill with recent arXiv if not enough
-  const topTier = sorted.filter(isTopTierJournal);
+  // 20 or 50: P1 first, then P2, then P3
+  const p1 = sorted.filter(p => isPriority1(p));
+  const p2 = sorted.filter(p => !isPriority1(p) && isPriority2(p));
+  const p3 = sorted.filter(p => !isPriority1(p) && !isPriority2(p) && isPriority3(p));
 
-  // Recent arXiv papers (last 6 months, cited > 0) as backfill
-  const sixMonthsAgo = new Date().getFullYear();
-  const recentArxiv = sorted.filter(p => {
-    const venue = String(p.venue ?? "").toLowerCase();
-    return venue.startsWith("arxiv") && (p.year ?? 0) >= sixMonthsAgo && (p.citationCount ?? 0) > 0;
-  });
-
-  if (limit <= 20) {
-    if (topTier.length >= 20) return topTier.slice(0, 20);
-    // Backfill with recent arXiv
-    const fill = recentArxiv.filter(p => !topTier.includes(p));
-    return [...topTier, ...fill].slice(0, 20);
-  }
-
-  // 50: top-tier first, then Q2, then recent arXiv
-  const q2Papers = sorted.filter(p => isQ2Journal(p) && !isTopTierJournal(p));
-  const combined = [...topTier, ...q2Papers];
-  if (combined.length >= 50) return combined.slice(0, 50);
-  // Backfill with recent arXiv
-  const arxivFill = recentArxiv.filter(p => !combined.includes(p));
-  return [...combined, ...arxivFill].slice(0, 50);
+  const combined = [...p1, ...p2, ...p3];
+  return combined.slice(0, limit);
 }
 
 const EXTRACT_SYSTEM = `You are an academic literature search expert. Follow these steps IN ORDER:
@@ -572,31 +579,13 @@ export async function smartSearch(
     }
   }
 
-  // Step 5.5: Cap papers before enrichment — never enrich more than we could need
-  // Priority: top venue papers first (Nature/Science/top journals by name), then quality source, then citations
-  // NOTE: journalMeta is NOT yet populated at this stage, so we check venue name directly
-  const TOP_VENUE_KEYWORDS = [
-    "nature", "science", "cell", "lancet", "nejm", "new england",
-    "management science", "mis quarterly", "information systems research",
-    "journal of marketing", "journal of finance", "academy of management",
-    "strategic management", "organization science", "operations research",
-  ];
-  function isTopVenueByName(p: UnifiedPaper): boolean {
-    const v = String(p.venue ?? "").toLowerCase();
-    return TOP_VENUE_KEYWORDS.some(k => v.includes(k));
-  }
-
+  // Step 5.5: Cap papers before enrichment
+  // Sort by 3-tier priority: P1 (Nature/Science/ABS3+/Q1) → P2 (high citations) → P3 (recent arXiv) → rest
   const allDeduped = Array.from(seen.values());
   allDeduped.sort((a, b) => {
-    // Tier 0: Top venues by name (Nature, Science, etc.) — always first, even with 0 citations
-    const aTop = isTopVenueByName(a) ? 2 : 0;
-    const bTop = isTopVenueByName(b) ? 2 : 0;
-    if (aTop !== bTop) return bTop - aTop;
-    // Tier 1: Quality source papers (arXiv, JCR Q1, etc.)
-    const aQuality = isQualitySource(a) ? 1 : 0;
-    const bQuality = isQualitySource(b) ? 1 : 0;
-    if (aQuality !== bQuality) return bQuality - aQuality;
-    // Tier 2: Within same tier, sort by citations
+    const aTier = getPriorityTier(a);
+    const bTier = getPriorityTier(b);
+    if (aTier !== bTier) return aTier - bTier;
     return b.citationCount - a.citationCount;
   });
   // Hard cap at 100 — scoring 200 papers causes SSE timeout
