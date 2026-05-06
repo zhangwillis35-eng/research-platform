@@ -362,6 +362,9 @@ export default function ReviewEnhancePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
+          <Link href={`/projects/${projectId}/review`} className="text-xs text-muted-foreground hover:text-foreground">
+            ← 文献综述
+          </Link>
           <h1 className="font-heading text-2xl font-bold">综述优化</h1>
           <p className="text-muted-foreground mt-1 text-sm">
             上传综述初版 Word 文档 + 文献库参考文献 → AI 分析、检索、改进 → 导出优化版

@@ -195,11 +195,16 @@ export default function ReviewGeneratePage() {
       )}
       <div className="flex items-center justify-between">
         <div>
+          <div className="flex items-center gap-2">
+            <Link href={`/projects/${projectId}/review`} className="text-xs text-muted-foreground hover:text-foreground">
+              ← 文献综述
+            </Link>
+          </div>
           <h1 className="font-heading text-2xl font-bold">
-            AI 文献综述
+            综述初稿生成
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            STORM 式多视角综述 · 自动检索 · 引文追踪
+            STORM 式多视角综述 · 自动大纲 · 流式撰写
           </p>
         </div>
         <AnalysisEngineSelect value={analysisEngine} onChange={setAnalysisEngine} />
