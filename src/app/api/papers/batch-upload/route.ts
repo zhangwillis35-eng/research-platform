@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    const uint8 = new Uint8Array(arrayBuffer);
+    const uint8 = new Uint8Array(new Uint8Array(arrayBuffer));
 
     // Extract text with unpdf (~150ms, no ML, no Java)
     let rawText: string;
