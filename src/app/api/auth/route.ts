@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
+import { notifyAdminNewApplication } from "@/lib/email";
 
 /** Generate a random 8-char invite code (uppercase letters + digits) */
 function generateInviteCode(): string {
@@ -65,6 +66,13 @@ export async function POST(request: Request) {
         });
       }
 
+      // Notify admin about new application (fire-and-forget)
+      notifyAdminNewApplication({
+        name,
+        email,
+        createdAt: new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }),
+      }).catch(() => {});
+
       return NextResponse.json({ success: true });
     }
 
@@ -84,7 +92,7 @@ export async function POST(request: Request) {
       if (pending.status === "approved") {
         return NextResponse.json({ error: "该邮箱已完成注册，请直接登录" }, { status: 400 });
       }
-      if (pending.status !== "pending") {
+      if (pending.status !== "pending" && pending.status !== "sent") {
         return NextResponse.json({ error: "该注册申请已被处理，请重新申请" }, { status: 400 });
       }
       if (pending.inviteCode !== inviteCode.toUpperCase().trim()) {

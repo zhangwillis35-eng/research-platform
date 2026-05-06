@@ -78,6 +78,7 @@ interface Stats {
     name: string;
     email: string;
     inviteCode: string;
+    status: string;
     createdAt: string;
   }>;
   tokenUsage: {
@@ -380,12 +381,18 @@ function Dashboard() {
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleApprove(r.id)}
-                      className="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
-                    >
-                      Approve & Send
-                    </button>
+                    {r.status === "sent" ? (
+                      <span className="px-3 py-1.5 text-xs font-medium bg-blue-900/50 text-blue-400 rounded-lg">
+                        ✓ 已发送
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleApprove(r.id)}
+                        className="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
+                      >
+                        Approve & Send
+                      </button>
+                    )}
                     <button
                       onClick={() => handleReject(r.id)}
                       className="px-3 py-1.5 text-xs font-medium bg-zinc-800 hover:bg-red-900 text-zinc-400 hover:text-red-400 rounded-lg transition-colors"

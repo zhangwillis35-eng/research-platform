@@ -123,7 +123,7 @@ export async function GET() {
     ` as Promise<Array<{ date: Date; count: number }>>,
     // Pending registrations
     prisma.pendingRegistration.findMany({
-      where: { status: "pending" },
+      where: { status: { in: ["pending", "sent"] } },
       orderBy: { createdAt: "desc" },
     }),
     // API logs
@@ -237,6 +237,7 @@ export async function GET() {
       name: r.name,
       email: r.email,
       inviteCode: r.inviteCode,
+      status: r.status,
       createdAt: r.createdAt,
     })),
     tokenUsage: {
@@ -259,8 +260,8 @@ export async function POST(request: Request) {
 
   if (action === "approve") {
     const pending = await prisma.pendingRegistration.findUnique({ where: { id } });
-    if (!pending || pending.status !== "pending") {
-      return NextResponse.json({ error: "Registration not found" }, { status: 404 });
+    if (!pending || (pending.status !== "pending" && pending.status !== "sent")) {
+      return NextResponse.json({ error: "Registration not found or already approved" }, { status: 404 });
     }
 
     // Send invite code email
@@ -269,6 +270,14 @@ export async function POST(request: Request) {
       email: pending.email,
       inviteCode: pending.inviteCode,
     });
+
+    // Update status to "sent" to prevent duplicate sends
+    if (sent) {
+      await prisma.pendingRegistration.update({
+        where: { id },
+        data: { status: "sent" },
+      });
+    }
 
     return NextResponse.json({
       success: true,

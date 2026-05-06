@@ -28,6 +28,43 @@ function getTransport() {
   return cachedTransport;
 }
 
+/** Notify admin when a new user submits registration */
+export async function notifyAdminNewApplication(params: {
+  name: string;
+  email: string;
+  createdAt: string;
+}): Promise<boolean> {
+  const transport = getTransport();
+  const adminEmail = process.env.ADMIN_EMAIL || process.env.SMTP_USER;
+
+  if (!transport || !adminEmail) return false;
+
+  try {
+    await transport.sendMail({
+      from: `"ScholarFlow" <${process.env.SMTP_USER}>`,
+      to: adminEmail,
+      subject: `[ScholarFlow] 新用户注册申请 — ${params.name}`,
+      html: `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 500px; margin: 0 auto; padding: 24px;">
+          <h2 style="color: #1a1a2e; margin-bottom: 16px;">新用户注册申请</h2>
+          <div style="background: #fef3c7; border: 1px solid #f59e0b33; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+            <p style="margin: 0 0 8px 0;"><strong>姓名:</strong> ${params.name}</p>
+            <p style="margin: 0 0 8px 0;"><strong>邮箱:</strong> ${params.email}</p>
+            <p style="margin: 0; color: #666; font-size: 13px;">提交时间: ${params.createdAt}</p>
+          </div>
+          <a href="https://scholarflow-willis.cn/admin" style="display: inline-block; background: #0d9488; color: white; padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: 500;">前往审批</a>
+          <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
+          <p style="color: #bbb; font-size: 11px;">ScholarFlow Admin Notification</p>
+        </div>
+      `,
+    });
+    return true;
+  } catch (err) {
+    console.error("[Email] Admin notification failed:", err);
+    return false;
+  }
+}
+
 /** Send invite code to user after admin approval */
 export async function sendInviteCode(params: {
   name: string;
