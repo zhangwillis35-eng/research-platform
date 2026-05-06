@@ -439,13 +439,16 @@ export async function smartSearch(
     const gsPrecisionQuery = precisionQueries.join(" OR ");
     const gsBroadQuery = broadQueries.join(" OR ");
     const gsQueries = [gsPrecisionQuery, gsBroadQuery].filter(Boolean);
-    const allQueries = [...precisionQueries, ...broadQueries];
+    // Cap free queries at 4 to avoid 50+ API calls
+    const freeQueries = [...precisionQueries.slice(0, 2), ...broadQueries.slice(0, 2)];
+    const freeLimit = Math.max(20, Math.ceil((limit * 3) / (freeQueries.length || 1)));
 
-    const queryCount = allQueries.length || 1;
-    const freeLimit = Math.max(15, Math.ceil((limit * 3) / queryCount));
+    const totalQueries = gsQueries.length + freeQueries.length;
+    onProgress?.("search", `并行检索 ${totalQueries} 个查询...`);
 
-    onProgress?.("search", `并行检索 ${gsQueries.length + allQueries.length} 个查询...`);
-    const [gsResults, freeResults] = await Promise.all([
+    // Race all searches against a 30s hard deadline
+    const searchPromise = Promise.all([
+      // Google Scholar (with extras like arXiv, CORE, etc.)
       Promise.all(
         gsQueries.map((q) =>
           searchAllSourcesRaw({
@@ -454,8 +457,9 @@ export async function smartSearch(
           }).catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
         )
       ),
+      // Free sources only (S2 + OpenAlex, no extras)
       Promise.all(
-        allQueries.map((q) =>
+        freeQueries.map((q) =>
           searchAllSourcesRaw({ query: q, limit: freeLimit, yearFrom, yearTo, freeOnly: true }).catch(() => ({
             papers: [] as UnifiedPaper[],
             results: [] as SearchResult[],
@@ -464,17 +468,18 @@ export async function smartSearch(
       ),
     ]);
 
-    const directQuery = plan.translatedInput || input;
-    const directResults = await Promise.all([
-      searchAllSourcesRaw({ query: `"${directQuery}"`, limit: 20, yearFrom, yearTo, freeOnly: true })
-        .catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] })),
-      ...plan.keyTerms.slice(0, 3).map(term =>
-        searchAllSourcesRaw({ query: `"${term}"`, limit: 10, yearFrom, yearTo, freeOnly: true })
-          .catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
+    // 30s hard timeout — use whatever results we have
+    const [gsResults, freeResults] = await Promise.race([
+      searchPromise,
+      new Promise<[typeof gsResults, typeof freeResults]>((resolve) =>
+        setTimeout(() => {
+          console.log("[smart-search] 30s search deadline hit, using partial results");
+          resolve([[], []]);
+        }, 30000)
       ),
-    ]);
+    ]) as [Array<{ papers: UnifiedPaper[]; results: SearchResult[] }>, Array<{ papers: UnifiedPaper[]; results: SearchResult[] }>];
 
-    allResults = [...gsResults, ...freeResults, ...directResults];
+    allResults = [...(gsResults ?? []), ...(freeResults ?? [])];
   }
   const totalRaw = allResults.reduce((sum, r) => sum + r.papers.length, 0);
   onProgress?.("dedup", `检索到 ${totalRaw} 条结果，正在去重合并...`);

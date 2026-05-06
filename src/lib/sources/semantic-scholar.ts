@@ -67,7 +67,7 @@ export async function searchSemanticScholar(
   const res = await fetchWithRetry(
     `${BASE_URL}/paper/search?${params}`,
     { headers: getHeaders() },
-    { maxRetries: 3, baseDelayMs: 1500, maxDelayMs: 15000, retryOn: [429, 500, 502, 503], timeoutMs: 20000 }
+    { maxRetries: 1, baseDelayMs: 1000, maxDelayMs: 5000, retryOn: [429, 500, 502, 503], timeoutMs: 8000 }
   );
 
   if (!res.ok) {
@@ -261,7 +261,7 @@ export async function batchLookupS2(
           headers: getHeaders(),
           body: JSON.stringify({ ids: batch }),
         },
-        { maxRetries: 3, baseDelayMs: 2000, retryOn: [429, 500, 502, 503], timeoutMs: 30000 }
+        { maxRetries: 1, baseDelayMs: 1000, retryOn: [429, 500, 502, 503], timeoutMs: 10000 }
       );
 
       if (!res.ok) {

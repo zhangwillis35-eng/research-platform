@@ -22,7 +22,7 @@ export async function searchBioRxiv(
     console.log(`[biorxiv] Searching: ${query.slice(0, 80)}...`);
 
     const res = await proxyFetch(url, {
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(6000),
       headers: {
         Accept: "application/json",
       },

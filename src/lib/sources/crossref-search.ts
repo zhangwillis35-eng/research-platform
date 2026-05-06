@@ -30,7 +30,7 @@ export async function searchCrossRef(
     console.log(`[crossref] Searching: ${query.slice(0, 80)}...`);
 
     const res = await proxyFetch(`${CROSSREF_BASE}?${params}`, {
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(6000),
       headers: {
         "User-Agent": "ScholarFlow/1.0 (mailto:scholarflow@research.app)",
         "mailto": "scholarflow@research.app",

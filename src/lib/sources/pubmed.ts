@@ -39,7 +39,7 @@ export async function searchPubMed(
     console.log(`[pubmed] Searching: ${query.slice(0, 80)}...`);
 
     const searchRes = await proxyFetch(`${ESEARCH_BASE}?${searchParams}`, {
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(5000),
     });
 
     if (!searchRes.ok) {
@@ -68,7 +68,7 @@ export async function searchPubMed(
     if (apiKey) fetchParams.set("api_key", apiKey);
 
     const fetchRes = await proxyFetch(`${EFETCH_BASE}?${fetchParams}`, {
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(6000),
     });
 
     if (!fetchRes.ok) {

@@ -55,8 +55,9 @@ export async function searchAllSourcesRaw(
     ),
   ];
 
-  // Extra sources (arXiv, CORE, WoS, top-venue OpenAlex) — skip if only Google Scholar was requested
-  if (!skipExtras) {
+  // Extra sources — only for non-freeOnly calls (GS queries). Skip for free-source queries
+  // to avoid 70+ API calls (7 queries × 10 sources each = way too slow)
+  if (!skipExtras && !options.freeOnly) {
     const extraPromises = Promise.all([
       searchArxiv({ ...options, limit: Math.min(options.limit ?? 10, 10) }).catch(() => ({
         papers: [] as UnifiedPaper[], total: 0, source: "openalex" as const,
