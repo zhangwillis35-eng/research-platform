@@ -271,13 +271,11 @@ export async function POST(request: Request) {
       inviteCode: pending.inviteCode,
     });
 
-    // Update status to "sent" to prevent duplicate sends
-    if (sent) {
-      await prisma.pendingRegistration.update({
-        where: { id },
-        data: { status: "sent" },
-      });
-    }
+    // Always mark as "sent" after admin clicks approve (prevents duplicate sends)
+    await prisma.pendingRegistration.update({
+      where: { id },
+      data: { status: "sent" },
+    });
 
     return NextResponse.json({
       success: true,
