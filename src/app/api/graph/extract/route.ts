@@ -302,13 +302,12 @@ async function handleDirect(papers: Paper[], provider: AIProvider, externalConte
     ? `${content}\n\n===== 外部分析补充 =====\n${externalContext}`
     : content;
 
-  // Step 1: Extract graph
+  // Step 1: Extract graph — complex analysis, needs thinking mode
   const graphResponse = await callAI({
     provider,
     system: GRAPH_SYSTEM,
     messages: [{ role: "user", content: `以下是 ${papers.length} 篇文献，请进行元分析式编码：\n\n${fullContent}` }],
     jsonMode: true,
-    noThinking: true,
     temperature: 0.2,
     maxTokens: 8000,
   });
@@ -399,7 +398,6 @@ async function handleParallel(papers: Paper[], provider: AIProvider, externalCon
               content: `以下是第 ${batch.offset + 1}-${batch.offset + batch.papers.length} 篇文献（共 ${papers.length} 篇），请进行元分析式编码：\n\n${batchContent}`,
             }],
             jsonMode: true,
-            noThinking: true,
             temperature: 0.2,
             maxTokens: 6000,
           });
