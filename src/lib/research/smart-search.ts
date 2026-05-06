@@ -152,25 +152,34 @@ function applyTieredLimit(papers: ScoredPaper[], limit: number, relevanceScored:
   }
 
   if (limit >= 100) {
-    // 100: no journal filter, just top 100 by quality
+    // 100: no journal filter, top 100 by quality + backfill recent arXiv
     return sorted.slice(0, 100);
   }
 
-  // 20 or 50: strict quality filter
+  // 20 or 50: strict quality filter, backfill with recent arXiv if not enough
   const topTier = sorted.filter(isTopTierJournal);
 
+  // Recent arXiv papers (last 6 months, cited > 0) as backfill
+  const sixMonthsAgo = new Date().getFullYear();
+  const recentArxiv = sorted.filter(p => {
+    const venue = String(p.venue ?? "").toLowerCase();
+    return venue.startsWith("arxiv") && (p.year ?? 0) >= sixMonthsAgo && (p.citationCount ?? 0) > 0;
+  });
+
   if (limit <= 20) {
-    // 20: only top-tier journals, max 20
-    return topTier.slice(0, 20);
+    if (topTier.length >= 20) return topTier.slice(0, 20);
+    // Backfill with recent arXiv
+    const fill = recentArxiv.filter(p => !topTier.includes(p));
+    return [...topTier, ...fill].slice(0, 20);
   }
 
-  // 50: top-tier first, then relax to Q2 if not enough
-  if (topTier.length >= 50) {
-    return topTier.slice(0, 50);
-  }
+  // 50: top-tier first, then Q2, then recent arXiv
   const q2Papers = sorted.filter(p => isQ2Journal(p) && !isTopTierJournal(p));
   const combined = [...topTier, ...q2Papers];
-  return combined.slice(0, 50);
+  if (combined.length >= 50) return combined.slice(0, 50);
+  // Backfill with recent arXiv
+  const arxivFill = recentArxiv.filter(p => !combined.includes(p));
+  return [...combined, ...arxivFill].slice(0, 50);
 }
 
 const EXTRACT_SYSTEM = `You are an academic literature search expert. Follow these steps IN ORDER:
