@@ -70,6 +70,8 @@ export default function ReviewEnhancePage() {
   const [revisionPlan, setRevisionPlan] = usePersistedState<RevisionPlan | null>(NS, "revisionPlan", null);
   const [enhancedReview, setEnhancedReview] = usePersistedState<string>(NS, "enhancedReview", "");
   const [journalLang, setJournalLang] = usePersistedState<"en" | "zh">(NS, "journalLang", "en");
+  const [selectedKeywords, setSelectedKeywords] = usePersistedState<Set<string>>(NS, "selKw", new Set());
+  const [customKeyword, setCustomKeyword] = useState("");
   const [basket, setBasket] = usePersistedState<BasketItem[]>(NS, "basket", []);
   const [chatMessages, setChatMessages] = usePersistedState<ChatMessage[]>(NS, "chatMsgs", []);
 
@@ -182,7 +184,13 @@ export default function ReviewEnhancePage() {
       });
       await processSSE(res, (evt) => {
         if (evt.type === "status") setStatusMsg(evt.message as string);
-        else if (evt.type === "analysis") { setDraftAnalysis(evt.data as DraftAnalysis); setPhase("user-review"); setStatusMsg(""); }
+        else if (evt.type === "analysis") {
+          const analysis = evt.data as DraftAnalysis;
+          setDraftAnalysis(analysis);
+          setSelectedKeywords(new Set(analysis.keywords));
+          setPhase("user-review");
+          setStatusMsg("");
+        }
       });
     } catch (err) {
       if ((err as Error).name !== "AbortError") { setStatusMsg("分析失败: " + String(err)); setPhase("user-review"); }
@@ -199,7 +207,7 @@ export default function ReviewEnhancePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "search-gaps", keywords: draftAnalysis.keywords, citedRefs: draftAnalysis.citedReferences,
+          action: "search-gaps", keywords: Array.from(selectedKeywords), citedRefs: draftAnalysis.citedReferences,
           projectId, journalLang, draftAnalysis, provider,
           libraryPapers: libraryPapers.map(p => ({ id: p.id, title: p.title, abstract: p.abstract, authors: p.authors, year: p.year, venue: p.venue })),
         }),
@@ -594,7 +602,9 @@ Answer in Chinese. Be specific and actionable.`;
             )}
             {draftAnalysis && !gapAnalysis && (
               <>
-                <Button onClick={handleSearchGaps} disabled={isWorking} className="bg-teal text-teal-foreground hover:bg-teal/90 h-8 text-xs">检索补充文献</Button>
+                <Button onClick={handleSearchGaps} disabled={isWorking || selectedKeywords.size === 0} className="bg-teal text-teal-foreground hover:bg-teal/90 h-8 text-xs">
+                  检索补充文献（{selectedKeywords.size} 个方向）
+                </Button>
                 <select value={journalLang} onChange={(e) => setJournalLang(e.target.value as "en" | "zh")} className="h-8 px-2 text-xs border border-input rounded bg-background">
                   <option value="en">英文期刊</option>
                   <option value="zh">中文期刊</option>
@@ -678,7 +688,92 @@ Answer in Chinese. Be specific and actionable.`;
                     <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">{draftAnalysis.weakSections.map((w, i) => <li key={i}>- {w}</li>)}</ul>
                   </div>
                 )}
-                <div className="text-xs text-muted-foreground">已引 {draftAnalysis.citedReferences.length} 篇 · 文献库匹配 {draftAnalysis.libraryMatchCount} 篇 · 关键词: {draftAnalysis.keywords.join(", ")}</div>
+                <div className="text-xs text-muted-foreground">已引 {draftAnalysis.citedReferences.length} 篇 · 文献库匹配 {draftAnalysis.libraryMatchCount} 篇</div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ═══ Keyword Selection (between analysis and search) ═══ */}
+          {draftAnalysis && !gapAnalysis && (
+            <Card className="border-blue-200 bg-blue-50/30">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">选择检索方向（勾选 AI 推荐方向，或添加自定义方向）</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {/* AI recommended keywords */}
+                <div className="flex flex-wrap gap-2">
+                  {draftAnalysis.keywords.map((kw) => {
+                    const checked = selectedKeywords.has(kw);
+                    return (
+                      <div
+                        key={kw}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs cursor-pointer transition-colors ${
+                          checked
+                            ? "border-teal bg-teal/10 text-teal"
+                            : "border-border/50 text-muted-foreground hover:border-border"
+                        }`}
+                        onClick={() => {
+                          setSelectedKeywords(prev => {
+                            const next = new Set(prev);
+                            if (next.has(kw)) next.delete(kw); else next.add(kw);
+                            return next;
+                          });
+                        }}
+                      >
+                        <input type="checkbox" checked={checked} readOnly className="accent-teal w-3 h-3" />
+                        {kw}
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Custom keyword input */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={customKeyword}
+                    onChange={(e) => setCustomKeyword(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && customKeyword.trim()) {
+                        setSelectedKeywords(prev => new Set([...prev, customKeyword.trim()]));
+                        setCustomKeyword("");
+                      }
+                    }}
+                    placeholder="输入自定义检索方向，回车添加..."
+                    className="flex-1 h-8 px-3 text-xs border border-input rounded bg-background"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    disabled={!customKeyword.trim()}
+                    onClick={() => {
+                      if (customKeyword.trim()) {
+                        setSelectedKeywords(prev => new Set([...prev, customKeyword.trim()]));
+                        setCustomKeyword("");
+                      }
+                    }}
+                  >
+                    添加
+                  </Button>
+                </div>
+                {/* Custom keywords (not from AI) */}
+                {Array.from(selectedKeywords).filter(kw => !draftAnalysis.keywords.includes(kw)).length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="text-[10px] text-muted-foreground">自定义：</span>
+                    {Array.from(selectedKeywords).filter(kw => !draftAnalysis.keywords.includes(kw)).map(kw => (
+                      <span key={kw} className="flex items-center gap-1 px-2 py-0.5 rounded-full border border-blue-300 bg-blue-50 text-blue-700 text-[10px]">
+                        {kw}
+                        <button onClick={() => setSelectedKeywords(prev => { const n = new Set(prev); n.delete(kw); return n; })} className="text-blue-400 hover:text-blue-600">&times;</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <button onClick={() => setSelectedKeywords(new Set(draftAnalysis.keywords))} className="hover:text-foreground">全选推荐</button>
+                  <span>·</span>
+                  <button onClick={() => setSelectedKeywords(new Set())} className="hover:text-foreground">清空</button>
+                  <span className="ml-auto">已选 {selectedKeywords.size} 个方向</span>
+                </div>
               </CardContent>
             </Card>
           )}
