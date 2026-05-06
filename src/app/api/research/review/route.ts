@@ -19,11 +19,13 @@ export async function POST(request: Request) {
       papers,
       perspectives,
       provider = "deepseek-fast",
+      wordCount,
     } = body as {
       topic: string;
       papers: UnifiedPaper[];
       perspectives?: string[];
       provider?: AIProvider;
+      wordCount?: { min: number; max: number };
     };
 
     if (!topic || !papers?.length) {
@@ -45,7 +47,7 @@ export async function POST(request: Request) {
           );
 
           const outline = await generateOutline(
-            { topic, papers, perspectives, provider }
+            { topic, papers, perspectives, provider, wordCount }
           );
 
           controller.enqueue(
@@ -61,7 +63,7 @@ export async function POST(request: Request) {
             )
           );
 
-          const stream = generateReviewStream(outline, papers, provider);
+          const stream = generateReviewStream(outline, papers, provider, wordCount);
           for await (const chunk of stream) {
             controller.enqueue(
               encoder.encode(

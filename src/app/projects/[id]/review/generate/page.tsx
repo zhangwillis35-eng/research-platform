@@ -63,6 +63,8 @@ export default function ReviewGeneratePage() {
   const [reviewText, setReviewText] = usePersistedState<string>(NS, "reviewText", "");
   const [papers, setPapers] = usePersistedState<Paper[]>(NS, "papers", []);
   const [analysisEngine, setAnalysisEngine] = usePersistedState<AnalysisEngine>(NS, "engine", "builtin");
+  const [wordCountMin, setWordCountMin] = usePersistedState<number>(NS, "wcMin", 6000);
+  const [wordCountMax, setWordCountMax] = usePersistedState<number>(NS, "wcMax", 8000);
 
   // Transient state
   const [phase, setPhase] = useState<Phase>("idle");
@@ -136,7 +138,7 @@ export default function ReviewGeneratePage() {
       const reviewRes = await fetch("/api/research/review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, papers: papersForReview, provider }),
+        body: JSON.stringify({ topic, papers: papersForReview, provider, wordCount: { min: wordCountMin, max: wordCountMax } }),
         signal,
       });
 
@@ -264,6 +266,30 @@ export default function ReviewGeneratePage() {
             className="flex-1"
             disabled={phase !== "idle" && phase !== "done"}
           />
+          <div className="flex items-center gap-1 shrink-0">
+            <input
+              type="number"
+              value={wordCountMin}
+              onChange={(e) => setWordCountMin(Number(e.target.value) || 3000)}
+              className="w-16 h-9 px-2 text-xs border border-input rounded bg-background text-center"
+              min={1000}
+              max={30000}
+              step={1000}
+              title="最少字数"
+            />
+            <span className="text-xs text-muted-foreground">-</span>
+            <input
+              type="number"
+              value={wordCountMax}
+              onChange={(e) => setWordCountMax(Number(e.target.value) || 10000)}
+              className="w-16 h-9 px-2 text-xs border border-input rounded bg-background text-center"
+              min={2000}
+              max={50000}
+              step={1000}
+              title="最多字数"
+            />
+            <span className="text-xs text-muted-foreground">字</span>
+          </div>
           <Button
             type="submit"
             disabled={(phase !== "idle" && phase !== "done") || activePapers.length === 0}
