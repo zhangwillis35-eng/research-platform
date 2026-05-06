@@ -400,8 +400,10 @@ export async function smartSearch(
   const startTime = Date.now();
 
   // Step 1-2: Extract terms + synonyms
+  // Always use deepseek-fast for keyword extraction — fastest for structured extraction
+  const extractionProvider: AIProvider = "deepseek-fast";
   onProgress?.("plan", journalLang === "zh" ? "AI 提取中文关键词..." : "AI 提取关键词与同义词...");
-  const plan = await buildSmartSearchPlan(input, provider, journalLang);
+  const plan = await buildSmartSearchPlan(input, extractionProvider, journalLang);
 
   // Pass year filters to search APIs for server-side filtering (much more effective)
   const yearFrom = plan.filters.yearFrom;
@@ -721,7 +723,8 @@ export async function smartSearch(
     // Phase 1: Quick abstract-based scoring (ALL papers)
     onProgress?.("score", `AI 摘要快速评分: ${papers.length} 篇...`);
     try {
-      scoredPapers = await scoreRelevance(papers, input, plan.translatedInput, provider);
+      // Always use deepseek-fast for scoring — fastest + cheapest for structured JSON
+      scoredPapers = await scoreRelevance(papers, input, plan.translatedInput, "deepseek-fast");
       scoredPapers = filterByRelevance(scoredPapers, 3); // Lower threshold for first pass
       relevanceScored = true;
     } catch (err) {

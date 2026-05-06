@@ -212,9 +212,8 @@ export async function scoreRelevance(
 ): Promise<ScoredPaper[]> {
   if (papers.length === 0) return [];
 
-  // Auto-downgrade to deepseek-fast for scoring
-  const scoringProvider: AIProvider =
-    provider === "deepseek" || provider === "deepseek-pro" ? "deepseek-fast" : provider;
+  // Always use deepseek-fast for scoring — fastest structured extraction model
+  const scoringProvider: AIProvider = "deepseek-fast";
 
   // Enrich papers with S2 citation contexts (parallel, non-blocking)
   // This gives us insight into what other papers say about each paper
@@ -222,7 +221,7 @@ export async function scoreRelevance(
     const { getExtendedPaperInfo } = await import("@/lib/sources/semantic-scholar");
     const needContext = papers.filter(p =>
       (p.doi || p.externalId) && !(p as any).fullText
-    ).slice(0, 40); // Top 40 papers without full text
+    ).slice(0, 20); // Top 20 papers (reduced from 40 to avoid S2 429 rate limits)
 
     if (needContext.length > 0) {
       console.log(`[relevance-scorer] Fetching citation contexts for ${needContext.length} papers...`);
@@ -239,7 +238,11 @@ export async function scoreRelevance(
           }
         }
       });
-      await Promise.all(contextPromises);
+      // 10s timeout — citation contexts are nice-to-have, not critical
+      await Promise.race([
+        Promise.all(contextPromises),
+        new Promise((resolve) => setTimeout(resolve, 10000)),
+      ]);
     }
   } catch (err) {
     console.error("[relevance-scorer] Citation context fetch failed:", err);
