@@ -50,7 +50,7 @@ export interface GapAnalysis {
 
 export interface RevisionPlan {
   sections: {
-    action: "add" | "expand" | "restructure" | "keep";
+    action: "add" | "expand" | "deepen" | "restructure" | "add-paper" | "new-direction" | "strengthen" | "delete" | "keep";
     heading: string;
     description: string;
     papersToAdd: string[];
@@ -240,26 +240,38 @@ export async function analyzeGaps(
 
 // ─── Phase 3: Revision Plan ──────────────────────
 
-const REVISION_PLAN_PROMPT = `You are a literature review revision planning expert. Based on the draft analysis and gap analysis, create a detailed, actionable revision plan.
+const REVISION_PLAN_PROMPT = `You are a literature review revision planning expert. Based on the draft analysis and gap analysis, create a comprehensive revision plan covering ALL aspects — not just adding papers, but also deepening analysis, exploring new directions, and strengthening arguments.
 
-For each section, specify:
-- action: "add" (new section), "expand" (add content/citations), "restructure" (reorganize), "keep" (no changes)
-- Specific changes to make (in Chinese)
-- Which papers to incorporate
+For each revision item, specify an action type:
+- "add": New section/subsection to add (new topic not covered in draft)
+- "expand": Expand existing section with more content and citations
+- "deepen": Deepen theoretical/methodological analysis in existing section (go beyond surface level — analyze mechanisms, boundary conditions, contradictions)
+- "restructure": Reorganize or merge sections for better logical flow
+- "add-paper": Add specific high-quality papers to strengthen evidence
+- "new-direction": Explore a new research direction or perspective not in the draft (cross-disciplinary angles, emerging trends, contrarian views)
+- "strengthen": Strengthen weak arguments with better evidence, counterarguments, or theoretical grounding
+- "delete": Remove redundant or low-quality content
+- "keep": No changes needed
+
+IMPORTANT: Generate a MIX of action types. Do NOT only suggest "add-paper" — a good revision plan should include:
+- At least 2 "deepen" items (深入分析某个理论机制/方法论局限)
+- At least 1 "new-direction" item (新的研究视角/跨学科连接)
+- At least 1 "strengthen" item (强化薄弱论证)
+- "add-paper" items where specific papers would help
 
 Be specific and actionable. This plan will be shown to the user for approval.
 
 Output strict JSON:
 {
   "sections": [{
-    "action": "add|expand|restructure|keep",
-    "heading": "章节标题",
-    "description": "具体修改内容描述（中文，详细）",
-    "papersToAdd": ["Paper Title 1", "Paper Title 2"],
+    "action": "add|expand|deepen|restructure|add-paper|new-direction|strengthen|delete|keep",
+    "heading": "章节标题或修改主题（中文）",
+    "description": "具体修改内容描述（中文，详细，2-3句说明要做什么、为什么、怎么做）",
+    "papersToAdd": ["Paper Title 1"],
     "priority": "high|medium|low"
   }],
   "overallStrategy": "整体修改策略描述（中文，2-3句）",
-  "estimatedChanges": "新增X节、扩展Y节、调整Z处"
+  "estimatedChanges": "深入分析X处、新增方向Y个、扩展Z节、补充文献N篇"
 }`;
 
 export async function generateRevisionPlan(

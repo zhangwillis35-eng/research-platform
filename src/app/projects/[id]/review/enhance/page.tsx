@@ -39,7 +39,7 @@ interface Paper {
 
 interface BasketItem {
   id: string;
-  action: "add" | "expand" | "restructure" | "add-paper" | "custom";
+  action: "add" | "expand" | "deepen" | "restructure" | "add-paper" | "new-direction" | "strengthen" | "delete" | "custom";
   heading: string;
   description: string;
   papersToAdd: string[];
@@ -232,7 +232,17 @@ export default function ReviewEnhancePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "generate-plan", draftText: draftText.slice(0, 8000), draftAnalysis, gapAnalysis, provider, engine,
+          action: "generate-plan", draftText: draftText.slice(0, 8000), draftAnalysis, provider, engine,
+          // Only pass user-selected papers from basket + gap analysis context (filtered by basket)
+          selectedPapers: basket.filter(b => b.action === "add-paper").map(b => b.papersToAdd).flat(),
+          gapAnalysis: {
+            ...gapAnalysis,
+            // Filter topicGroups to only include papers the user selected
+            topicGroups: (gapAnalysis?.topicGroups ?? []).map(tg => ({
+              ...tg,
+              papers: tg.papers.filter(p => basket.some(b => b.papersToAdd?.includes(p.title))),
+            })).filter(tg => tg.papers.length > 0),
+          },
           libraryPapers: libraryPapers.map(p => ({ id: p.id, title: p.title, abstract: p.abstract, authors: p.authors, year: p.year, venue: p.venue })),
         }),
         signal,
@@ -447,7 +457,7 @@ Answer in Chinese. Be specific and actionable.`;
       const [, num, action, heading, desc] = match;
       items.push({
         id: `chat-r${round}-${num}`,
-        action: (action === "add-paper" ? "add-paper" : action === "add" ? "add" : action === "expand" ? "expand" : action === "restructure" ? "restructure" : "custom") as BasketItem["action"],
+        action: (["add", "expand", "deepen", "restructure", "add-paper", "new-direction", "strengthen", "delete"].includes(action) ? action : "custom") as BasketItem["action"],
         heading: heading.trim(),
         description: desc.trim(),
         papersToAdd: [],
@@ -499,11 +509,15 @@ Answer in Chinese. Be specific and actionable.`;
   }
 
   const actionBadge: Record<string, { label: string; color: string }> = {
-    add: { label: "新增", color: "bg-green-100 text-green-800" },
-    expand: { label: "扩展", color: "bg-blue-100 text-blue-800" },
-    restructure: { label: "调整", color: "bg-amber-100 text-amber-800" },
+    add: { label: "新增章节", color: "bg-green-100 text-green-800" },
+    expand: { label: "扩展内容", color: "bg-blue-100 text-blue-800" },
+    deepen: { label: "深入分析", color: "bg-cyan-100 text-cyan-800" },
+    restructure: { label: "调整结构", color: "bg-amber-100 text-amber-800" },
+    "add-paper": { label: "补充文献", color: "bg-purple-100 text-purple-800" },
+    "new-direction": { label: "新方向", color: "bg-emerald-100 text-emerald-800" },
+    strengthen: { label: "强化论证", color: "bg-rose-100 text-rose-800" },
+    delete: { label: "删除", color: "bg-red-100 text-red-700" },
     keep: { label: "保留", color: "bg-gray-100 text-gray-600" },
-    "add-paper": { label: "补文献", color: "bg-purple-100 text-purple-800" },
     custom: { label: "自定义", color: "bg-indigo-100 text-indigo-800" },
   };
 
@@ -612,7 +626,9 @@ Answer in Chinese. Be specific and actionable.`;
               </>
             )}
             {gapAnalysis && !revisionPlan && (
-              <Button onClick={handleGeneratePlan} disabled={isWorking} className="bg-teal text-teal-foreground hover:bg-teal/90 h-8 text-xs">生成修改计划</Button>
+              <Button onClick={handleGeneratePlan} disabled={isWorking || basket.filter(b => b.action === "add-paper").length === 0} className="bg-teal text-teal-foreground hover:bg-teal/90 h-8 text-xs">
+                基于已选文献生成修改计划（{basket.filter(b => b.action === "add-paper").length} 篇）
+              </Button>
             )}
             {basket.length > 0 && (
               <Button onClick={handleRewrite} disabled={isWorking} className="bg-teal text-teal-foreground hover:bg-teal/90 h-8 text-xs">
