@@ -349,9 +349,14 @@ export default function GraphPage() {
             </div>
           )}
 
-          {papers.length === 0 && !papersLoading && (
-            <p className="text-xs text-amber-600">
-              暂无已上传原文的文献。请先在「文献库」中上传 PDF 文献。
+          {!papersLoading && (
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-1.5">
+              {papers.length === 0
+                ? "暂无已上传原文的文献。"
+                : `当前 ${papers.length} 篇已上传原文。`}
+              本功能仅基于已上传 PDF 原文的文献进行分析，请确保在{" "}
+              <Link href={`/projects/${projectId}/papers`} className="underline font-medium">文献库</Link>{" "}
+              中上传所需文献的 PDF 全文。
             </p>
           )}
         </CardContent>
