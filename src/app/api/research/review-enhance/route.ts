@@ -104,6 +104,10 @@ export async function POST(request: Request) {
     provider?: AIProvider;
   };
 
+  // Use deepseek-fast for internal pipeline steps (search, gap analysis, plan generation)
+  // User's model choice only affects the final rewrite/chat quality
+  const pipelineProvider: AIProvider = "deepseek-fast";
+
   // ── analyze-draft ──
   if (action === "analyze-draft") {
     const { draftText, libraryPapers } = body as {
@@ -113,7 +117,7 @@ export async function POST(request: Request) {
 
     return createSSEStream(async (send) => {
       send({ type: "status", message: "正在分析综述初稿..." });
-      const analysis = await analyzeDraft(draftText, libraryPapers, provider);
+      const analysis = await analyzeDraft(draftText, libraryPapers, pipelineProvider);
       send({ type: "analysis", data: analysis });
       send({ type: "done" });
     });
@@ -137,9 +141,9 @@ export async function POST(request: Request) {
 
       const searchResult = await smartSearch(
         searchQuery,
-        provider,
-        50,
-        true,
+        pipelineProvider,
+        30,
+        false,  // disable AI scoring — gap analysis does its own relevance check
         (phase, detail) => send({ type: "status", message: detail }),
         journalLang,
       );
@@ -155,7 +159,7 @@ export async function POST(request: Request) {
         abstract: p.abstract ?? "",
       }));
 
-      const gaps = await analyzeGaps(draftAnalysis, searchPapers, libraryPapers, provider);
+      const gaps = await analyzeGaps(draftAnalysis, searchPapers, libraryPapers, pipelineProvider);
       send({ type: "gaps", data: gaps, searchCount: searchResult.papers.length });
       send({ type: "done" });
     });
@@ -198,7 +202,7 @@ export async function POST(request: Request) {
       }
 
       send({ type: "status", message: "正在生成修改计划..." });
-      const plan = await generateRevisionPlan(draftText, draftAnalysis, gapAnalysis, libraryPapers, provider, stormContext);
+      const plan = await generateRevisionPlan(draftText, draftAnalysis, gapAnalysis, libraryPapers, pipelineProvider, stormContext);
       send({ type: "plan", data: plan });
       send({ type: "done" });
     });

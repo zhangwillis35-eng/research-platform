@@ -103,6 +103,7 @@ export async function analyzeDraft(
     jsonMode: true,
     noThinking: true,
     temperature: 0.2,
+    maxTokens: 4096,
   });
 
   return JSON.parse(response.content);
@@ -155,11 +156,11 @@ export async function analyzeGaps(
 ): Promise<GapAnalysis> {
   const draftContext = `Topic: ${draftAnalysis.topic}\nThemes: ${draftAnalysis.keyThemes.join(", ")}\nCited references (${draftAnalysis.citedReferences.length}):\n${draftAnalysis.citedReferences.slice(0, 50).join("\n")}\nStructure:\n${draftAnalysis.structureOutline.map(s => `- ${s.heading} (${s.citationCount} citations): ${s.summary}`).join("\n")}\nWeak sections: ${draftAnalysis.weakSections.join("; ")}`;
 
-  const searchContext = searchPapers.slice(0, 30).map((p, i) =>
-    `[New-${i + 1}] ${p.title} (${p.year}) — ${p.authors}\nVenue: ${p.venue}\nAbstract: ${p.abstract?.slice(0, 300) ?? "N/A"}`
-  ).join("\n\n");
+  const searchContext = searchPapers.slice(0, 20).map((p, i) =>
+    `[New-${i + 1}] ${p.title} (${p.year}) — ${p.authors}\n${p.venue} | ${p.abstract?.slice(0, 200) ?? "N/A"}`
+  ).join("\n");
 
-  const libraryContext = libraryPapers.slice(0, 30).map((p, i) => {
+  const libraryContext = libraryPapers.slice(0, 20).map((p, i) => {
     const authors = typeof p.authors === "string" ? p.authors : (p.authors ?? []).map(a => a.name).join(", ");
     return `[Lib-${i + 1}] ${p.title} (${p.year ?? "?"}) — ${authors}`;
   }).join("\n");
@@ -174,6 +175,7 @@ export async function analyzeGaps(
     jsonMode: true,
     noThinking: true,
     temperature: 0.2,
+    maxTokens: 4096,
   });
 
   return JSON.parse(response.content);
@@ -222,6 +224,7 @@ export async function generateRevisionPlan(
     jsonMode: true,
     noThinking: true,
     temperature: 0.3,
+    maxTokens: 4096,
   });
 
   return JSON.parse(response.content);
