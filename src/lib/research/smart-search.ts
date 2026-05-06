@@ -612,7 +612,7 @@ export async function smartSearch(
   const enrichCap = Math.min(allDeduped.length, Math.min(Math.max(limit * 2, 80), 100));
   const rawPapers = allDeduped.slice(0, enrichCap);
   if (allDeduped.length > enrichCap) {
-    onProgress?.("enrich", `去重后 ${allDeduped.length} 篇，按引用量保留前 ${enrichCap} 篇，补全摘要 + 期刊元数据...`);
+    onProgress?.("enrich", `去重后 ${allDeduped.length} 篇，按期刊等级 + 引用量保留前 ${enrichCap} 篇，补全摘要 + 期刊元数据...`);
   } else {
     onProgress?.("enrich", `去重后 ${rawPapers.length} 篇，补全摘要 + 期刊元数据...`);
   }
