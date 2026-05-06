@@ -25,6 +25,12 @@ export interface GapPaper {
   abstract: string;
   relevanceReason: string;
   suggestedSection: string;
+  aiAnalysis?: string;
+  citationCount?: number;
+  doi?: string;
+  relevanceScore?: number;
+  journalRanking?: { badges?: string[]; utd24?: boolean; ft50?: boolean };
+  journalMeta?: { jcrQuartile?: string; absRating?: string; impactFactor?: number; ssci?: boolean; sci?: boolean };
 }
 
 export interface TopicGroup {
@@ -195,16 +201,21 @@ export async function analyzeGaps(
     papers: (tg.paperIndices ?? [])
       .filter((i: number) => i >= 0 && i < searchPapers.length)
       .map((i: number) => {
-        const p = searchPapers[i];
+        const p = searchPapers[i] as Record<string, unknown>;
         return {
-          title: p.title,
-          authors: p.authors,
-          year: p.year,
-          venue: p.venue,
-          abstract: p.abstract,
+          title: p.title as string,
+          authors: p.authors as string,
+          year: p.year as number,
+          venue: p.venue as string,
+          abstract: p.abstract as string,
           relevanceReason: "",
           suggestedSection: tg.topic,
-          aiAnalysis: (p as { aiAnalysis?: string }).aiAnalysis,
+          aiAnalysis: p.aiAnalysis as string | undefined,
+          citationCount: p.citationCount as number | undefined,
+          doi: p.doi as string | undefined,
+          relevanceScore: p.relevanceScore as number | undefined,
+          journalRanking: p.journalRanking as GapPaper["journalRanking"],
+          journalMeta: p.journalMeta as GapPaper["journalMeta"],
         };
       }),
   }));

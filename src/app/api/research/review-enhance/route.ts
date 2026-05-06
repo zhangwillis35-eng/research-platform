@@ -155,11 +155,8 @@ export async function POST(request: Request) {
       const { concurrentPool: pool } = await import("@/lib/concurrent-pool");
       const searchPapersRaw = searchResult.papers.slice(0, 50);
 
-      const analyzedPapers: Array<{
-        title: string; authors: string; year: number; venue: string;
-        abstract: string; aiAnalysis: string;
-        relevanceScore?: number; relevanceReason?: string;
-      }> = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const analyzedPapers: Array<any> = [];
 
       await pool(
         searchPapersRaw,
@@ -178,6 +175,8 @@ export async function POST(request: Request) {
             aiAnalysis = res.content;
           } catch { /* skip */ }
 
+          // Preserve ALL metadata from search results (journalMeta, journalRanking, citations)
+          const ext = p as unknown as Record<string, unknown>;
           analyzedPapers.push({
             title: p.title,
             authors,
@@ -185,8 +184,12 @@ export async function POST(request: Request) {
             venue: String(p.venue ?? ""),
             abstract: p.abstract ?? "",
             aiAnalysis,
-            relevanceScore: (p as unknown as { relevanceScore?: number }).relevanceScore,
-            relevanceReason: (p as unknown as { relevanceReason?: string }).relevanceReason,
+            citationCount: p.citationCount ?? 0,
+            doi: p.doi,
+            relevanceScore: ext.relevanceScore,
+            relevanceReason: ext.relevanceReason,
+            journalRanking: ext.journalRanking ?? p.journalRanking,
+            journalMeta: ext.journalMeta ?? p.journalMeta,
           });
         },
         20, // 20 concurrent AI analysis calls

@@ -911,6 +911,45 @@ Answer in Chinese. Be specific and actionable.`;
 
 // ─── Sub-components ──────────────────────────────
 
+const rankingBadgeColors: Record<string, string> = {
+  UTD24: "bg-red-600 text-white", FT50: "bg-amber-500 text-white",
+  SSCI: "bg-blue-600 text-white", SCI: "bg-cyan-600 text-white",
+  "ABS 4*": "bg-purple-700 text-white", "ABS 4": "bg-purple-600 text-white", "ABS 3": "bg-purple-500 text-white",
+  "JCR Q1": "bg-emerald-600 text-white", "JCR Q2": "bg-emerald-400 text-white",
+  arXiv: "bg-orange-100 text-orange-800",
+};
+
+function PaperBadges({ paper }: { paper: TopicGroup["papers"][0] }) {
+  const badges: string[] = [];
+  const r = paper.journalRanking;
+  const m = paper.journalMeta;
+  if (r?.utd24) badges.push("UTD24");
+  if (r?.ft50) badges.push("FT50");
+  if (m?.absRating) badges.push(`ABS ${m.absRating}`);
+  if (m?.jcrQuartile) badges.push(`JCR ${m.jcrQuartile}`);
+  if (m?.ssci) badges.push("SSCI");
+  if (m?.sci) badges.push("SCI");
+  if (r?.badges) {
+    for (const b of r.badges) {
+      if (!badges.includes(b)) badges.push(b);
+    }
+  }
+  // Venue-based Nature/Science detection
+  const v = (paper.venue ?? "").toLowerCase();
+  if (v.includes("nature") && !badges.some(b => b.includes("Nature"))) badges.push("Nature");
+  if ((v.startsWith("science") || v.includes("science ")) && !v.includes("computer") && !badges.some(b => b.includes("Science"))) badges.push("Science");
+  if (v.includes("arxiv") && !badges.includes("arXiv")) badges.push("arXiv");
+
+  if (badges.length === 0) return null;
+  return (
+    <span className="flex flex-wrap gap-0.5">
+      {badges.map(b => (
+        <span key={b} className={`px-1 py-0 rounded text-[8px] font-medium ${rankingBadgeColors[b] ?? "bg-gray-100 text-gray-700"}`}>{b}</span>
+      ))}
+    </span>
+  );
+}
+
 function TopicGroupCard({ group, groupIndex, basket, onTogglePaper, isInBasket }: {
   group: TopicGroup;
   groupIndex: number;
@@ -938,20 +977,43 @@ function TopicGroupCard({ group, groupIndex, basket, onTogglePaper, isInBasket }
           {group.papers.map((p, pi) => {
             const checked = isInBasket(p);
             return (
-              <div key={pi} className={`flex items-start gap-2 p-2 rounded border text-xs transition-colors ${checked ? "border-teal/40 bg-teal/5" : "border-border/30 hover:border-border"}`}>
+              <div key={pi} className={`flex items-start gap-2 p-2.5 rounded border text-xs transition-colors ${checked ? "border-teal/40 bg-teal/5" : "border-border/30 hover:border-border"}`}>
                 <input
                   type="checkbox"
                   checked={checked}
                   onChange={() => onTogglePaper(p)}
-                  className="accent-teal shrink-0 mt-0.5"
+                  className="accent-teal shrink-0 mt-1"
                 />
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium leading-snug">{p.title} ({p.year})</p>
-                  <p className="text-[10px] text-muted-foreground">{p.authors} — {p.venue}</p>
+                <div className="min-w-0 flex-1 space-y-1">
+                  {/* Title + year */}
+                  <p className="font-medium leading-snug text-teal">{p.title}</p>
+                  {/* Authors + venue + badges */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] text-muted-foreground">{p.authors}</span>
+                    <span className="text-[10px] text-muted-foreground">({p.year})</span>
+                    <span className="text-[10px] text-muted-foreground">— {p.venue}</span>
+                    <PaperBadges paper={p} />
+                    {(p.citationCount ?? 0) > 0 && (
+                      <span className="text-[9px] text-muted-foreground border border-border/50 rounded px-1">
+                        引用 {p.citationCount}
+                      </span>
+                    )}
+                    {p.relevanceScore != null && (
+                      <span className={`text-[9px] px-1 rounded ${p.relevanceScore >= 7 ? "bg-teal/10 text-teal" : "bg-muted text-muted-foreground"}`}>
+                        相关 {p.relevanceScore.toFixed(1)}
+                      </span>
+                    )}
+                    {p.journalMeta?.impactFactor && (
+                      <span className="text-[9px] text-muted-foreground border border-border/50 rounded px-1">
+                        IF {p.journalMeta.impactFactor.toFixed(1)}
+                      </span>
+                    )}
+                  </div>
+                  {/* AI Analysis */}
                   {p.aiAnalysis && (
-                    <p className="text-[10px] text-foreground/70 mt-1 bg-muted/50 rounded px-2 py-1 leading-relaxed">
+                    <div className="text-[10px] text-foreground/80 bg-muted/40 border border-border/20 rounded px-2.5 py-1.5 leading-relaxed">
                       {p.aiAnalysis}
-                    </p>
+                    </div>
                   )}
                 </div>
               </div>
