@@ -36,11 +36,13 @@ export async function GET(request: Request) {
     where.folder = { contains: "AI 前沿" };
   }
 
-  // Exclude pdfData from list queries (binary, too large)
+  // Exclude pdfData and fullText from list queries (too large for JSON transport)
+  // fullText is only needed when doing analysis — fetched separately via paper detail endpoint
+  const selectFullText = source === "fulltext"; // fulltext source needs it for analysis
   const papers = await prisma.paper.findMany({
     where,
     orderBy: { citationCount: "desc" },
-    omit: { pdfData: true },
+    omit: { pdfData: true, ...(!selectFullText ? { fullText: true } : {}) },
   });
 
   return NextResponse.json({ papers });
