@@ -213,8 +213,18 @@ CRITICAL — BIDIRECTIONAL INTERPRETATION: When two concepts A and B are mention
 - B is affected by A (e.g. "AI for decarbonization" — AI helps reduce emissions)
 - A and B interact (e.g. "AI climate policy" — the intersection)
 You MUST generate key terms covering ALL directions. Missing one direction = missing half the literature.
-Example: "AI与碳排放" → MUST include BOTH "AI carbon footprint" (AI causes emissions) AND "AI for decarbonization" / "AI climate mitigation" / "AI net-zero" (AI reduces emissions)
+Example: "AI与碳排放" → MUST include ALL of:
+  - "AI carbon footprint" (AI causes emissions)
+  - "AI for decarbonization" (AI helps reduce emissions)
+  - "AI net-zero emissions" (AI's role in achieving net-zero — this is the term Nature/Science uses!)
+  - "AI climate mitigation" (AI for climate action)
+  - "AI energy consumption" (AI's energy/power usage)
+  - "sustainable AI" (making AI itself greener)
 Example: "数字化转型与员工" → BOTH "digital transformation employee displacement" AND "digital transformation employee empowerment"
+
+ALSO CRITICAL — SEMANTIC BREADTH: For any concept like "碳排放" (carbon emissions), you MUST include the FULL semantic family, not just the literal translation:
+  "carbon emissions" → also "CO2 emissions", "greenhouse gas", "net-zero", "climate change", "global warming", "decarbonization", "emission reduction", "carbon neutrality"
+  Missing "net-zero" when searching for "carbon emissions" = missing landmark Nature/Science papers!
 
 For METHODOLOGICAL queries, you MUST:
 - Include the domain + method as a combined term (e.g. "recruitment data analysis")
@@ -510,9 +520,13 @@ export async function smartSearch(
     // Google Scholar: merge all precision queries into 1 call, all broad into 1 call
     const gsPrecisionQuery = precisionQueries.join(" OR ");
     const gsBroadQuery = broadQueries.join(" OR ");
-    const gsQueries = [gsPrecisionQuery, gsBroadQuery].filter(Boolean);
-    // Free source queries: 3 precision + 2 broad = 5 (covers more synonym dimensions)
-    const freeQueries = [...precisionQueries.slice(0, 3), ...broadQueries.slice(0, 2)];
+    // Add raw semantic query to Google Scholar too (no exact phrases, catches diverse terminology)
+    const rawSemanticGS = plan.translatedInput || input;
+    const gsQueries = [gsPrecisionQuery, gsBroadQuery, rawSemanticGS].filter(Boolean);
+    // Free source queries: 3 precision + 2 broad + 1 raw semantic = 6
+    // The raw semantic query (no quotes) catches papers using different terminology
+    const rawSemanticQuery = plan.translatedInput || input;
+    const freeQueries = [...precisionQueries.slice(0, 3), ...broadQueries.slice(0, 2), rawSemanticQuery];
     const freeLimit = Math.max(20, Math.ceil((limit * 3) / (freeQueries.length || 1)));
 
     const totalQueries = gsQueries.length + freeQueries.length;
