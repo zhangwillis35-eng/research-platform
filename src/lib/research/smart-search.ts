@@ -621,8 +621,8 @@ export async function smartSearch(
     return b.citationCount - a.citationCount;
   });
   // Hard cap at 100 — scoring 200 papers causes SSE timeout
-  // Cap enrichment: max 80 papers to avoid SSE timeout on slow external APIs
-  const enrichCap = Math.min(allDeduped.length, Math.min(Math.max(limit * 2, 60), 80));
+  // Cap enrichment at limit (30s timeout protects against SSE disconnect)
+  const enrichCap = Math.min(allDeduped.length, Math.max(limit, 80));
   const rawPapers = allDeduped.slice(0, enrichCap);
   if (allDeduped.length > enrichCap) {
     onProgress?.("enrich", `去重后 ${allDeduped.length} 篇，按期刊等级 + 引用量保留前 ${enrichCap} 篇，补全摘要 + 期刊元数据...`);
