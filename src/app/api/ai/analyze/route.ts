@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { callAI, setAIContext } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
+import { concurrentPool } from "@/lib/concurrent-pool";
 
 const ANALYSIS_PROMPTS: Record<string, string> = {
   variables: `你是管理学研究方法论专家。请从提供的论文中提取所有变量关系。
@@ -117,12 +118,100 @@ export async function POST(request: Request) {
       );
     }
 
+    // ── Variables extraction: batch for large paper sets ──
+    if (type === "variables") {
+      const BATCH_SIZE = 10;
+      // Split content by paper separator (--- between [N] entries)
+      const paperBlocks = content.split(/\n---\n/).filter(b => b.trim());
+
+      if (paperBlocks.length > BATCH_SIZE) {
+        // Batch into groups of BATCH_SIZE, extract in parallel, merge
+        const batches: string[][] = [];
+        for (let i = 0; i < paperBlocks.length; i += BATCH_SIZE) {
+          batches.push(paperBlocks.slice(i, i + BATCH_SIZE));
+        }
+
+        interface Relation {
+          independentVar: string;
+          dependentVar: string;
+          mediators: string[];
+          moderators: string[];
+          direction: string;
+          effectSize: string;
+          sampleContext: string;
+          sources: number[];
+        }
+
+        const allRelations: Relation[] = [];
+
+        await concurrentPool(
+          batches,
+          async (batch, batchIdx) => {
+            const offset = batchIdx * BATCH_SIZE;
+            // Re-number papers within batch starting from [1]
+            const batchContent = batch.map((block, i) => {
+              return block.replace(/^\[(\d+)\]/, `[${i + 1}]`);
+            }).join("\n---\n");
+
+            try {
+              const res = await callAI({
+                provider,
+                system: systemPrompt,
+                messages: [{ role: "user", content: batchContent }],
+                jsonMode: true,
+                noThinking: true,
+                temperature: 0.2,
+                maxTokens: 4096,
+              });
+              const parsed = JSON.parse(res.content);
+              const relations: Relation[] = parsed.relations ?? [];
+              // Remap sources back to global paper numbers
+              for (const rel of relations) {
+                rel.sources = (rel.sources ?? []).map((s: number) => s + offset);
+                allRelations.push(rel);
+              }
+            } catch {
+              // Skip failed batch
+            }
+          },
+          4, // 4 concurrent batches
+        );
+
+        // Merge: deduplicate same IV→DV pairs, combine sources
+        const mergedMap = new Map<string, Relation>();
+        for (const rel of allRelations) {
+          const key = `${rel.independentVar}→${rel.dependentVar}`;
+          const existing = mergedMap.get(key);
+          if (existing) {
+            existing.sources = [...new Set([...existing.sources, ...rel.sources])];
+            existing.mediators = [...new Set([...existing.mediators, ...rel.mediators])];
+            existing.moderators = [...new Set([...existing.moderators, ...rel.moderators])];
+            if (existing.direction !== rel.direction && rel.direction !== "unknown") {
+              existing.direction = existing.direction === "unknown" ? rel.direction : "mixed";
+            }
+          } else {
+            mergedMap.set(key, { ...rel });
+          }
+        }
+
+        const merged = { relations: [...mergedMap.values()] };
+        return NextResponse.json({
+          result: merged,
+          provider,
+          batches: batches.length,
+          totalPapers: paperBlocks.length,
+        });
+      }
+    }
+
     const response = await callAI({
       provider,
       system: systemPrompt,
       messages: [{ role: "user", content }],
       jsonMode: type !== "review",
+      noThinking: true,
       temperature: type === "ideas" ? 0.7 : 0.2,
+      maxTokens: 4096,
     });
 
     // Try to parse JSON response for structured types

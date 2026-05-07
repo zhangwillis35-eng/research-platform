@@ -135,6 +135,7 @@ async function generateAndRankIdeas(
       },
     ],
     jsonMode: true,
+    noThinking: true,
     temperature: 0.7,
     maxTokens: 4096,
   });
@@ -176,6 +177,7 @@ async function simulatePeerReview(
       },
     ],
     jsonMode: true,
+    noThinking: true,
     temperature: 0.3,
     maxTokens: 2048,
   });

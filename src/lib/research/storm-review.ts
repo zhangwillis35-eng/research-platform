@@ -133,6 +133,7 @@ async function generateSectionText(
       role: "user",
       content: `## 章节: ${section.heading}（${section.perspective}视角）\n\n核心发现：\n${section.keyFindings.map((f, i) => `${i + 1}. ${f}`).join("\n")}\n\n相关文献:\n${relevantPapers}\n\n请撰写约 ${targetWords} 字的章节正文。`,
     }],
+    noThinking: true,
     temperature: 0.4,
     maxTokens: Math.max(2048, Math.ceil(targetWords * 1.5)),
   });
