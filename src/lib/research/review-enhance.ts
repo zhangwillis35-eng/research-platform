@@ -61,16 +61,20 @@ export interface GapAnalysis {
   newPapers: GapPaper[];
 }
 
+export interface RevisionItem {
+  heading: string;
+  description: string;
+  papersToAdd: string[];
+  priority: "high" | "medium" | "low";
+}
+
 export interface RevisionPlan {
-  sections: {
-    action: "add" | "expand" | "deepen" | "restructure" | "add-paper" | "new-direction" | "strengthen" | "delete" | "keep";
-    heading: string;
-    description: string;
-    papersToAdd: string[];
-    priority: "high" | "medium" | "low";
-  }[];
+  improve: RevisionItem[];
+  extend: RevisionItem[];
   overallStrategy: string;
   estimatedChanges: string;
+  // Legacy compat
+  sections?: { action: string; heading: string; description: string; papersToAdd: string[]; priority: string }[];
 }
 
 export type EnhancePhase =
@@ -250,39 +254,48 @@ export async function analyzeGaps(
 
 // ─── Phase 3: Revision Plan ──────────────────────
 
-const REVISION_PLAN_PROMPT = `You are a literature review revision planning expert. Based on the draft analysis and gap analysis, create a comprehensive revision plan covering ALL aspects — not just adding papers, but also deepening analysis, exploring new directions, and strengthening arguments.
+const REVISION_PLAN_PROMPT = `You are a literature review revision planning expert. Based on the draft analysis, coverage gaps, and user-selected improvement suggestions, create a structured revision plan with TWO categories:
 
-For each revision item, specify an action type:
-- "add": New section/subsection to add (new topic not covered in draft)
-- "expand": Expand existing section with more content and citations
-- "deepen": Deepen theoretical/methodological analysis in existing section (go beyond surface level — analyze mechanisms, boundary conditions, contradictions)
-- "restructure": Reorganize or merge sections for better logical flow
-- "add-paper": Add specific high-quality papers to strengthen evidence
-- "new-direction": Explore a new research direction or perspective not in the draft (cross-disciplinary angles, emerging trends, contrarian views)
-- "strengthen": Strengthen weak arguments with better evidence, counterarguments, or theoretical grounding
-- "delete": Remove redundant or low-quality content
-- "keep": No changes needed
+## Category 1: 已有内容改进 (improve)
+Optimize, deepen, and supplement content that ALREADY EXISTS in the draft:
+- Strengthen weak arguments with better evidence or counterarguments
+- Deepen theoretical analysis (mechanisms, boundary conditions, contradictions)
+- Expand existing sections with more citations and richer discussion
+- Improve logical flow, restructure paragraphs
+- Fix factual or citation issues
 
-IMPORTANT: Generate a MIX of action types. Do NOT only suggest "add-paper" — a good revision plan should include:
-- At least 2 "deepen" items (深入分析某个理论机制/方法论局限)
-- At least 1 "new-direction" item (新的研究视角/跨学科连接)
-- At least 1 "strengthen" item (强化薄弱论证)
-- "add-paper" items where specific papers would help
+## Category 2: 方向扩展延伸 (extend)
+Propose NEW sub-directions that the draft does NOT cover:
+- New research perspectives or cross-disciplinary angles
+- Emerging trends not mentioned in the draft
+- New subsections or topics that would make the review more comprehensive
+- Contrarian or critical viewpoints missing from the draft
 
-Be specific and actionable. This plan will be shown to the user for approval.
+For EACH item, you MUST specify which papers from the available papers list should be incorporated. Use exact paper titles.
 
 Output strict JSON:
 {
-  "sections": [{
-    "action": "add|expand|deepen|restructure|add-paper|new-direction|strengthen|delete|keep",
-    "heading": "章节标题或修改主题（中文）",
-    "description": "具体修改内容描述（中文，详细，2-3句说明要做什么、为什么、怎么做）",
-    "papersToAdd": ["Paper Title 1"],
+  "improve": [{
+    "heading": "对应的初稿章节标题（中文）",
+    "description": "具体改进内容（中文，2-3句：改什么、为什么、怎么改）",
+    "papersToAdd": ["Exact Paper Title 1", "Exact Paper Title 2"],
+    "priority": "high|medium|low"
+  }],
+  "extend": [{
+    "heading": "新方向标题（中文）",
+    "description": "该方向的内容说明（中文，2-3句：是什么、为什么重要、如何展开）",
+    "papersToAdd": ["Exact Paper Title 1"],
     "priority": "high|medium|low"
   }],
   "overallStrategy": "整体修改策略描述（中文，2-3句）",
-  "estimatedChanges": "深入分析X处、新增方向Y个、扩展Z节、补充文献N篇"
-}`;
+  "estimatedChanges": "改进X处、新增方向Y个、涉及文献N篇"
+}
+
+IMPORTANT:
+- "improve" items: MUST reference existing sections/headings from the draft
+- "extend" items: MUST be genuinely NEW directions not in the draft
+- Each item MUST have at least 1 paper in papersToAdd (use exact titles from Available Papers)
+- Generate 3-6 "improve" items and 2-4 "extend" items`;
 
 export async function generateRevisionPlan(
   draftText: string,
@@ -321,12 +334,8 @@ Rewrite the literature review according to the revision plan. Rules:
 - CITATION FORMAT: Use standard in-text APA citations throughout: (Author, Year) or Author (Year)
   Examples: (Smith & Jones, 2023), Zhang et al. (2024), (Brown, 2022; Lee & Park, 2023)
   NEVER use internal labels like [New-1], [Lib-3], (New-1;New-9) — always convert to proper APA format using the author names and year provided in the paper data
-- Mark NEW sections with 【新增】 at the beginning
-- Mark EXPANDED content with 【扩展】 at the beginning
-- Mark DEEPENED analysis with 【深入】 at the beginning
-- Mark NEW DIRECTION content with 【新方向】 at the beginning
-- Mark STRENGTHENED arguments with 【强化】 at the beginning
-- Mark RESTRUCTURED sections with 【调整】 at the beginning
+- Mark IMPROVED content with 【改进】 at the beginning of modified paragraphs
+- Mark NEW DIRECTION content with 【新方向】 at the beginning of new sections
 - Write in academic Chinese (学术中文), clear paragraphs
 - Each claim must have a citation in APA format
 - Maintain logical flow between sections
@@ -342,10 +351,20 @@ export async function* rewriteReviewStream(
   provider: AIProvider,
   wordCount?: { min: number; max: number },
 ): AsyncGenerator<string> {
-  const planContext = revisionPlan.sections
-    .filter(s => s.action !== "keep")
-    .map(s => `[${s.action.toUpperCase()}] ${s.heading}: ${s.description}\nPapers: ${s.papersToAdd.join("; ")}`)
+  const improveContext = (revisionPlan.improve ?? [])
+    .map(s => `[已有内容改进] ${s.heading}: ${s.description}\nPapers: ${s.papersToAdd.join("; ")}`)
     .join("\n\n");
+  const extendContext = (revisionPlan.extend ?? [])
+    .map(s => `[方向扩展延伸] ${s.heading}: ${s.description}\nPapers: ${s.papersToAdd.join("; ")}`)
+    .join("\n\n");
+  const planContext = [improveContext, extendContext].filter(Boolean).join("\n\n" + "=".repeat(30) + "\n\n");
+  // Legacy fallback
+  if (!planContext && revisionPlan.sections) {
+    const legacy = revisionPlan.sections.filter(s => s.action !== "keep")
+      .map(s => `[${s.action}] ${s.heading}: ${s.description}\nPapers: ${s.papersToAdd.join("; ")}`)
+      .join("\n\n");
+    if (legacy) { /* use legacy below */ }
+  }
 
   // Format papers with author names front and center (for APA citations)
   const papersContext = [

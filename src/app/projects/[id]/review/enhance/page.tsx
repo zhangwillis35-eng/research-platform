@@ -40,7 +40,7 @@ interface Paper {
 
 interface BasketItem {
   id: string;
-  action: "add" | "expand" | "deepen" | "restructure" | "add-paper" | "new-direction" | "strengthen" | "delete" | "custom";
+  action: "improve" | "extend" | "custom";
   heading: string;
   description: string;
   papersToAdd: string[];
@@ -140,15 +140,23 @@ export default function ReviewEnhancePage() {
   // ─── Convert plan sections to basket items ─────
 
   function planToBasketItems(plan: RevisionPlan): BasketItem[] {
-    return plan.sections.filter(s => s.action !== "keep").map((s, i) => ({
-      id: `plan-${i}`,
-      action: s.action as BasketItem["action"],
-      heading: s.heading,
-      description: s.description,
-      papersToAdd: s.papersToAdd,
-      source: "plan" as const,
-      round: 0,
+    const items: BasketItem[] = [];
+    (plan.improve ?? []).forEach((s, i) => items.push({
+      id: `improve-${i}`, action: "improve", heading: s.heading, description: s.description,
+      papersToAdd: s.papersToAdd, source: "plan", round: 0,
     }));
+    (plan.extend ?? []).forEach((s, i) => items.push({
+      id: `extend-${i}`, action: "extend", heading: s.heading, description: s.description,
+      papersToAdd: s.papersToAdd, source: "plan", round: 0,
+    }));
+    // Legacy fallback
+    if (items.length === 0 && plan.sections) {
+      plan.sections.filter(s => s.action !== "keep").forEach((s, i) => items.push({
+        id: `plan-${i}`, action: s.action === "extend" || s.action === "add" || s.action === "new-direction" ? "extend" : "improve",
+        heading: s.heading, description: s.description, papersToAdd: s.papersToAdd, source: "plan", round: 0,
+      }));
+    }
+    return items;
   }
 
   // ─── Handlers ──────────────────────────────────
@@ -286,9 +294,10 @@ export default function ReviewEnhancePage() {
     const signal = xAbort.reset();
     try {
       const basketPlan: RevisionPlan = {
-        sections: basket.map(b => ({ action: b.action === "add-paper" || b.action === "custom" ? "expand" : b.action, heading: b.heading, description: b.description, papersToAdd: b.papersToAdd, priority: "high" as const })),
-        overallStrategy: `用户选择了 ${basket.length} 项修改，请严格按照这些修改执行。`,
-        estimatedChanges: `${basket.length} 项修改`,
+        improve: basket.filter(b => b.action === "improve" || b.action === "custom").map(b => ({ heading: b.heading, description: b.description, papersToAdd: b.papersToAdd, priority: "high" as const })),
+        extend: basket.filter(b => b.action === "extend").map(b => ({ heading: b.heading, description: b.description, papersToAdd: b.papersToAdd, priority: "high" as const })),
+        overallStrategy: `用户选择了 ${basket.filter(b => b.action === "improve").length} 项内容改进和 ${basket.filter(b => b.action === "extend").length} 项方向扩展，请严格按照这些修改执行。`,
+        estimatedChanges: `改进 ${basket.filter(b => b.action === "improve").length} 处、扩展 ${basket.filter(b => b.action === "extend").length} 个方向`,
       };
       const searchPapers = (gapAnalysis?.newPapers ?? []).map(p => ({ title: p.title, authors: p.authors, year: p.year, venue: p.venue, abstract: p.abstract }));
       const res = await fetch("/api/research/review-enhance", {
@@ -469,7 +478,7 @@ Answer in Chinese. Be specific and actionable.`;
       const [, num, action, heading, desc] = match;
       items.push({
         id: `chat-r${round}-${num}`,
-        action: (["add", "expand", "deepen", "restructure", "add-paper", "new-direction", "strengthen", "delete"].includes(action) ? action : "custom") as BasketItem["action"],
+        action: (action === "extend" || action === "add" || action === "new-direction" ? "extend" : action === "improve" || action === "expand" || action === "deepen" || action === "strengthen" || action === "add-paper" ? "improve" : "custom") as BasketItem["action"],
         heading: heading.trim(),
         description: desc.trim(),
         papersToAdd: [],
@@ -521,16 +530,14 @@ Answer in Chinese. Be specific and actionable.`;
   }
 
   const actionBadge: Record<string, { label: string; color: string }> = {
-    add: { label: "新增章节", color: "bg-green-100 text-green-800" },
-    expand: { label: "扩展内容", color: "bg-blue-100 text-blue-800" },
-    deepen: { label: "深入分析", color: "bg-cyan-100 text-cyan-800" },
-    restructure: { label: "调整结构", color: "bg-amber-100 text-amber-800" },
-    "add-paper": { label: "补充文献", color: "bg-purple-100 text-purple-800" },
-    "new-direction": { label: "新方向", color: "bg-emerald-100 text-emerald-800" },
-    strengthen: { label: "强化论证", color: "bg-rose-100 text-rose-800" },
-    delete: { label: "删除", color: "bg-red-100 text-red-700" },
-    keep: { label: "保留", color: "bg-gray-100 text-gray-600" },
+    improve: { label: "已有内容改进", color: "bg-blue-100 text-blue-800" },
+    extend: { label: "方向扩展延伸", color: "bg-emerald-100 text-emerald-800" },
     custom: { label: "自定义", color: "bg-indigo-100 text-indigo-800" },
+    // Legacy compat
+    "add-paper": { label: "补充文献", color: "bg-purple-100 text-purple-800" },
+    add: { label: "新增", color: "bg-green-100 text-green-800" },
+    expand: { label: "扩展", color: "bg-blue-100 text-blue-800" },
+    deepen: { label: "深入", color: "bg-cyan-100 text-cyan-800" },
   };
 
   const severityColor: Record<string, string> = { high: "text-red-600", medium: "text-amber-600", low: "text-gray-500" };
@@ -639,7 +646,7 @@ Answer in Chinese. Be specific and actionable.`;
             )}
             {gapAnalysis && !revisionPlan && (
               <Button onClick={handleGeneratePlan} disabled={isWorking || (selectedGaps.size === 0 && selectedWeakSections.size === 0)} className="bg-teal text-teal-foreground hover:bg-teal/90 h-8 text-xs">
-                基于已选方案生成修改计划（{selectedGaps.size} 个缺口 · {basket.filter(b => b.action === "add-paper").length} 篇文献 · {selectedWeakSections.size} 项改进）
+                基于已选方案生成修改计划（{selectedGaps.size} 个缺口 · {basket.length} 篇文献 · {selectedWeakSections.size} 项改进）
               </Button>
             )}
             {basket.length > 0 && (
@@ -942,9 +949,9 @@ Answer in Chinese. Be specific and actionable.`;
                                   onChange={() => {
                                     const item: BasketItem = {
                                       id: `gap-${gi}-${p.title.slice(0, 20)}`,
-                                      action: "add-paper",
+                                      action: "improve",
                                       heading: gap.theme,
-                                      description: `引入 ${p.title} (${p.year})`,
+                                      description: `补充 ${p.title} (${p.year})`,
                                       papersToAdd: [p.title],
                                       source: "plan",
                                       round: 0,
@@ -1016,7 +1023,7 @@ Answer in Chinese. Be specific and actionable.`;
             </Card>
           )}
 
-          {/* ═══ Revision Plan with Checkboxes ═══ */}
+          {/* ═══ Revision Plan — Two Categories ═══ */}
           {revisionPlan && (
             <Card>
               <CardHeader className="pb-3">
@@ -1024,34 +1031,85 @@ Answer in Chinese. Be specific and actionable.`;
                   <CardTitle className="text-sm">修改计划（勾选添加到修改篮）</CardTitle>
                   <Badge variant="secondary" className="text-[10px]">{revisionPlan.estimatedChanges}</Badge>
                 </div>
+                <p className="text-xs text-muted-foreground mt-1">{revisionPlan.overallStrategy}</p>
               </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <p className="text-xs text-muted-foreground">{revisionPlan.overallStrategy}</p>
-                {revisionPlan.sections.map((s, i) => {
-                  const itemId = `plan-${i}`;
-                  const checked = isInBasket(itemId);
-                  const item: BasketItem = {
-                    id: itemId, action: s.action as BasketItem["action"], heading: s.heading,
-                    description: s.description, papersToAdd: s.papersToAdd, source: "plan", round: 0,
-                  };
-                  return (
-                    <div key={i} className={`flex items-start gap-2 p-2 rounded border transition-colors ${checked ? "border-teal/40 bg-teal/5" : "border-border/50"}`}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleBasketItem(item)}
-                        className="accent-teal shrink-0 mt-1"
-                      />
-                      <Badge className={`text-[9px] shrink-0 ${actionBadge[s.action]?.color ?? ""}`}>{actionBadge[s.action]?.label ?? s.action}</Badge>
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium">{s.heading}</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">{s.description}</p>
-                        {s.papersToAdd.length > 0 && <p className="text-[10px] text-teal mt-0.5">引入: {s.papersToAdd.join("; ")}</p>}
-                      </div>
-                      <Badge variant="outline" className={`text-[9px] shrink-0 ${severityColor[s.priority]}`}>{s.priority}</Badge>
+              <CardContent className="space-y-4 text-sm">
+                {/* Category 1: 已有内容改进 */}
+                {(revisionPlan.improve ?? []).length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge className="bg-blue-100 text-blue-800 text-[10px]">已有内容改进</Badge>
+                      <span className="text-[10px] text-muted-foreground">对初稿已有的观点及论述进行优化和补充</span>
                     </div>
-                  );
-                })}
+                    <div className="space-y-2">
+                      {(revisionPlan.improve ?? []).map((s, i) => {
+                        const itemId = `improve-${i}`;
+                        const checked = isInBasket(itemId);
+                        const item: BasketItem = { id: itemId, action: "improve", heading: s.heading, description: s.description, papersToAdd: s.papersToAdd, source: "plan", round: 0 };
+                        return (
+                          <div key={i} className={`flex items-start gap-2 p-2.5 rounded border transition-colors ${checked ? "border-blue-300 bg-blue-50/50" : "border-border/50 hover:border-border"}`}>
+                            <input type="checkbox" checked={checked} onChange={() => toggleBasketItem(item)} className="accent-blue-600 shrink-0 mt-1" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-medium">{s.heading}</p>
+                              <p className="text-[10px] text-muted-foreground mt-0.5">{s.description}</p>
+                              {s.papersToAdd.length > 0 && <p className="text-[10px] text-teal mt-0.5">引用文献: {s.papersToAdd.join("; ")}</p>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Category 2: 方向扩展延伸 */}
+                {(revisionPlan.extend ?? []).length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge className="bg-emerald-100 text-emerald-800 text-[10px]">方向扩展延伸</Badge>
+                      <span className="text-[10px] text-muted-foreground">基于初稿提出新的子方向并加以论述</span>
+                    </div>
+                    <div className="space-y-2">
+                      {(revisionPlan.extend ?? []).map((s, i) => {
+                        const itemId = `extend-${i}`;
+                        const checked = isInBasket(itemId);
+                        const item: BasketItem = { id: itemId, action: "extend", heading: s.heading, description: s.description, papersToAdd: s.papersToAdd, source: "plan", round: 0 };
+                        return (
+                          <div key={i} className={`flex items-start gap-2 p-2.5 rounded border transition-colors ${checked ? "border-emerald-300 bg-emerald-50/50" : "border-border/50 hover:border-border"}`}>
+                            <input type="checkbox" checked={checked} onChange={() => toggleBasketItem(item)} className="accent-emerald-600 shrink-0 mt-1" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-medium">{s.heading}</p>
+                              <p className="text-[10px] text-muted-foreground mt-0.5">{s.description}</p>
+                              {s.papersToAdd.length > 0 && <p className="text-[10px] text-teal mt-0.5">引用文献: {s.papersToAdd.join("; ")}</p>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Legacy fallback */}
+                {(!revisionPlan.improve || revisionPlan.improve.length === 0) && (!revisionPlan.extend || revisionPlan.extend.length === 0) && revisionPlan.sections && (
+                  <div className="space-y-2">
+                    {revisionPlan.sections.filter(s => s.action !== "keep").map((s, i) => {
+                      const itemId = `plan-${i}`;
+                      const checked = isInBasket(itemId);
+                      const action = (s.action === "add" || s.action === "new-direction" ? "extend" : "improve") as BasketItem["action"];
+                      const item: BasketItem = { id: itemId, action, heading: s.heading, description: s.description, papersToAdd: s.papersToAdd, source: "plan", round: 0 };
+                      return (
+                        <div key={i} className={`flex items-start gap-2 p-2 rounded border ${checked ? "border-teal/40 bg-teal/5" : "border-border/50"}`}>
+                          <input type="checkbox" checked={checked} onChange={() => toggleBasketItem(item)} className="accent-teal shrink-0 mt-1" />
+                          <Badge className={`text-[9px] shrink-0 ${actionBadge[s.action]?.color ?? ""}`}>{actionBadge[s.action]?.label ?? s.action}</Badge>
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium">{s.heading}</p>
+                            <p className="text-[10px] text-muted-foreground">{s.description}</p>
+                            {s.papersToAdd.length > 0 && <p className="text-[10px] text-teal">引入: {s.papersToAdd.join("; ")}</p>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
