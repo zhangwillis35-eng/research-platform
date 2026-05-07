@@ -653,38 +653,37 @@ Answer in Chinese. Be specific and actionable.`;
             <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => fileRef.current?.click()}>重新上传初稿</Button>
           </div>
 
-          {/* ═══ Revision Basket (always visible when has items) ═══ */}
+          {/* ═══ Revision Basket (sticky, always visible when has items) ═══ */}
           {basket.length > 0 && (
-            <Card className="border-teal/40 bg-teal/[0.03]">
+            <Card className="border-teal/40 bg-teal/[0.03] sticky top-2 z-30 shadow-sm">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between cursor-pointer" onClick={() => setBasketOpen(!basketOpen)}>
                   <CardTitle className="text-sm flex items-center gap-2">
-                    🧺 修改篮
+                    修改篮
                     <Badge className="bg-teal text-white text-[10px]">{basket.length} 项</Badge>
+                    {!basketOpen && (
+                      <span className="text-[10px] text-muted-foreground font-normal ml-1">
+                        {Object.entries(basket.reduce((acc, b) => { acc[actionBadge[b.action]?.label ?? b.action] = (acc[actionBadge[b.action]?.label ?? b.action] || 0) + 1; return acc; }, {} as Record<string, number>))
+                          .map(([k, v]) => `${k}${v}`).join(" · ")}
+                      </span>
+                    )}
                   </CardTitle>
-                  <span className="text-xs text-muted-foreground">{basketOpen ? "收起" : "展开"}</span>
+                  <span className="text-xs text-muted-foreground">{basketOpen ? "▲ 收起" : "▼ 展开"}</span>
                 </div>
               </CardHeader>
               {basketOpen && (
-                <CardContent className="space-y-2 pt-0">
-                  {basket.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">篮子为空，请从下方计划或对话中勾选修改项</p>
-                  ) : (
-                    <>
-                      {basket.map((item) => (
-                        <div key={item.id} className="flex items-start gap-2 p-2 rounded border border-teal/20 bg-white text-xs">
-                          <button onClick={() => removeFromBasket(item.id)} className="text-destructive hover:text-destructive/80 shrink-0 mt-0.5" title="移除">✕</button>
-                          <Badge className={`text-[9px] shrink-0 ${actionBadge[item.action]?.color ?? ""}`}>{actionBadge[item.action]?.label ?? item.action}</Badge>
-                          <div className="min-w-0">
-                            <span className="font-medium">{item.heading}</span>
-                            <span className="text-muted-foreground ml-1">{item.description.slice(0, 80)}{item.description.length > 80 ? "..." : ""}</span>
-                            {item.source === "chat" && <Badge variant="outline" className="text-[8px] ml-1">对话 R{item.round}</Badge>}
-                          </div>
-                        </div>
-                      ))}
-                      <Button size="sm" variant="ghost" className="text-xs h-6 text-destructive" onClick={() => setBasket([])}>清空篮子</Button>
-                    </>
-                  )}
+                <CardContent className="space-y-2 pt-0 max-h-[350px] overflow-y-auto">
+                  {basket.map((item) => (
+                    <div key={item.id} className="flex items-start gap-2 p-2 rounded border border-teal/20 bg-white text-xs">
+                      <button onClick={() => removeFromBasket(item.id)} className="text-destructive hover:text-destructive/80 shrink-0 mt-0.5" title="移除">✕</button>
+                      <Badge className={`text-[9px] shrink-0 ${actionBadge[item.action]?.color ?? ""}`}>{actionBadge[item.action]?.label ?? item.action}</Badge>
+                      <div className="min-w-0">
+                        <span className="font-medium">{item.heading}</span>
+                        <span className="text-muted-foreground ml-1">{item.description.slice(0, 80)}{item.description.length > 80 ? "..." : ""}</span>
+                      </div>
+                    </div>
+                  ))}
+                  <Button size="sm" variant="ghost" className="text-xs h-6 text-destructive" onClick={() => setBasket([])}>清空篮子</Button>
                 </CardContent>
               )}
             </Card>
