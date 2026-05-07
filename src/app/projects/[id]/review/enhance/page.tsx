@@ -22,7 +22,8 @@ import type {
   GapAnalysis,
   RevisionPlan,
   EnhancePhase,
-  TopicGroup,
+  CoverageGap,
+  WeakSection,
 } from "@/lib/research/review-enhance";
 
 interface Paper {
@@ -73,6 +74,8 @@ export default function ReviewEnhancePage() {
   const [enhancedReview, setEnhancedReview] = usePersistedState<string>(NS, "enhancedReview", "");
   const [journalLang, setJournalLang] = usePersistedState<"en" | "zh">(NS, "journalLang", "en");
   const [selectedKeywords, setSelectedKeywords] = usePersistedState<Set<string>>(NS, "selKw", new Set());
+  const [selectedGaps, setSelectedGaps] = usePersistedState<Set<number>>(NS, "selGaps", new Set());
+  const [selectedWeakSections, setSelectedWeakSections] = usePersistedState<Set<number>>(NS, "selWeak", new Set());
   const [customKeyword, setCustomKeyword] = useState("");
   const [basket, setBasket] = usePersistedState<BasketItem[]>(NS, "basket", []);
   const [chatMessages, setChatMessages] = usePersistedState<ChatMessage[]>(NS, "chatMsgs", []);
@@ -235,15 +238,18 @@ export default function ReviewEnhancePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "generate-plan", draftText: draftText.slice(0, 8000), draftAnalysis, provider, engine,
-          // Only pass user-selected papers from basket + gap analysis context (filtered by basket)
-          selectedPapers: basket.filter(b => b.action === "add-paper").map(b => b.papersToAdd).flat(),
+          // Only pass user-selected gaps, papers, and weak sections
           gapAnalysis: {
             ...gapAnalysis,
-            // Filter topicGroups to only include papers the user selected
-            topicGroups: (gapAnalysis?.topicGroups ?? []).map(tg => ({
-              ...tg,
-              papers: tg.papers.filter(p => basket.some(b => b.papersToAdd?.includes(p.title))),
-            })).filter(tg => tg.papers.length > 0),
+            // Filter gaps to only selected ones, and filter papers within to only selected ones
+            coverageGaps: (gapAnalysis?.coverageGaps ?? [])
+              .filter((_, i) => selectedGaps.has(i))
+              .map(g => ({
+                ...g,
+                papers: g.papers.filter(p => basket.some(b => b.papersToAdd?.includes(p.title))),
+              })),
+            weakSections: (gapAnalysis?.weakSections ?? [])
+              .filter((_, i) => selectedWeakSections.has(i)),
           },
           libraryPapers: libraryPapers.map(p => ({ id: p.id, title: p.title, abstract: p.abstract, authors: p.authors, year: p.year, venue: p.venue })),
         }),
@@ -630,8 +636,8 @@ Answer in Chinese. Be specific and actionable.`;
               </>
             )}
             {gapAnalysis && !revisionPlan && (
-              <Button onClick={handleGeneratePlan} disabled={isWorking || basket.filter(b => b.action === "add-paper").length === 0} className="bg-teal text-teal-foreground hover:bg-teal/90 h-8 text-xs">
-                基于已选文献生成修改计划（{basket.filter(b => b.action === "add-paper").length} 篇）
+              <Button onClick={handleGeneratePlan} disabled={isWorking || (selectedGaps.size === 0 && selectedWeakSections.size === 0)} className="bg-teal text-teal-foreground hover:bg-teal/90 h-8 text-xs">
+                基于已选方案生成修改计划（{selectedGaps.size} 个缺口 · {basket.filter(b => b.action === "add-paper").length} 篇文献 · {selectedWeakSections.size} 项改进）
               </Button>
             )}
             {basket.length > 0 && (
@@ -807,71 +813,125 @@ Answer in Chinese. Be specific and actionable.`;
             </Card>
           )}
 
-          {/* Gap Analysis */}
+          {/* Gap Analysis — organized by coverage gap */}
           {gapAnalysis && (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm">
-                  Gap 分析 · {gapAnalysis.newPapers.length} 篇推荐文献 · {gapAnalysis.topicGroups?.length ?? 0} 个话题
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4 text-sm">
-                {/* Coverage gaps */}
-                {gapAnalysis.coverageGaps.length > 0 && (
-                  <div>
-                    <span className="font-medium text-amber-600">覆盖缺口：</span>
-                    <div className="mt-1 space-y-1">{gapAnalysis.coverageGaps.map((g, i) => (
-                      <div key={i} className="bg-amber-50 border border-amber-200 rounded p-2">
-                        <span className={`text-xs font-medium ${severityColor[g.severity]}`}>[{g.severity}]</span>{" "}
-                        <span className="text-xs font-medium">{g.theme}</span>
-                        <p className="text-[10px] text-muted-foreground">{g.description}</p>
-                      </div>
-                    ))}</div>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm">
+                    覆盖缺口分析 · {gapAnalysis.coverageGaps.length} 个缺口 · {gapAnalysis.newPapers.length} 篇推荐文献
+                  </CardTitle>
+                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <button onClick={() => setSelectedGaps(new Set(gapAnalysis.coverageGaps.map((_, i) => i)))} className="hover:text-foreground">全选缺口</button>
+                    <span>·</span>
+                    <button onClick={() => setSelectedGaps(new Set())} className="hover:text-foreground">清空</button>
                   </div>
-                )}
-
-                {/* Topic-grouped papers with checkboxes */}
-                {(gapAnalysis.topicGroups ?? []).map((tg, ti) => (
-                  <TopicGroupCard key={ti} group={tg} groupIndex={ti} basket={basket} onTogglePaper={(paper) => {
-                    const item: BasketItem = {
-                      id: `gap-${ti}-${paper.title.slice(0, 20)}`,
-                      action: "add-paper",
-                      heading: tg.topic,
-                      description: `引入 ${paper.title} (${paper.year})`,
-                      papersToAdd: [paper.title],
-                      source: "plan",
-                      round: 0,
-                    };
-                    toggleBasketItem(item);
-                  }} isInBasket={(paper) => basket.some(b => b.papersToAdd?.includes(paper.title))} />
-                ))}
-
-                {/* Fallback: flat list if no topic groups */}
-                {(!gapAnalysis.topicGroups || gapAnalysis.topicGroups.length === 0) && gapAnalysis.newPapers.length > 0 && (
-                  <div>
-                    <span className="font-medium text-teal">推荐补充文献（{gapAnalysis.newPapers.length}）：</span>
-                    <div className="mt-1 space-y-1 max-h-[300px] overflow-y-auto">{gapAnalysis.newPapers.map((p, i) => (
-                      <div key={i} className="bg-teal/5 border border-teal/20 rounded p-2">
-                        <p className="text-xs font-medium">{p.title} ({p.year})</p>
-                        <p className="text-[10px] text-muted-foreground">{p.authors} — {p.venue}</p>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                {/* Coverage gaps with papers underneath */}
+                {gapAnalysis.coverageGaps.map((gap, gi) => {
+                  const gapChecked = selectedGaps.has(gi);
+                  return (
+                    <div key={gi} className={`border rounded-lg overflow-hidden transition-colors ${gapChecked ? "border-teal/40" : "border-border/30"}`}>
+                      {/* Gap header — checkable */}
+                      <div
+                        className={`flex items-start gap-2.5 px-3 py-2.5 cursor-pointer transition-colors ${gapChecked ? "bg-teal/5" : "bg-amber-50/50 hover:bg-amber-50"}`}
+                        onClick={() => setSelectedGaps(prev => { const n = new Set(prev); if (n.has(gi)) n.delete(gi); else n.add(gi); return n; })}
+                      >
+                        <input type="checkbox" checked={gapChecked} readOnly className="accent-teal mt-0.5 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${severityColor[gap.severity]} ${gap.severity === "high" ? "bg-red-50" : gap.severity === "medium" ? "bg-amber-50" : "bg-gray-50"}`}>
+                              {gap.severity === "high" ? "重要" : gap.severity === "medium" ? "建议" : "可选"}
+                            </span>
+                            <span className="text-xs font-medium">{gap.theme}</span>
+                            {gap.papers.length > 0 && <Badge variant="secondary" className="text-[9px]">{gap.papers.length} 篇</Badge>}
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">{gap.description}</p>
+                        </div>
                       </div>
-                    ))}</div>
+                      {/* Papers under this gap */}
+                      {gapChecked && gap.papers.length > 0 && (
+                        <div className="p-2 space-y-1.5 border-t border-border/20">
+                          {gap.papers.map((p, pi) => {
+                            const paperChecked = basket.some(b => b.papersToAdd?.includes(p.title));
+                            return (
+                              <div key={pi} className={`flex items-start gap-2 p-2.5 rounded border text-xs transition-colors ${paperChecked ? "border-teal/40 bg-teal/5" : "border-border/30 hover:border-border"}`}>
+                                <input
+                                  type="checkbox"
+                                  checked={paperChecked}
+                                  onChange={() => {
+                                    const item: BasketItem = {
+                                      id: `gap-${gi}-${p.title.slice(0, 20)}`,
+                                      action: "add-paper",
+                                      heading: gap.theme,
+                                      description: `引入 ${p.title} (${p.year})`,
+                                      papersToAdd: [p.title],
+                                      source: "plan",
+                                      round: 0,
+                                    };
+                                    toggleBasketItem(item);
+                                  }}
+                                  className="accent-teal shrink-0 mt-1"
+                                />
+                                <div className="min-w-0 flex-1 space-y-1">
+                                  <p className="font-medium leading-snug text-teal">{p.title}</p>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-[10px] text-muted-foreground">{p.authors} ({p.year}) — {p.venue}</span>
+                                    <PaperBadges paper={p} />
+                                    {(p.citationCount ?? 0) > 0 && <span className="text-[9px] text-muted-foreground border border-border/50 rounded px-1">引用 {p.citationCount}</span>}
+                                  </div>
+                                  {p.aiAnalysis && (
+                                    <div className="text-[10px] text-foreground/80 bg-muted/40 border border-border/20 rounded px-2.5 py-1.5 leading-relaxed">{p.aiAnalysis}</div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Weak sections — checkable */}
+                {gapAnalysis.weakSections.length > 0 && (
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium text-amber-600">建议改进章节：</span>
+                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                        <button onClick={() => setSelectedWeakSections(new Set(gapAnalysis.weakSections.map((_, i) => i)))} className="hover:text-foreground">全选</button>
+                        <span>·</span>
+                        <button onClick={() => setSelectedWeakSections(new Set())} className="hover:text-foreground">清空</button>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      {gapAnalysis.weakSections.map((w, i) => {
+                        const checked = selectedWeakSections.has(i);
+                        return (
+                          <div
+                            key={i}
+                            className={`flex items-start gap-2 p-2.5 rounded border text-xs cursor-pointer transition-colors ${checked ? "border-amber-300 bg-amber-50/50" : "border-border/30 hover:border-border"}`}
+                            onClick={() => setSelectedWeakSections(prev => { const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n; })}
+                          >
+                            <input type="checkbox" checked={checked} readOnly className="accent-amber-500 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-medium">{w.heading}</span>
+                              <span className="text-muted-foreground ml-1">{w.issue}</span>
+                              <p className="text-teal mt-0.5">{w.suggestion}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
                 {gapAnalysis.libraryUnused.length > 0 && (
-                  <div>
+                  <div className="mt-3">
                     <span className="font-medium text-blue-600">文献库未引用：</span>
                     <ul className="mt-1 text-xs text-muted-foreground">{gapAnalysis.libraryUnused.map((t, i) => <li key={i}>- {t}</li>)}</ul>
-                  </div>
-                )}
-
-                {gapAnalysis.weakSections.length > 0 && (
-                  <div>
-                    <span className="font-medium text-amber-600">需改进章节：</span>
-                    <div className="mt-1 space-y-1">{gapAnalysis.weakSections.map((w, i) => (
-                      <div key={i} className="text-xs"><span className="font-medium">{w.heading}:</span> {w.issue} → <span className="text-teal">{w.suggestion}</span></div>
-                    ))}</div>
                   </div>
                 )}
               </CardContent>
@@ -1043,7 +1103,7 @@ const rankingBadgeColors: Record<string, string> = {
   arXiv: "bg-orange-100 text-orange-800",
 };
 
-function PaperBadges({ paper }: { paper: TopicGroup["papers"][0] }) {
+function PaperBadges({ paper }: { paper: CoverageGap["papers"][0] }) {
   const badges: string[] = [];
   const r = paper.journalRanking;
   const m = paper.journalMeta;
@@ -1071,81 +1131,6 @@ function PaperBadges({ paper }: { paper: TopicGroup["papers"][0] }) {
         <span key={b} className={`px-1 py-0 rounded text-[8px] font-medium ${rankingBadgeColors[b] ?? "bg-gray-100 text-gray-700"}`}>{b}</span>
       ))}
     </span>
-  );
-}
-
-function TopicGroupCard({ group, groupIndex, basket, onTogglePaper, isInBasket }: {
-  group: TopicGroup;
-  groupIndex: number;
-  basket: BasketItem[];
-  onTogglePaper: (paper: TopicGroup["papers"][0]) => void;
-  isInBasket: (paper: TopicGroup["papers"][0]) => boolean;
-}) {
-  const [open, setOpen] = useState(true);
-  const checkedCount = group.papers.filter(p => isInBasket(p)).length;
-
-  return (
-    <div className="border border-teal/20 rounded-lg overflow-hidden">
-      <div
-        className="flex items-center gap-2 px-3 py-2 bg-teal/5 cursor-pointer hover:bg-teal/10 transition-colors"
-        onClick={() => setOpen(!open)}
-      >
-        <span className="text-[10px]">{open ? "\u25BC" : "\u25B6"}</span>
-        <span className="text-xs font-medium text-teal">{group.topic}</span>
-        <Badge variant="secondary" className="text-[9px]">{group.papers.length} 篇</Badge>
-        {checkedCount > 0 && <Badge className="bg-teal text-white text-[9px]">{checkedCount} 已选</Badge>}
-        <span className="text-[10px] text-muted-foreground ml-auto">{group.description}</span>
-      </div>
-      {open && (
-        <div className="p-2 space-y-1.5">
-          {group.papers.map((p, pi) => {
-            const checked = isInBasket(p);
-            return (
-              <div key={pi} className={`flex items-start gap-2 p-2.5 rounded border text-xs transition-colors ${checked ? "border-teal/40 bg-teal/5" : "border-border/30 hover:border-border"}`}>
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => onTogglePaper(p)}
-                  className="accent-teal shrink-0 mt-1"
-                />
-                <div className="min-w-0 flex-1 space-y-1">
-                  {/* Title + year */}
-                  <p className="font-medium leading-snug text-teal">{p.title}</p>
-                  {/* Authors + venue + badges */}
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[10px] text-muted-foreground">{p.authors}</span>
-                    <span className="text-[10px] text-muted-foreground">({p.year})</span>
-                    <span className="text-[10px] text-muted-foreground">— {p.venue}</span>
-                    <PaperBadges paper={p} />
-                    {(p.citationCount ?? 0) > 0 && (
-                      <span className="text-[9px] text-muted-foreground border border-border/50 rounded px-1">
-                        引用 {p.citationCount}
-                      </span>
-                    )}
-                    {p.relevanceScore != null && (
-                      <span className={`text-[9px] px-1 rounded ${p.relevanceScore >= 7 ? "bg-teal/10 text-teal" : "bg-muted text-muted-foreground"}`}>
-                        相关 {p.relevanceScore.toFixed(1)}
-                      </span>
-                    )}
-                    {p.journalMeta?.impactFactor && (
-                      <span className="text-[9px] text-muted-foreground border border-border/50 rounded px-1">
-                        IF {p.journalMeta.impactFactor.toFixed(1)}
-                      </span>
-                    )}
-                  </div>
-                  {/* AI Analysis */}
-                  {p.aiAnalysis && (
-                    <div className="text-[10px] text-foreground/80 bg-muted/40 border border-border/20 rounded px-2.5 py-1.5 leading-relaxed">
-                      {p.aiAnalysis}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
   );
 }
 
