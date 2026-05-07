@@ -6,11 +6,11 @@ services:
     ports:
       - "127.0.0.1:8070:8070"
     environment:
-      - JAVA_OPTS=-Xmx768m -Xms256m
+      - JAVA_OPTS=-Xmx512m -Xms128m
     deploy:
       resources:
         limits:
-          memory: 1024M
+          memory: 768M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8070/api/isalive"]
       start_period: 180s
