@@ -88,6 +88,7 @@ export default function ReviewEnhancePage() {
   const [chatInput, setChatInput] = useState("");
   const [chatStreaming, setChatStreaming] = useState(false);
   const [basketOpen, setBasketOpen] = useState(false);
+  const [basketPinned, setBasketPinned] = useState(true);
   const [papersBasketOpen, setPapersBasketOpen] = useState(true);
   const [extracting, setExtracting] = useState(false);
   const xAbort = useAbort();
@@ -660,8 +661,17 @@ Answer in Chinese. Be specific and actionable.`;
             <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => fileRef.current?.click()}>重新上传初稿</Button>
           </div>
 
-          {/* ═══ Revision Basket (sticky, always visible when has items) ═══ */}
-          {basket.length > 0 && (
+          {/* ═══ Baskets toggle button (when hidden) ═══ */}
+          {basket.length > 0 && !basketPinned && (
+            <div className="sticky top-2 z-30">
+              <Button size="sm" variant="outline" className="h-7 text-xs border-teal/40 text-teal" onClick={() => setBasketPinned(true)}>
+                显示修改篮 ({basket.length} 项)
+              </Button>
+            </div>
+          )}
+
+          {/* ═══ Revision Basket (sticky, hideable) ═══ */}
+          {basket.length > 0 && basketPinned && (
             <Card className="border-teal/40 bg-teal/[0.03] sticky top-2 z-30 shadow-sm">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between cursor-pointer" onClick={() => setBasketOpen(!basketOpen)}>
@@ -675,7 +685,16 @@ Answer in Chinese. Be specific and actionable.`;
                       </span>
                     )}
                   </CardTitle>
-                  <span className="text-xs text-muted-foreground">{basketOpen ? "▲ 收起" : "▼ 展开"}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">{basketOpen ? "▲ 收起" : "▼ 展开"}</span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setBasketPinned(false); }}
+                      className="text-[10px] text-muted-foreground hover:text-foreground px-1"
+                      title="隐藏修改篮"
+                    >
+                      ✕ 隐藏
+                    </button>
+                  </div>
                 </div>
               </CardHeader>
               {basketOpen && (
@@ -697,7 +716,7 @@ Answer in Chinese. Be specific and actionable.`;
           )}
 
           {/* ═══ Papers Basket — auto-derived from revision basket ═══ */}
-          {(() => {
+          {basketPinned && (() => {
             // Collect all paper titles referenced in basket
             const allTitles = new Set(basket.flatMap(b => b.papersToAdd ?? []));
             if (allTitles.size === 0) return null;
