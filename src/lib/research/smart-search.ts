@@ -520,16 +520,14 @@ export async function smartSearch(
     // Google Scholar: merge all precision queries into 1 call, all broad into 1 call
     const gsPrecisionQuery = precisionQueries.join(" OR ");
     const gsBroadQuery = broadQueries.join(" OR ");
-    // Add raw semantic query to Google Scholar too (no exact phrases, catches diverse terminology)
-    const rawSemanticGS = plan.translatedInput || input;
-    const gsQueries = [gsPrecisionQuery, gsBroadQuery, rawSemanticGS].filter(Boolean);
-    // Free source queries: 3 precision + 2 broad + 1 raw semantic = 6
-    // The raw semantic query (no quotes) catches papers using different terminology
-    const rawSemanticQuery = plan.translatedInput || input;
-    const freeQueries = [...precisionQueries.slice(0, 3), ...broadQueries.slice(0, 2), rawSemanticQuery];
+    const gsQueries = [gsPrecisionQuery, gsBroadQuery].filter(Boolean);
+    // Free source queries: 3 precision + 2 broad (exact-phrase focused)
+    const freeQueries = [...precisionQueries.slice(0, 3), ...broadQueries.slice(0, 2)];
     const freeLimit = Math.max(20, Math.ceil((limit * 3) / (freeQueries.length || 1)));
+    // Raw semantic query (no quotes, small limit) — supplementary, catches diverse terminology
+    const rawSemanticQuery = plan.translatedInput || input;
 
-    const totalQueries = gsQueries.length + freeQueries.length;
+    const totalQueries = gsQueries.length + freeQueries.length + 1;
     onProgress?.("search", `并行检索 ${totalQueries} 个查询...`);
 
     // Race all searches against a 30s hard deadline
@@ -543,7 +541,7 @@ export async function smartSearch(
           }).catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
         )
       ),
-      // Free sources only (S2 + OpenAlex, no extras)
+      // Free sources: precise + broad queries (exact-phrase focused)
       Promise.all(
         freeQueries.map((q) =>
           searchAllSourcesRaw({ query: q, limit: freeLimit, yearFrom, yearTo, freeOnly: true }).catch(() => ({
@@ -552,20 +550,25 @@ export async function smartSearch(
           }))
         )
       ),
+      // Raw semantic query (no quotes, limit 20) — supplementary catch-all
+      searchAllSourcesRaw({ query: rawSemanticQuery, limit: 20, yearFrom, yearTo, freeOnly: true }).catch(() => ({
+        papers: [] as UnifiedPaper[],
+        results: [] as SearchResult[],
+      })),
     ]);
 
     // 30s hard timeout — use whatever results we have
-    const [gsResults, freeResults] = await Promise.race([
+    const [gsResults, freeResults, rawResults] = await Promise.race([
       searchPromise,
-      new Promise<[typeof gsResults, typeof freeResults]>((resolve) =>
+      new Promise<[typeof gsResults, typeof freeResults, { papers: UnifiedPaper[]; results: SearchResult[] }]>((resolve) =>
         setTimeout(() => {
           console.log("[smart-search] 30s search deadline hit, using partial results");
-          resolve([[], []]);
+          resolve([[], [], { papers: [], results: [] }]);
         }, 30000)
       ),
-    ]) as [Array<{ papers: UnifiedPaper[]; results: SearchResult[] }>, Array<{ papers: UnifiedPaper[]; results: SearchResult[] }>];
+    ]) as [Array<{ papers: UnifiedPaper[]; results: SearchResult[] }>, Array<{ papers: UnifiedPaper[]; results: SearchResult[] }>, { papers: UnifiedPaper[]; results: SearchResult[] }];
 
-    allResults = [...(gsResults ?? []), ...(freeResults ?? [])];
+    allResults = [...(gsResults ?? []), ...(freeResults ?? []), ...(rawResults ? [rawResults] : [])];
   }
   const totalRaw = allResults.reduce((sum, r) => sum + r.papers.length, 0);
   onProgress?.("dedup", `检索到 ${totalRaw} 条结果，正在去重合并...`);
