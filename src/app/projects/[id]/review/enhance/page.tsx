@@ -254,6 +254,7 @@ export default function ReviewEnhancePage() {
         else if (evt.type === "plan") {
           const plan = evt.data as RevisionPlan;
           setRevisionPlan(plan);
+          setBasketOpen(true); // Auto-expand basket so user sees the plan
           // Auto-add all non-keep items to basket
           const items = planToBasketItems(plan);
           setBasket(prev => {
@@ -652,8 +653,8 @@ Answer in Chinese. Be specific and actionable.`;
             <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => fileRef.current?.click()}>重新上传初稿</Button>
           </div>
 
-          {/* ═══ Revision Basket (sticky) ═══ */}
-          {(revisionPlan || basket.length > 0) && (
+          {/* ═══ Revision Basket (always visible when has items) ═══ */}
+          {basket.length > 0 && (
             <Card className="border-teal/40 bg-teal/[0.03]">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between cursor-pointer" onClick={() => setBasketOpen(!basketOpen)}>

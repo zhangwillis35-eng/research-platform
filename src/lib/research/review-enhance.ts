@@ -308,15 +308,21 @@ const REWRITE_PROMPT = `You are a literature review writing expert. You are give
 
 Rewrite the literature review according to the revision plan. Rules:
 - Preserve the original text's good parts — do not unnecessarily rewrite what already works well
-- Add new citations in APA format: (Author, Year)
+- CITATION FORMAT: Use standard in-text APA citations throughout: (Author, Year) or Author (Year)
+  Examples: (Smith & Jones, 2023), Zhang et al. (2024), (Brown, 2022; Lee & Park, 2023)
+  NEVER use internal labels like [New-1], [Lib-3], (New-1;New-9) — always convert to proper APA format using the author names and year provided in the paper data
 - Mark NEW sections with 【新增】 at the beginning
 - Mark EXPANDED content with 【扩展】 at the beginning
+- Mark DEEPENED analysis with 【深入】 at the beginning
+- Mark NEW DIRECTION content with 【新方向】 at the beginning
+- Mark STRENGTHENED arguments with 【强化】 at the beginning
 - Mark RESTRUCTURED sections with 【调整】 at the beginning
 - Write in academic Chinese (学术中文), clear paragraphs
-- Each claim must have a citation
+- Each claim must have a citation in APA format
 - Maintain logical flow between sections
 - Use markdown headings (## for main sections, ### for subsections)
-- Include a complete updated reference list at the end (## 参考文献)`;
+- Include a complete updated reference list at the end (## 参考文献) in full APA format:
+  Author, A. A., & Author, B. B. (Year). Title. Journal, Volume(Issue), Pages. https://doi.org/xxx`;
 
 export async function* rewriteReviewStream(
   draftText: string,
@@ -331,15 +337,16 @@ export async function* rewriteReviewStream(
     .map(s => `[${s.action.toUpperCase()}] ${s.heading}: ${s.description}\nPapers: ${s.papersToAdd.join("; ")}`)
     .join("\n\n");
 
+  // Format papers with author names front and center (for APA citations)
   const papersContext = [
-    ...libraryPapers.slice(0, 20).map((p, i) => {
+    ...libraryPapers.slice(0, 20).map((p) => {
       const authors = typeof p.authors === "string" ? p.authors : (p.authors ?? []).map(a => a.name).join(", ");
-      return `[Lib-${i + 1}] ${p.title} (${p.year ?? "?"}) — ${authors}\n${p.fullText ? p.fullText.slice(0, 5000) : (p.abstract ?? "No abstract")}`;
+      return `Authors: ${authors}\nYear: ${p.year ?? "?"}\nTitle: ${p.title}\nVenue: ${p.venue ?? ""}\n${p.fullText ? `Full text:\n${p.fullText.slice(0, 5000)}` : `Abstract: ${p.abstract ?? "N/A"}`}`;
     }),
-    ...searchPapers.slice(0, 15).map((p, i) =>
-      `[New-${i + 1}] ${p.title} (${p.year}) — ${p.authors}\nAbstract: ${p.abstract?.slice(0, 500) ?? "N/A"}`
+    ...searchPapers.slice(0, 15).map((p) =>
+      `Authors: ${p.authors}\nYear: ${p.year}\nTitle: ${p.title}\nVenue: ${p.venue}\nAbstract: ${p.abstract?.slice(0, 500) ?? "N/A"}`
     ),
-  ].join("\n\n" + "=".repeat(30) + "\n\n");
+  ].join("\n\n" + "─".repeat(40) + "\n\n");
 
   const stream = streamAI({
     provider,
