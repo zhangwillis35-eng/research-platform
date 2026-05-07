@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ReviewEditor } from "@/components/review-editor";
 import {
   AIProviderSelect,
   type AIProvider,
@@ -398,27 +399,21 @@ export default function ReviewGeneratePage() {
           </div>
         )}
 
-        {/* Review text */}
-        {(reviewText || phase === "outlining") && (
+        {/* Review text — editable per-section after done, plain during generation */}
+        {phase === "done" && reviewText && (
+          <ReviewEditor
+            text={reviewText}
+            onChange={setReviewText}
+            provider={provider}
+            title={outline?.title ?? topic}
+          />
+        )}
+        {phase !== "done" && (reviewText || phase === "outlining") && (
           <Card className="min-h-[400px]">
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base font-heading">
-                  {outline?.title ?? topic}
-                </CardTitle>
-                {phase === "done" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-xs"
-                    onClick={() => {
-                      navigator.clipboard.writeText(reviewText);
-                    }}
-                  >
-                    复制全文
-                  </Button>
-                )}
-              </div>
+              <CardTitle className="text-base font-heading">
+                {outline?.title ?? topic}
+              </CardTitle>
             </CardHeader>
             <Separator />
             <CardContent className="pt-4">

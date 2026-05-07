@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StopButton } from "@/components/stop-button";
+import { ReviewEditor } from "@/components/review-editor";
 import {
   AIProviderSelect,
   type AIProvider,
@@ -1130,21 +1131,16 @@ Answer in Chinese. Be specific and actionable.`;
       {/* ═══ Enhanced Review Result ═══ */}
       {enhancedReview && (
         <div className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base font-heading">{draftAnalysis?.topic ?? "优化后的文献综述"}</CardTitle>
-                <div className="flex items-center gap-2">
-                  <Button size="sm" variant="outline" className="text-xs h-7" onClick={handleExportWord}>导出 Word</Button>
-                  <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => navigator.clipboard.writeText(enhancedReview)}>复制全文</Button>
-                  <Button size="sm" variant="ghost" className="text-xs h-7 text-destructive" onClick={handleReset}>重置</Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="prose prose-sm max-w-none text-foreground leading-relaxed whitespace-pre-wrap">{enhancedReview}</div>
-            </CardContent>
-          </Card>
+          <div className="flex items-center gap-2 justify-end">
+            <Button size="sm" variant="ghost" className="text-xs h-7 text-destructive" onClick={handleReset}>重置</Button>
+          </div>
+          <ReviewEditor
+            text={enhancedReview}
+            onChange={setEnhancedReview}
+            provider={provider}
+            title={draftAnalysis?.topic ?? "优化后的文献综述"}
+            onExportWord={handleExportWord}
+          />
         </div>
       )}
 
