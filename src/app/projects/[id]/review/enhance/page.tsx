@@ -88,6 +88,7 @@ export default function ReviewEnhancePage() {
   const [chatInput, setChatInput] = useState("");
   const [chatStreaming, setChatStreaming] = useState(false);
   const [basketOpen, setBasketOpen] = useState(false);
+  const [papersBasketOpen, setPapersBasketOpen] = useState(true);
   const [extracting, setExtracting] = useState(false);
   const xAbort = useAbort();
   const chatAbort = useAbort();
@@ -694,6 +695,64 @@ Answer in Chinese. Be specific and actionable.`;
               )}
             </Card>
           )}
+
+          {/* ═══ Papers Basket — auto-derived from revision basket ═══ */}
+          {(() => {
+            // Collect all paper titles referenced in basket
+            const allTitles = new Set(basket.flatMap(b => b.papersToAdd ?? []));
+            if (allTitles.size === 0) return null;
+            // Look up paper details from gap analysis
+            const allGapPapers = gapAnalysis?.coverageGaps?.flatMap(g => g.papers) ?? [];
+            const paperDetails = Array.from(allTitles).map(title => {
+              const found = allGapPapers.find(p => p.title === title);
+              return found ?? { title, authors: "", year: 0, venue: "", abstract: "", relevanceReason: "", suggestedSection: "" };
+            });
+            return (
+              <Card className="border-purple-300 bg-purple-50/20 sticky top-16 z-20 shadow-sm">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between cursor-pointer" onClick={() => setPapersBasketOpen(!papersBasketOpen)}>
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      新增文献篮
+                      <Badge className="bg-purple-600 text-white text-[10px]">{paperDetails.length} 篇</Badge>
+                      {!papersBasketOpen && (
+                        <span className="text-[10px] text-muted-foreground font-normal ml-1">
+                          {paperDetails.slice(0, 3).map(p => `${p.authors?.split(",")[0] ?? "?"} (${p.year || "?"})`).join(", ")}
+                          {paperDetails.length > 3 ? ` +${paperDetails.length - 3}` : ""}
+                        </span>
+                      )}
+                    </CardTitle>
+                    <span className="text-xs text-muted-foreground">{papersBasketOpen ? "▲ 收起" : "▼ 展开"}</span>
+                  </div>
+                </CardHeader>
+                {papersBasketOpen && (
+                  <CardContent className="space-y-1.5 pt-0 max-h-[300px] overflow-y-auto">
+                    {paperDetails.map((p, i) => (
+                      <div key={i} className="flex items-start gap-2 p-2 rounded border border-purple-200 bg-white text-xs">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-purple-800 leading-snug">{p.title}</p>
+                          <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                            <span className="text-[10px] text-muted-foreground">{p.authors} ({p.year || "?"})</span>
+                            {p.venue && <span className="text-[10px] text-muted-foreground">— {p.venue}</span>}
+                            <PaperBadges paper={p as CoverageGap["papers"][0]} />
+                            {(p as CoverageGap["papers"][0]).citationCount != null && (p as CoverageGap["papers"][0]).citationCount! > 0 && (
+                              <span className="text-[9px] text-muted-foreground border border-border/50 rounded px-1">
+                                引用 {(p as CoverageGap["papers"][0]).citationCount}
+                              </span>
+                            )}
+                            {(p as CoverageGap["papers"][0]).journalMeta?.impactFactor && (
+                              <span className="text-[9px] text-muted-foreground border border-border/50 rounded px-1">
+                                IF {(p as CoverageGap["papers"][0]).journalMeta!.impactFactor!.toFixed(1)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                )}
+              </Card>
+            );
+          })()}
 
           {/* Draft Analysis */}
           {draftAnalysis && (
