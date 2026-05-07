@@ -205,8 +205,16 @@ STEP 2 — UNDERSTAND QUERY INTENT: Determine the type of research query:
 
 This matters for STEP 3 — different query types need different term extraction strategies.
 
-STEP 3 — EXTRACT KEY TERMS: From the English translation, extract 2-5 core academic search terms. Each term must be a complete, meaningful academic phrase.
+STEP 3 — EXTRACT KEY TERMS: From the English translation, extract 3-6 core academic search terms. Each term must be a complete, meaningful academic phrase.
 NEVER break compound terms: "AI washing" is ONE term, not "AI" + "washing".
+
+CRITICAL — BIDIRECTIONAL INTERPRETATION: When two concepts A and B are mentioned together (e.g. "AI与碳排放"), ALWAYS consider BOTH causal directions:
+- A affects B (e.g. "AI's carbon emissions" — AI training causes CO2)
+- B is affected by A (e.g. "AI for decarbonization" — AI helps reduce emissions)
+- A and B interact (e.g. "AI climate policy" — the intersection)
+You MUST generate key terms covering ALL directions. Missing one direction = missing half the literature.
+Example: "AI与碳排放" → MUST include BOTH "AI carbon footprint" (AI causes emissions) AND "AI for decarbonization" / "AI climate mitigation" / "AI net-zero" (AI reduces emissions)
+Example: "数字化转型与员工" → BOTH "digital transformation employee displacement" AND "digital transformation employee empowerment"
 
 For METHODOLOGICAL queries, you MUST:
 - Include the domain + method as a combined term (e.g. "recruitment data analysis")
@@ -253,6 +261,10 @@ CRITICAL RULES:
 - Each key term MUST have at least 10 synonyms covering at least 5 of the 8 dimensions above
 - Missing a synonym = missing a landmark paper from a top journal
 - For emerging topics (2023+), include BOTH the new term AND the older terms the concept was known by
+- For RELATIONAL/TOPICAL queries with two concepts (A与B), generate synonyms for BOTH directions:
+  Direction 1: A→B (how A affects/causes B)
+  Direction 2: B→A (how B is addressed/mitigated by A)
+  Example: "AI carbon emissions" synonyms must include BOTH "AI training carbon footprint" AND "AI for decarbonization", "AI climate mitigation", "AI net-zero", "machine learning emission reduction"
 
 STEP 5 — BUILD QUERIES: Construct precision and broad search queries.
 - precisionQueries (5-8): Each key term + top synonyms as exact-phrase searches. Include at least one query using Dimension 4 (adjacent stream) and Dimension 5 (formal academic term) synonyms.
