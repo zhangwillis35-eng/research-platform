@@ -727,12 +727,20 @@ Answer in Chinese. Be specific and actionable.`;
             // Collect all paper titles referenced in basket
             const allTitles = new Set(basket.flatMap(b => b.papersToAdd ?? []));
             if (allTitles.size === 0) return null;
-            // Look up paper details from gap analysis
+            // Filter out papers already cited in the draft
+            const citedRefs = (draftAnalysis?.citedReferences ?? []).map(r => r.toLowerCase());
+            const isAlreadyCited = (title: string) => {
+              const t = title.toLowerCase();
+              return citedRefs.some(ref => ref.includes(t.slice(0, 30)) || t.includes(ref.slice(0, 30)));
+            };
+            // Look up paper details from gap analysis, exclude already-cited
             const allGapPapers = gapAnalysis?.coverageGaps?.flatMap(g => g.papers) ?? [];
-            const paperDetails = Array.from(allTitles).map(title => {
-              const found = allGapPapers.find(p => p.title === title);
-              return found ?? { title, authors: "", year: 0, venue: "", abstract: "", relevanceReason: "", suggestedSection: "" };
-            });
+            const paperDetails = Array.from(allTitles)
+              .map(title => {
+                const found = allGapPapers.find(p => p.title === title);
+                return found ?? { title, authors: "", year: 0, venue: "", abstract: "", relevanceReason: "", suggestedSection: "" };
+              })
+              .filter(p => !isAlreadyCited(p.title));
             return (
               <Card className="border-purple-300 bg-purple-50/20 sticky top-16 z-20 shadow-sm">
                 <CardHeader className="pb-2">
