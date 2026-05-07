@@ -609,7 +609,8 @@ export async function smartSearch(
     return b.citationCount - a.citationCount;
   });
   // Hard cap at 100 — scoring 200 papers causes SSE timeout
-  const enrichCap = Math.min(allDeduped.length, Math.min(Math.max(limit * 2, 80), 100));
+  // Cap enrichment: max 80 papers to avoid SSE timeout on slow external APIs
+  const enrichCap = Math.min(allDeduped.length, Math.min(Math.max(limit * 2, 60), 80));
   const rawPapers = allDeduped.slice(0, enrichCap);
   if (allDeduped.length > enrichCap) {
     onProgress?.("enrich", `去重后 ${allDeduped.length} 篇，按期刊等级 + 引用量保留前 ${enrichCap} 篇，补全摘要 + 期刊元数据...`);
@@ -618,7 +619,24 @@ export async function smartSearch(
   }
 
   // Phase 1: Enrichment (fills abstracts from S2, CrossRef, OpenAlex)
-  const enrichedPapers = await enrichPapersBatch(rawPapers);
+  // 30s timeout — if external APIs are slow, continue with partial data
+  let enrichedPapers: typeof rawPapers;
+  try {
+    enrichedPapers = await Promise.race([
+      enrichPapersBatch(rawPapers),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("enrich_timeout")), 30000)),
+    ]);
+  } catch (err) {
+    if ((err as Error).message === "enrich_timeout") {
+      console.warn("[smart-search] Enrichment timed out after 30s, using partial data");
+      onProgress?.("enrich", "元数据补全超时，使用已有数据继续...");
+      // Fall back to papers with just journal rankings (sync, always completes)
+      const { enrichPapers } = await import("@/lib/sources/aggregator");
+      enrichedPapers = enrichPapers(rawPapers);
+    } else {
+      throw err;
+    }
+  }
 
   let papers = enrichedPapers;
 

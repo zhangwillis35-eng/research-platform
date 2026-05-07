@@ -391,7 +391,7 @@ export async function searchAllSources(
   return { papers: enriched, results };
 }
 
-function enrichPapers(papers: UnifiedPaper[]): UnifiedPaper[] {
+export function enrichPapers(papers: UnifiedPaper[]): UnifiedPaper[] {
   return papers.map((paper) => {
     const ranking = getJournalRanking(paper.venue);
     const journalMeta = getJournalMetadata(paper.venue);
