@@ -128,7 +128,7 @@ export default function HomePage() {
                 AI-Powered Academic Research Platform
               </p>
               <h1 className="font-heading text-4xl sm:text-5xl lg:text-6xl font-bold leading-[1.1] tracking-tight">
-                从文献检索到综述写作
+                从领域结构到研究设计
                 <br />
                 <span className="bg-gradient-to-r from-teal via-primary to-teal bg-clip-text text-transparent animate-shimmer">
                   全流程 AI 赋能
@@ -136,7 +136,7 @@ export default function HomePage() {
               </h1>
               <p className="mt-6 text-lg text-muted-foreground leading-relaxed max-w-2xl">
                 ScholarFlow 用三级期刊优先级筛选 + 8 维语义关键词扩展 + 逐篇独立 AI 分析，
-                赋能管理学研究者完成从文献检索、综述撰写到理论整合的完整工作流。
+                赋能管理学研究者完成从文献整理、知识图谱到想法生成与理论整合的完整工作流。
               </p>
               <div className="mt-10 flex items-center gap-4">
                 <Link href="/projects/new">
