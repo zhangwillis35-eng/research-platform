@@ -19,6 +19,7 @@ import {
 } from "@/components/analysis-engine-select";
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
+import { ProjectNote } from "@/components/project-note";
 
 interface Paper {
   id: string;
@@ -378,6 +379,8 @@ export default function ProposalPage() {
           </CardContent>
         </Card>
       )}
+
+      <ProjectNote projectId={projectId} section="proposal" label="提案记录" />
     </div>
   );
 }

@@ -23,6 +23,7 @@ import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedAnalysis } from "@/hooks/use-saved-analysis";
 import { consumeCrossFeatureData } from "@/lib/cross-feature";
 import { AnalysisChat } from "@/components/analysis-chat";
+import { ProjectNote } from "@/components/project-note";
 
 interface Paper {
   id: string;
@@ -438,6 +439,8 @@ export default function TheoriesIntegratePage() {
         provider={provider}
         paperTitles={papers.map(p => p.title)}
       />
+
+      <ProjectNote projectId={projectId} section="theories" label="理论记录" />
     </div>
   );
 }

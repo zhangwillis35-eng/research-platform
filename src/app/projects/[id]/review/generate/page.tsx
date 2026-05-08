@@ -24,6 +24,7 @@ import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 import { consumeCrossFeatureData } from "@/lib/cross-feature";
 import { generateReviewDocx, downloadBlob } from "@/lib/docx-export";
+import { ProjectNote } from "@/components/project-note";
 
 interface Paper {
   id: string;
@@ -729,6 +730,8 @@ Return the modified outline as JSON only.`;
           </CardContent>
         </Card>
       )}
+
+      <ProjectNote projectId={projectId} section="review" label="综述记录" />
     </div>
   );
 }

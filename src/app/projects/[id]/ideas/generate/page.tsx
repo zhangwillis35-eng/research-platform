@@ -22,6 +22,7 @@ import { consumeCrossFeatureData, setCrossFeatureData } from "@/lib/cross-featur
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedAnalysis } from "@/hooks/use-saved-analysis";
 import { AnalysisChat } from "@/components/analysis-chat";
+import { ProjectNote } from "@/components/project-note";
 
 interface Paper {
   id: string;
@@ -574,6 +575,8 @@ export default function IdeasGeneratePage() {
           paperTitles={papers.map(p => p.title)}
         />
       )}
+
+      <ProjectNote projectId={projectId} section="ideas" label="想法记录" />
     </div>
   );
 }

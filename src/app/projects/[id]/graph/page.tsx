@@ -22,6 +22,7 @@ import { KnowledgeGraph } from "@/components/graph/KnowledgeGraph";
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 import { AnalysisChat } from "@/components/analysis-chat";
+import { ProjectNote } from "@/components/project-note";
 
 interface Paper {
   id: string;
@@ -858,6 +859,8 @@ export default function GraphPage() {
           paperTitles={papers.map(p => p.title)}
         />
       )}
+
+      <ProjectNote projectId={projectId} section="graph" label="图谱记录" />
     </div>
   );
 }
