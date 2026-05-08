@@ -135,47 +135,55 @@ export async function POST(request: Request) {
     };
 
     return createSSEStream(async (send) => {
-      // Step 1: Search with quality filter (top journals + JCR Q1, same as main search with limit=50)
+      // Step 1: Search WITHOUT AI scoring (saves ~50 callAI calls, avoids rate limits)
       const searchQuery = keywords.slice(0, 5).join(" OR ");
-      send({ type: "status", message: `正在检索补充文献（顶刊 + JCR Q1）: ${searchQuery.slice(0, 60)}...` });
+      send({ type: "status", message: `正在检索补充文献: ${searchQuery.slice(0, 60)}...` });
 
       const searchResult = await smartSearch(
         searchQuery,
         pipelineProvider,
-        50,   // same quality standard as main search (50 = top journals + Q1)
-        true, // enable AI scoring for quality filtering
+        30,    // reduce from 50 to 30
+        false, // DISABLE AI scoring — saves ~30 callAI calls, avoids rate limiting
         (phase, detail) => send({ type: "status", message: detail }),
         journalLang,
       );
 
-      send({ type: "status", message: `检索到 ${searchResult.papers.length} 篇高质量论文，正在 AI 逐篇分析...` });
+      const searchPapersRaw = searchResult.papers.slice(0, 25);
+      send({ type: "status", message: `检索到 ${searchPapersRaw.length} 篇论文，正在批量分析...` });
 
-      // Step 2: Per-paper AI analysis (parallel, like main search)
-      const { callAI: callAIForAnalysis } = await import("@/lib/ai");
-      const { concurrentPool: pool } = await import("@/lib/concurrent-pool");
-      const searchPapersRaw = searchResult.papers.slice(0, 50);
-
+      // Step 2: Batch AI analysis (1 call per 10 papers instead of 1 per paper)
+      const { callAI: callAIBatch } = await import("@/lib/ai");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const analyzedPapers: Array<any> = [];
 
-      await pool(
-        searchPapersRaw,
-        async (p) => {
-          const authors = typeof p.authors === "string" ? p.authors : (p.authors ?? []).map((a: { name: string }) => a.name).join(", ");
-          let aiAnalysis = "";
-          try {
-            const res = await callAIForAnalysis({
-              provider: pipelineProvider,
-              system: "你是学术论文分析专家。用中文简要分析这篇论文的：1.核心发现 2.研究方法 3.理论贡献。每项1-2句话，共3-5句。",
-              messages: [{ role: "user", content: `标题: ${p.title}\n作者: ${authors}\n年份: ${p.year}\n期刊: ${p.venue}\n摘要: ${(p.abstract ?? "").slice(0, 400)}` }],
-              noThinking: true,
-              temperature: 0.2,
-              maxTokens: 300,
-            });
-            aiAnalysis = res.content;
-          } catch { /* skip */ }
+      const BATCH = 10;
+      for (let i = 0; i < searchPapersRaw.length; i += BATCH) {
+        const batch = searchPapersRaw.slice(i, i + BATCH);
+        send({ type: "status", message: `批量分析: ${Math.min(i + BATCH, searchPapersRaw.length)}/${searchPapersRaw.length}...` });
 
-          // Preserve ALL metadata from search results (journalMeta, journalRanking, citations)
+        const paperList = batch.map((p, j) => {
+          const authors = typeof p.authors === "string" ? p.authors : (p.authors ?? []).map((a: { name: string }) => a.name).join(", ");
+          return `[${j}] ${p.title} (${p.year}) — ${authors} | ${p.venue}\n摘要: ${(p.abstract ?? "").slice(0, 300)}`;
+        }).join("\n\n");
+
+        let batchAnalysis: Record<string, string> = {};
+        try {
+          const res = await callAIBatch({
+            provider: pipelineProvider,
+            system: `分析以下学术论文。对每篇论文，用1-2句话总结核心发现和理论贡献。
+Output JSON: {"0": "分析...", "1": "分析...", ...} — key是论文编号。`,
+            messages: [{ role: "user", content: paperList }],
+            jsonMode: true,
+            noThinking: true,
+            temperature: 0.2,
+            maxTokens: 2000,
+          });
+          batchAnalysis = JSON.parse(res.content);
+        } catch { /* skip */ }
+
+        for (let j = 0; j < batch.length; j++) {
+          const p = batch[j];
+          const authors = typeof p.authors === "string" ? p.authors : (p.authors ?? []).map((a: { name: string }) => a.name).join(", ");
           const ext = p as unknown as Record<string, unknown>;
           analyzedPapers.push({
             title: p.title,
@@ -183,7 +191,7 @@ export async function POST(request: Request) {
             year: p.year ?? 0,
             venue: String(p.venue ?? ""),
             abstract: p.abstract ?? "",
-            aiAnalysis,
+            aiAnalysis: batchAnalysis[String(j)] ?? "",
             citationCount: p.citationCount ?? 0,
             doi: p.doi,
             relevanceScore: ext.relevanceScore,
@@ -191,16 +199,10 @@ export async function POST(request: Request) {
             journalRanking: ext.journalRanking ?? p.journalRanking,
             journalMeta: ext.journalMeta ?? p.journalMeta,
           });
-        },
-        20, // 20 concurrent AI analysis calls
-        (completed, total) => {
-          if (completed % 5 === 0 || completed === total) {
-            send({ type: "status", message: `AI 逐篇分析: ${completed}/${total}...` });
-          }
-        },
-      );
+        }
+      }
 
-      send({ type: "status", message: `${analyzedPapers.length} 篇分析完成，正在按话题分类 + Gap 检测...` });
+      send({ type: "status", message: `${analyzedPapers.length} 篇分析完成，正在 Gap 检测...` });
 
       // Step 3: Topic grouping + gap analysis
       const gaps = await analyzeGaps(draftAnalysis, analyzedPapers, libraryPapers, pipelineProvider);
