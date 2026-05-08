@@ -15,6 +15,7 @@ const navItems = [
   { label: "⑦ 概念模型", href: "/model", icon: "◇" },
   { label: "⑧ Proposal", href: "/proposal", icon: "📝" },
   { label: "⑨ 参考文献", href: "/references", icon: "☰" },
+  { label: "⑩ 文献翻译", href: "/translate", icon: "译" },
   { label: "设置", href: "/settings", icon: "⚙" },
 ];
 

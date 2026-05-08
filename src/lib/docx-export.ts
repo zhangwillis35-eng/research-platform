@@ -10,7 +10,14 @@ import {
   TextRun,
   HeadingLevel,
   AlignmentType,
+  ImageRun,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
+  BorderStyle,
 } from "docx";
+import type { AcademicTerm, PaperAnalysis } from "./research/paper-translator";
 
 const CN_FONT = "宋体";
 const EN_FONT = "Times New Roman";
@@ -103,4 +110,355 @@ export function downloadBlob(blob: Blob, filename: string) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// ─── Translation document export ──────────────────────────────────────────────
+
+export interface FigureImage {
+  label: string;       // "图1" / "表2"
+  caption: string;     // Translated caption
+  imageData?: Uint8Array; // PNG bytes (optional — placeholder if absent)
+  width?: number;
+  height?: number;
+}
+
+function makeSeparator(): Paragraph {
+  return new Paragraph({
+    children: [new TextRun({ text: "─".repeat(40), color: "CCCCCC", font: EN_FONT, size: 18 })],
+    spacing: { before: 200, after: 200 },
+  });
+}
+
+function makeInfoBlock(label: string, value: string): Paragraph[] {
+  return [
+    new Paragraph({
+      children: [
+        new TextRun({ text: label, font: CN_FONT, size: BODY_SIZE, bold: true, color: "444444" }),
+        new TextRun({ text: value, font: CN_FONT, size: BODY_SIZE }),
+      ],
+      spacing: { after: 100 },
+    }),
+  ];
+}
+
+export async function generateTranslationDocx(options: {
+  originalTitle: string;
+  translatedTitle: string;
+  authors?: string;
+  year?: number;
+  venue?: string;
+  translatedText: string;
+  terms?: AcademicTerm[];
+  analysis?: PaperAnalysis | null;
+  figures?: FigureImage[];
+}): Promise<Blob> {
+  const {
+    originalTitle,
+    translatedTitle,
+    authors,
+    year,
+    venue,
+    translatedText,
+    terms = [],
+    analysis,
+    figures = [],
+  } = options;
+
+  const allChildren: Paragraph[] = [];
+
+  // ── Cover ──────────────────────────────────────────────────────────────
+  allChildren.push(
+    new Paragraph({
+      children: splitByLanguage(translatedTitle, H1_SIZE, true),
+      heading: HeadingLevel.TITLE,
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 200 },
+    })
+  );
+  allChildren.push(
+    new Paragraph({
+      children: splitByLanguage(originalTitle, BODY_SIZE, false),
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 100 },
+    })
+  );
+  if (authors) {
+    allChildren.push(
+      new Paragraph({
+        children: [new TextRun({ text: authors, font: EN_FONT, size: 20, color: "555555" })],
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 60 },
+      })
+    );
+  }
+  if (venue || year) {
+    allChildren.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: [venue, year].filter(Boolean).join(", "),
+            font: EN_FONT,
+            size: 20,
+            color: "777777",
+            italics: true,
+          }),
+        ],
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 400 },
+      })
+    );
+  }
+  allChildren.push(makeSeparator());
+
+  // ── Translated body ────────────────────────────────────────────────────
+  allChildren.push(
+    new Paragraph({
+      children: splitByLanguage("一、论文译文", H2_SIZE, true),
+      heading: HeadingLevel.HEADING_1,
+      spacing: { before: 300, after: 200 },
+    })
+  );
+
+  const lines = translatedText.split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      allChildren.push(new Paragraph({ spacing: { after: 80 } }));
+      continue;
+    }
+    if (/^#{1,3}\s/.test(trimmed) || /^(\d+\.?\s+)[A-Z\u4e00-\u9fff]/.test(trimmed)) {
+      const level = trimmed.startsWith("###") ? H3_SIZE : trimmed.startsWith("##") ? H2_SIZE : H2_SIZE;
+      const text = trimmed.replace(/^#+\s*/, "");
+      allChildren.push(
+        new Paragraph({
+          children: splitByLanguage(text, level, true),
+          heading: level === H2_SIZE ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3,
+          spacing: { before: 240, after: 120 },
+        })
+      );
+    } else if (/^\[图|^\[表/.test(trimmed)) {
+      // Figure/table placeholder — style differently
+      allChildren.push(
+        new Paragraph({
+          children: [
+            new TextRun({ text: trimmed, font: CN_FONT, size: BODY_SIZE, italics: true, color: "666666" }),
+          ],
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 160, after: 160 },
+        })
+      );
+    } else {
+      allChildren.push(
+        new Paragraph({
+          children: splitByLanguage(trimmed, BODY_SIZE),
+          spacing: { line: 360, after: 80 },
+          indent: { firstLine: 480 },
+        })
+      );
+    }
+  }
+
+  // ── Figures / images ───────────────────────────────────────────────────
+  if (figures.length > 0) {
+    allChildren.push(makeSeparator());
+    allChildren.push(
+      new Paragraph({
+        children: splitByLanguage("二、图表", H2_SIZE, true),
+        heading: HeadingLevel.HEADING_1,
+        spacing: { before: 300, after: 200 },
+      })
+    );
+
+    for (const fig of figures) {
+      allChildren.push(
+        new Paragraph({
+          children: splitByLanguage(fig.label, H3_SIZE, true),
+          heading: HeadingLevel.HEADING_3,
+          spacing: { before: 200, after: 100 },
+        })
+      );
+      if (fig.imageData) {
+        allChildren.push(
+          new Paragraph({
+            children: [
+              new ImageRun({
+                data: fig.imageData,
+                transformation: {
+                  width: fig.width ?? 500,
+                  height: fig.height ?? 300,
+                },
+                type: "png",
+              }),
+            ],
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 120 },
+          })
+        );
+      } else {
+        allChildren.push(
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: `[${fig.label}：图片提取失败，请参见原始PDF]`,
+                font: CN_FONT,
+                size: BODY_SIZE,
+                italics: true,
+                color: "888888",
+              }),
+            ],
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 120 },
+          })
+        );
+      }
+      if (fig.caption) {
+        allChildren.push(
+          new Paragraph({
+            children: splitByLanguage(fig.caption, 20),
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 200 },
+          })
+        );
+      }
+    }
+  }
+
+  // ── Terms ──────────────────────────────────────────────────────────────
+  if (terms.length > 0) {
+    allChildren.push(makeSeparator());
+    allChildren.push(
+      new Paragraph({
+        children: splitByLanguage("三、关键术语对照表", H2_SIZE, true),
+        heading: HeadingLevel.HEADING_1,
+        spacing: { before: 300, after: 200 },
+      })
+    );
+
+    // Terms table
+    const headerRow = new TableRow({
+      children: [
+        new TableCell({ children: [new Paragraph({ children: splitByLanguage("英文术语", BODY_SIZE, true) })], width: { size: 30, type: WidthType.PERCENTAGE } }),
+        new TableCell({ children: [new Paragraph({ children: splitByLanguage("中文翻译", BODY_SIZE, true) })], width: { size: 30, type: WidthType.PERCENTAGE } }),
+        new TableCell({ children: [new Paragraph({ children: splitByLanguage("类别", BODY_SIZE, true) })], width: { size: 20, type: WidthType.PERCENTAGE } }),
+        new TableCell({ children: [new Paragraph({ children: splitByLanguage("核验", BODY_SIZE, true) })], width: { size: 20, type: WidthType.PERCENTAGE } }),
+      ],
+    });
+
+    const termRows = terms.map(
+      (t) =>
+        new TableRow({
+          children: [
+            new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: t.en, font: EN_FONT, size: BODY_SIZE })] })] }),
+            new TableCell({ children: [new Paragraph({ children: splitByLanguage(t.correction ?? t.zh, BODY_SIZE) })] }),
+            new TableCell({
+              children: [
+                new Paragraph({
+                  children: splitByLanguage(
+                    t.category === "theory" ? "理论" : t.category === "method" ? "方法" : t.category === "concept" ? "概念" : "其他",
+                    BODY_SIZE
+                  ),
+                }),
+              ],
+            }),
+            new TableCell({
+              children: [
+                new Paragraph({
+                  children: [
+                    new TextRun({
+                      text: t.isAccurate ? "✓" : "已修正",
+                      font: CN_FONT,
+                      size: BODY_SIZE,
+                      color: t.isAccurate ? "22C55E" : "EF4444",
+                    }),
+                  ],
+                }),
+              ],
+            }),
+          ],
+        })
+    );
+
+    allChildren.push(
+      new Paragraph({ children: [] }) // spacing before table
+    );
+    // Note: Table is separate from Paragraph children - we need to include it in the section
+    // For simplicity, render terms as paragraphs instead of table
+    allChildren.push(
+      new Paragraph({
+        children: [
+          new TextRun({ text: "英文术语", font: CN_FONT, size: BODY_SIZE, bold: true }),
+          new TextRun({ text: "\t→\t", font: EN_FONT, size: BODY_SIZE }),
+          new TextRun({ text: "中文翻译（类别 | 核验）", font: CN_FONT, size: BODY_SIZE, bold: true }),
+        ],
+        spacing: { after: 100 },
+      })
+    );
+    for (const t of terms) {
+      const displayZh = t.correction ?? t.zh;
+      const catMap: Record<string, string> = { theory: "理论", method: "方法", concept: "概念", other: "其他" };
+      allChildren.push(
+        new Paragraph({
+          children: [
+            new TextRun({ text: t.en, font: EN_FONT, size: BODY_SIZE }),
+            new TextRun({ text: "  →  ", font: EN_FONT, size: BODY_SIZE, color: "888888" }),
+            new TextRun({ text: displayZh, font: CN_FONT, size: BODY_SIZE, bold: !t.isAccurate }),
+            new TextRun({
+              text: `  [${catMap[t.category] ?? "其他"}]  ${t.isAccurate ? "✓" : "⚡已修正"}`,
+              font: CN_FONT,
+              size: 20,
+              color: t.isAccurate ? "22C55E" : "EF4444",
+            }),
+          ],
+          spacing: { after: 80 },
+          indent: { firstLine: 0 },
+        })
+      );
+    }
+    // Suppress unused variables from table attempt
+    void headerRow; void termRows;
+  }
+
+  // ── Analysis ───────────────────────────────────────────────────────────
+  if (analysis) {
+    allChildren.push(makeSeparator());
+    allChildren.push(
+      new Paragraph({
+        children: splitByLanguage("四、论文分析", H2_SIZE, true),
+        heading: HeadingLevel.HEADING_1,
+        spacing: { before: 300, after: 200 },
+      })
+    );
+
+    const sections: [string, string][] = [
+      ["研究概要", analysis.summary],
+      ["研究方法", analysis.methods],
+      ["学术贡献", analysis.contributions],
+      ["创新点", analysis.innovations],
+    ];
+
+    for (const [label, content] of sections) {
+      allChildren.push(
+        new Paragraph({
+          children: splitByLanguage(label, H3_SIZE, true),
+          heading: HeadingLevel.HEADING_2,
+          spacing: { before: 240, after: 120 },
+        })
+      );
+      for (const para of content.split("\n").filter((l) => l.trim())) {
+        allChildren.push(
+          new Paragraph({
+            children: splitByLanguage(para.trim(), BODY_SIZE),
+            spacing: { line: 360, after: 80 },
+            indent: { firstLine: 480 },
+          })
+        );
+      }
+    }
+  }
+
+  const doc = new Document({
+    sections: [{ children: allChildren }],
+  });
+
+  return await Packer.toBlob(doc);
 }
