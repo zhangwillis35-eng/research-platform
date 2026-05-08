@@ -163,96 +163,105 @@ Output JSON (ALL values in Chinese 中文):
 
 // ─── Public API ────────────────────────────────────────────
 
+const PARALLEL = 3; // Translate 3 chunks concurrently
+
 export async function* translatePaperStream(
   fullText: string,
   title: string,
   provider: AIProvider
 ): AsyncGenerator<TranslateStreamEvent> {
-  // Trim text to reasonable size (DeepSeek can handle ~32k tokens)
-  const text = fullText.slice(0, 60000);
+  const text = fullText.slice(0, 120000); // Up to 120k chars
   const sections = splitIntoSections(text);
   const total = sections.length;
 
-  // Emit metadata so frontend can calculate progress %
   yield { phase: "meta", inputChars: text.length, chunkCount: total };
 
-  let charsProcessed = 0;
+  // Prepare all translation tasks
+  const tasks = sections.map(({ heading, content }, idx) => ({
+    idx,
+    heading: translateHeading(heading),
+    content,
+    userMsg: title && idx === 0 ? `Paper title: "${title}"\n\n${content}` : content,
+    isRef: /^references?$/i.test(heading.trim()),
+  }));
 
-  for (let i = 0; i < sections.length; i++) {
-    const { heading, content } = sections[i];
+  // Translate in parallel batches of PARALLEL, emit each batch in order
+  for (let batchStart = 0; batchStart < tasks.length; batchStart += PARALLEL) {
+    const batch = tasks.slice(batchStart, batchStart + PARALLEL);
 
-    // Skip references section (just preserve as-is)
-    if (/^references?$/i.test(heading.trim())) {
-      yield { phase: "section-start", heading: "参考文献", index: i, total };
-      yield { phase: "chunk", text: "\n[参考文献列表保留英文原文，如需翻译请单独处理]\n" };
-      charsProcessed += content.length;
-      yield { phase: "section-done", index: i, inputCharsProcessed: charsProcessed };
-      continue;
-    }
-
-    // Translate section heading
-    const translatedHeading = heading
-      ? heading
-          .replace(/^(\d+\.?\s*)/, "$1")
-          .replace(
-            /\b(ABSTRACT|Abstract)\b/i,
-            "摘要"
-          )
-          .replace(/\b(INTRODUCTION|Introduction)\b/i, "引言")
-          .replace(/\b(CONCLUSION|Conclusion)S?\b/i, "结论")
-          .replace(/\b(DISCUSSION|Discussion)\b/i, "讨论")
-          .replace(/\b(METHOD|Method)S?\b/i, "方法")
-          .replace(/\b(RESULT|Result)S?\b/i, "结果")
-          .replace(/\b(LITERATURE|Literature)\b/i, "文献综述")
-          .replace(/\b(THEOR\w+|Theor\w+)\b/i, "理论背景")
-          .replace(/\b(HYPOTHES\w+|Hypothes\w+)\b/i, "假设推导")
-          .replace(/\b(DATA|Data)\b/i, "数据")
-          .replace(/\b(MEASURE\w+|Measure\w+)\b/i, "测量")
-          .replace(/\b(ANALYS\w+|Analys\w+)\b/i, "分析")
-          .replace(/\b(FINDING\w+|Finding\w+)\b/i, "研究发现")
-          .replace(/\b(LIMITATION\w+|Limitation\w+)\b/i, "研究局限")
-          .replace(/\b(ACKNOWLEDGE\w+|Acknowledge\w+)\b/i, "致谢")
-          .replace(/\b(APPEND\w+|Append\w+)\b/i, "附录")
-      : "";
-
-    yield { phase: "section-start", heading: translatedHeading || heading, index: i, total };
-
-    try {
-      const chunkSize = 6000; // chars per chunk if section is large
-      const chunks =
-        content.length > chunkSize
-          ? splitByParagraphs(content, chunkSize)
-          : [content];
-
-      for (const chunk of chunks) {
-        const userMsg =
-          title && i === 0
-            ? `Paper title: "${title}"\n\n${chunk}`
-            : chunk;
-
-        for await (const chunk of batchStream(streamAI({
+    // Launch all in batch concurrently
+    const promises = batch.map(async (task) => {
+      if (task.isRef) return "\n[参考文献列表保留英文原文，如需翻译请单独处理]\n";
+      try {
+        let result = "";
+        const stream = streamAI({
           provider,
           system: TRANSLATE_SYSTEM,
-          messages: [{ role: "user", content: userMsg }],
+          messages: [{ role: "user", content: task.userMsg }],
           temperature: 0.1,
           maxTokens: 8000,
-        }), 30)) {
-          yield { phase: "chunk", text: chunk };
+        });
+        for await (const token of stream) {
+          result += token;
         }
+        return result;
+      } catch (err) {
+        return `[翻译出错: ${String(err)}]`;
       }
-    } catch (err) {
-      yield {
-        phase: "error",
-        error: `翻译第${i + 1}节时出错: ${String(err)}`,
-      };
-      return;
+    });
+
+    const results = await Promise.all(promises);
+
+    // Emit results in order
+    let charsProcessed = 0;
+    for (let i = 0; i < tasks.length && i < batchStart; i++) {
+      charsProcessed += tasks[i].content.length;
     }
 
-    charsProcessed += content.length;
-    yield { phase: "section-done", index: i, inputCharsProcessed: charsProcessed };
+    for (let j = 0; j < batch.length; j++) {
+      const task = batch[j];
+      const translated = results[j];
+
+      yield { phase: "section-start", heading: task.heading, index: task.idx, total };
+
+      // Emit heading if present
+      if (task.heading) {
+        yield { phase: "chunk", text: task.heading + "\n\n" };
+      }
+      // Emit translated text in batches for smooth UI
+      const chunkSize = 200;
+      for (let k = 0; k < translated.length; k += chunkSize) {
+        yield { phase: "chunk", text: translated.slice(k, k + chunkSize) };
+      }
+
+      charsProcessed += task.content.length;
+      yield { phase: "section-done", index: task.idx, inputCharsProcessed: charsProcessed };
+    }
   }
 
   yield { phase: "done" };
+}
+
+function translateHeading(heading: string): string {
+  if (!heading) return "";
+  return heading
+    .replace(/^(\d+\.?\s*)/, "$1")
+    .replace(/\b(ABSTRACT|Abstract)\b/i, "摘要")
+    .replace(/\b(INTRODUCTION|Introduction)\b/i, "引言")
+    .replace(/\b(CONCLUSION|Conclusion)S?\b/i, "结论")
+    .replace(/\b(DISCUSSION|Discussion)\b/i, "讨论")
+    .replace(/\b(METHOD|Method)S?\b/i, "方法")
+    .replace(/\b(RESULT|Result)S?\b/i, "结果")
+    .replace(/\b(LITERATURE|Literature)\b/i, "文献综述")
+    .replace(/\b(THEOR\w+|Theor\w+)\b/i, "理论背景")
+    .replace(/\b(HYPOTHES\w+|Hypothes\w+)\b/i, "假设推导")
+    .replace(/\b(DATA|Data)\b/i, "数据")
+    .replace(/\b(MEASURE\w+|Measure\w+)\b/i, "测量")
+    .replace(/\b(ANALYS\w+|Analys\w+)\b/i, "分析")
+    .replace(/\b(FINDING\w+|Finding\w+)\b/i, "研究发现")
+    .replace(/\b(LIMITATION\w+|Limitation\w+)\b/i, "研究局限")
+    .replace(/\b(ACKNOWLEDGE\w+|Acknowledge\w+)\b/i, "致谢")
+    .replace(/\b(APPEND\w+|Append\w+)\b/i, "附录");
 }
 
 function splitByParagraphs(text: string, maxChars: number): string[] {
