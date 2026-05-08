@@ -17,6 +17,7 @@ import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 import Link from "next/link";
 import { setCrossFeatureData } from "@/lib/cross-feature";
+import { PaperAnalysisTab } from "./analysis-tab";
 
 interface Paper {
   id: string;
@@ -29,6 +30,7 @@ interface Paper {
   citationCount: number;
   doi?: string;
   isSelected: boolean;
+  category?: string | null; // "core" | "supporting"
   source: string;
   folder?: string | null;
   fullText?: string | null;
@@ -40,7 +42,7 @@ export default function PapersPage() {
   const projectId = params.id as string;
   const NS = `papers-${projectId}`;
   const [papers, setPapers] = usePersistedState<Paper[]>(NS, "papers", []);
-  const [activeTab, setActiveTab] = usePersistedState<"catalog" | "weekly">(NS, "activeTab", "catalog");
+  const [activeTab, setActiveTab] = usePersistedState<"catalog" | "weekly" | "analysis">(NS, "activeTab", "catalog");
   const [aiProvider, setAiProvider] = usePersistedState<AIProvider>(NS, "aiProvider", "deepseek-fast");
   const [overview, setOverview] = usePersistedState<string | null>(NS, "overview", null);
   const [overviewOpen, setOverviewOpen] = usePersistedState<boolean>(NS, "overviewOpen", false);
@@ -699,9 +701,10 @@ export default function PapersPage() {
   // Split papers into catalog (search/upload) vs weekly digest
   const weeklyPapers = papers.filter((p) => p.folder?.includes("AI 前沿"));
   const catalogPapers = papers.filter((p) => !p.folder?.includes("AI 前沿"));
-  const displayPapers = activeTab === "weekly" ? weeklyPapers : catalogPapers;
+  const displayPapers = activeTab === "weekly" ? weeklyPapers : activeTab === "analysis" ? [] : catalogPapers;
+  const allFullTextPapers = papers.filter((p) => p.fullText);
   const fullTextPapers = displayPapers.filter((p) => p.fullText);
-  const uploadedCount = papers.filter((p) => p.fullText).length;
+  const uploadedCount = allFullTextPapers.length;
 
   return (
     <div className="space-y-6">
@@ -836,6 +839,14 @@ export default function PapersPage() {
         >
           AI 前沿周刊（{weeklyPapers.length}）
         </button>
+        <button
+          className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
+            activeTab === "analysis" ? "border-teal text-teal" : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+          onClick={() => { setActiveTab("analysis"); setFullTextPaper(null); setSelectedForDelete(new Set()); }}
+        >
+          文献分析（{allFullTextPapers.length}）
+        </button>
         {activeTab === "weekly" && weeklyPapers.length > 0 && (
           <button
             className="ml-auto px-2 py-1 text-[10px] text-destructive hover:bg-destructive/10 rounded transition-colors"
@@ -846,8 +857,26 @@ export default function PapersPage() {
         )}
       </div>
 
+      {/* Analysis tab content */}
+      {activeTab === "analysis" && (
+        <PaperAnalysisTab
+          projectId={projectId}
+          papers={allFullTextPapers}
+          aiProvider={aiProvider}
+          onProviderChange={setAiProvider}
+          onPaperCategoryChange={(paperId, category) => {
+            setPapers((prev: Paper[]) => prev.map((p: Paper) => p.id === paperId ? { ...p, category } : p));
+            fetch(`/api/papers/${paperId}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ category }),
+            }).catch(() => {});
+          }}
+        />
+      )}
+
       {/* AI Overview toolbar */}
-      {displayPapers.length > 0 && (
+      {activeTab !== "analysis" && displayPapers.length > 0 && (
         <div className="flex items-center gap-2">
           <AIProviderSelect value={aiProvider} onChange={setAiProvider} />
           <Button
@@ -872,7 +901,7 @@ export default function PapersPage() {
       )}
 
       {/* AI Overview panel */}
-      {overviewOpen && (
+      {activeTab !== "analysis" && overviewOpen && (
         <div className="border border-teal/20 rounded-lg bg-teal/5 p-4">
           {overviewLoading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -888,7 +917,7 @@ export default function PapersPage() {
       )}
 
       {/* Field Analysis section */}
-      {fullTextPapers.length > 0 && (
+      {activeTab !== "analysis" && fullTextPapers.length > 0 && (
         <div className="border border-border/50 rounded-lg bg-card">
           <div className="flex items-center justify-between px-4 py-2 border-b border-border/30">
             <div className="flex items-center gap-3">
@@ -978,8 +1007,8 @@ export default function PapersPage() {
         </div>
       )}
 
-      {/* Full text reader view */}
-      {fullTextPaper ? (
+      {/* Full text reader view / Paper list (hidden during analysis tab) */}
+      {activeTab === "analysis" ? null : fullTextPaper ? (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div>

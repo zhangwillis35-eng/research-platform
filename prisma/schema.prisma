@@ -76,6 +76,7 @@ model Paper {
   fieldsOfStudy  Json? // ["Management", "Psychology"]
   rawMetadata    Json?
   isSelected     Boolean  @default(false)
+  category       String?  // "core" | "supporting" — drag-drop classification
   folder         String? // e.g. "AI 前沿周刊", "手动添加"
   notes          String?  @db.Text
   aiAnalysis     String?  @db.Text // AI analysis: model, variables, methods, contribution
@@ -91,12 +92,27 @@ model Paper {
   variables VariableRelation[]
   theories  PaperTheory[]
   cluster   PaperCluster?
+  chunks    PaperChunk[]
 
   @@unique([projectId, doi])
   @@unique([projectId, externalId])
   @@index([projectId, year])
   @@index([projectId, citationCount])
   @@index([projectId, folder])
+}
+
+model PaperChunk {
+  id        String  @id @default(cuid())
+  paperId   String
+  projectId String
+  section   String? // "abstract", "introduction", "methodology", "results", "discussion", etc.
+  content   String  @db.Text
+  chunkIdx  Int
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([paperId])
 }
 
 model PaperCluster {

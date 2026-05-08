@@ -85,12 +85,16 @@ export async function PUT(
 
   const body = await request.json();
 
+  // Build update data — only include provided fields
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data: Record<string, any> = {};
+  if (body.isSelected !== undefined) data.isSelected = body.isSelected;
+  if (body.notes !== undefined) data.notes = body.notes;
+  if (body.category !== undefined) data.category = body.category; // "core" | "supporting" | null
+
   const paper = await prisma.paper.update({
     where: { id },
-    data: {
-      isSelected: body.isSelected,
-      notes: body.notes,
-    },
+    data,
   });
 
   return NextResponse.json({ paper });
