@@ -45,6 +45,20 @@ export async function GET(request: Request) {
     omit: { pdfData: true, ...(!selectFullText ? { fullText: true } : {}) },
   });
 
+  // Batch-check which papers have fullText (single query, no content transferred)
+  if (!selectFullText && papers.length > 0) {
+    const papersWithText = await prisma.paper.findMany({
+      where: { projectId, fullText: { not: null } },
+      select: { id: true },
+    });
+    const hasTextSet = new Set(papersWithText.map((p) => p.id));
+    const enriched = papers.map((p) => ({
+      ...p,
+      fullText: hasTextSet.has(p.id) ? "__has_fulltext__" : null,
+    }));
+    return NextResponse.json({ papers: enriched });
+  }
+
   return NextResponse.json({ papers });
 }
 
