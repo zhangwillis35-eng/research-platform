@@ -72,6 +72,31 @@ Output strictly in JSON format:
   ]
 }`,
 
+  model: `You are a conceptual model expert in management research. Based on the provided papers, extract variables and their hypothesized relationships to build a conceptual model.
+
+Output strict JSON (ALL values in Chinese 中文):
+{
+  "variables": [
+    {"name": "变量名称", "type": "iv"},
+    {"name": "变量名称", "type": "mediator"},
+    {"name": "变量名称", "type": "dv"},
+    {"name": "变量名称", "type": "moderator"}
+  ],
+  "hypotheses": [
+    {"from": "自变量名称", "to": "因变量名称", "label": "H1 (+)", "direction": "positive"},
+    {"from": "变量A", "to": "变量B", "label": "H2 (-)", "direction": "negative"},
+    {"from": "调节变量", "to": "变量B", "label": "H3 (Mod)", "direction": "moderation"}
+  ]
+}
+
+Rules:
+- type must be one of: iv (independent), dv (dependent), mediator, moderator, control
+- direction: positive, negative, moderation, mixed
+- label format: "H{n} (+/-/Mod)" — number hypotheses sequentially
+- Extract 3-8 variables and 3-10 hypotheses from the literature
+- If papers describe mediation, include the mediator with separate paths (X→M, M→Y)
+- If papers describe moderation, set direction to "moderation"`,
+
   theories: `你是管理学理论分析专家。从以下文献中识别所有使用的理论框架。
 
 对每个理论，请提取：

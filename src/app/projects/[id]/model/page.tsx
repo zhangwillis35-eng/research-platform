@@ -232,29 +232,16 @@ export default function ConceptualModelPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           provider: aiProvider,
-          type: "variables",
-          content: `基于以下文献，提取概念模型中的变量关系。输出严格JSON：
-{
-  "variables": [
-    {"name": "AI washing", "type": "iv"},
-    {"name": "投资者信任", "type": "mediator"},
-    {"name": "企业估值", "type": "dv"},
-    {"name": "信息透明度", "type": "moderator"}
-  ],
-  "hypotheses": [
-    {"from": "AI washing", "to": "投资者信任", "label": "H1 (-)", "direction": "negative"},
-    {"from": "投资者信任", "to": "企业估值", "label": "H2 (+)", "direction": "positive"},
-    {"from": "信息透明度", "to": "投资者信任", "label": "H3 (Mod)", "direction": "moderation"}
-  ]
-}
-
-文献：
-${paperContext || "（无文献，请基于常见管理学变量关系生成示例）"}`,
+          type: "model",
+          content: paperContext || "（无文献，请基于常见管理学变量关系生成示例）",
         }),
         signal,
       });
 
-      if (!res.ok) throw new Error("AI analysis failed");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.details || errData.error || `HTTP ${res.status}`);
+      }
       const data = await res.json();
       let result = data.result;
       if (typeof result === "string") {
