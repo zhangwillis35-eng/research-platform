@@ -244,7 +244,7 @@ export default function TranslatePage() {
                 heading: event.heading,
               }));
               if (event.heading) {
-                stream.append(`\n\n## ${event.heading}\n\n`);
+                stream.append(`\n\n${event.heading}\n\n`);
               }
             } else if (event.phase === "chunk") {
               stream.append(event.text);
@@ -594,16 +594,43 @@ export default function TranslatePage() {
           {activeTab === "translation" && translatedText && (
             <Card>
               <CardContent className="pt-4">
-                <div className="prose prose-sm max-w-none dark:prose-invert">
-                  <pre
-                    className="whitespace-pre-wrap font-sans text-sm leading-relaxed"
-                    style={{ fontFamily: "inherit" }}
-                  >
-                    {translatedText}
-                    {phase === "translating" && (
-                      <span className="inline-block w-2 h-4 ml-0.5 bg-primary/70 animate-pulse align-middle" />
-                    )}
-                  </pre>
+                <div className="text-sm leading-relaxed space-y-2">
+                  {translatedText.split("\n").map((line, idx) => {
+                    const trimmed = line.trim();
+                    if (!trimmed) return <div key={idx} className="h-2" />;
+                    // Section heading: "1. 引言" or "## Heading"
+                    if (/^\d+\.\s/.test(trimmed) && trimmed.length < 80) {
+                      return (
+                        <p key={idx} className="font-bold text-base mt-4 mb-1 text-foreground">
+                          {trimmed}
+                        </p>
+                      );
+                    }
+                    if (/^#{1,3}\s/.test(trimmed)) {
+                      return (
+                        <p key={idx} className="font-bold text-base mt-4 mb-1 text-foreground">
+                          {trimmed.replace(/^#+\s*/, "")}
+                        </p>
+                      );
+                    }
+                    // Figure/table placeholder
+                    if (/^\[图|^\[表/.test(trimmed)) {
+                      return (
+                        <p key={idx} className="text-center italic text-muted-foreground my-3">
+                          {trimmed}
+                        </p>
+                      );
+                    }
+                    // Normal paragraph
+                    return (
+                      <p key={idx} className="text-foreground/90 indent-8">
+                        {trimmed}
+                      </p>
+                    );
+                  })}
+                  {phase === "translating" && (
+                    <span className="inline-block w-2 h-4 ml-0.5 bg-primary/70 animate-pulse align-middle" />
+                  )}
                 </div>
               </CardContent>
             </Card>

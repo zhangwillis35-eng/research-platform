@@ -221,8 +221,8 @@ export async function generateTranslationDocx(options: {
       allChildren.push(new Paragraph({ spacing: { after: 80 } }));
       continue;
     }
-    if (/^#{1,3}\s/.test(trimmed) || /^(\d+\.?\s+)[A-Z\u4e00-\u9fff]/.test(trimmed)) {
-      const level = trimmed.startsWith("###") ? H3_SIZE : trimmed.startsWith("##") ? H2_SIZE : H2_SIZE;
+    if (/^#{1,3}\s/.test(trimmed) || /^\d{1,2}\.?\s/.test(trimmed) && trimmed.length < 80) {
+      const level = trimmed.startsWith("###") ? H3_SIZE : H2_SIZE;
       const text = trimmed.replace(/^#+\s*/, "");
       allChildren.push(
         new Paragraph({

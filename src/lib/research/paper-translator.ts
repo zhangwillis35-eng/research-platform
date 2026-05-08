@@ -49,7 +49,7 @@ function isHeading(line: string): boolean {
   return HEADING_PATTERN.test(trimmed);
 }
 
-const CHUNK_TARGET = 4000; // ~4000 chars per chunk → ~5-15 chunks for a typical paper
+const CHUNK_TARGET = 6000; // ~6000 chars per chunk → ~5-10 chunks for a typical paper
 
 function splitIntoSections(
   text: string
@@ -92,25 +92,41 @@ function splitIntoSections(
     return result;
   }
 
-  // Pass 2: fallback — split by paragraphs into even chunks
-  return splitByParagraphs(text.trim(), CHUNK_TARGET).map((chunk, i) => ({
-    heading: i === 0 ? "" : `（续 ${i + 1}）`,
+  // Pass 2: fallback — split by paragraphs into even chunks (no heading for continuation)
+  return splitByParagraphs(text.trim(), CHUNK_TARGET).map((chunk) => ({
+    heading: "",
     content: chunk,
   }));
 }
 
 // ─── Translation prompt ────────────────────────────────────
+// Based on the 三步翻译法 (3-step translation method) by 宝玉, adapted for
+// single-pass streaming. Combines direct translation + self-review + polished
+// output into one instruction set. References: PDFMathTranslate, immersive-translate.
 
-const TRANSLATE_SYSTEM = `You are a professional academic paper translator (English → Chinese 简体中文).
+const TRANSLATE_SYSTEM = `You are a senior academic translator with deep expertise in English-to-Chinese (简体中文) translation of research papers.
 
-CRITICAL RULES:
-1. Translate ALL content faithfully and completely. Do NOT skip or summarize any part.
-2. Use formal Chinese academic writing style (学术书面语).
-3. Preserve citation markers: [1], [1,2,3], (Author, Year) — keep as-is.
-4. Translate "Figure 1" → "图1", "Table 2" → "表2".
-5. Keep formulas, equations, statistics UNCHANGED: β = .23, p < .001, R² = .45.
-6. Skip metadata noise (DOI, page numbers, journal headers, copyright notices) — do NOT translate these.
-7. Output ONLY the Chinese translation. No explanations, no original text, no comments.`;
+## Translation Process (execute internally, output ONLY the final polished version)
+1. DIRECT TRANSLATION: First produce a literal translation preserving all meaning.
+2. SELF-REVIEW: Internally check for: unnatural Chinese expressions, mistranslated academic terms, awkward sentence structure, missing content.
+3. POLISHED OUTPUT: Refine into fluent academic Chinese that reads naturally to a Chinese researcher. This is what you output.
+
+## Absolute Rules
+- Translate EVERY sentence completely. NEVER skip, summarize, or omit any content.
+- Skip only metadata noise: DOI links, page numbers, journal headers, copyright notices, author affiliations, article history dates.
+- Output ONLY the final polished Chinese translation. No explanations, no original text, no translator notes.
+
+## Academic Style Guide
+- Use formal written Chinese (书面语), not spoken Chinese (口语).
+- Sentence structure should follow Chinese academic conventions, not English word order.
+- Use standard academic terms: hypothesis→假设, significance→显著性, mediating→中介, moderating→调节, construct→构念, sample→样本, regression→回归, validity→效度, reliability→信度, variance→方差, correlation→相关, cross-sectional→横截面, longitudinal→纵向, operationalize→操作化, antecedent→前因变量, outcome→结果变量, boundary condition→边界条件.
+- For proper nouns and scale names: keep English on first mention with Chinese in parentheses, e.g., "Big Five（大五人格）".
+
+## Preservation Rules
+- Citations: keep exactly as-is — [1], [1,2], (Author, Year), (Author et al., Year).
+- Figures/tables: "Figure 1" → "图1", "Table 2" → "表2", "Appendix A" → "附录A".
+- Formulas and statistics: keep UNCHANGED — β = .23, p < .001, R² = .45, F(2,150) = 3.42.
+- Variable names in formulas: keep English.`;
 
 // ─── Term extraction prompt ────────────────────────────────
 
