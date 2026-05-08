@@ -128,59 +128,64 @@ async function rerankChunks(
     return chunks.map((c) => ({ ...c, relevance: c.score, summary: "" }));
   }
 
-  // Batch chunks for reranking (max 20 per call to stay within context)
-  const batchSize = 20;
+  // Batch chunks for reranking (max 15 per call, run batches in parallel)
+  const batchSize = 15;
+  const batches: RetrievedChunk[][] = [];
+  for (let i = 0; i < chunks.length; i += batchSize) {
+    batches.push(chunks.slice(i, i + batchSize));
+  }
+
   const allRanked: RankedChunk[] = [];
 
-  for (let i = 0; i < chunks.length; i += batchSize) {
-    const batch = chunks.slice(i, i + batchSize);
-    const passageList = batch
-      .map(
-        (c, j) =>
-          `[${j}] From "${c.paperTitle}" (${c.year ?? "N/A"}), section: ${c.section ?? "unknown"}\n${c.content.slice(0, 1500)}`,
-      )
-      .join("\n\n---\n\n");
+  const batchResults = await Promise.all(
+    batches.map(async (batch) => {
+      const passageList = batch
+        .map(
+          (c, j) =>
+            `[${j}] From "${c.paperTitle}" (${c.year ?? "N/A"}), section: ${c.section ?? "unknown"}\n${c.content.slice(0, 1200)}`,
+        )
+        .join("\n\n---\n\n");
 
-    try {
-      const response = await callAI({
-        provider,
-        system: `You are an academic research assistant evaluating passage relevance.
+      try {
+        const response = await callAI({
+          provider,
+          system: `You are an academic research assistant evaluating passage relevance.
 For each passage, score its relevance to the question from 0-10 and write a 1-sentence summary of how it relates.
 
 Output strict JSON array:
 [{"idx": 0, "score": 8, "summary": "This passage discusses..."}]
 
 Scoring: 9-10 = directly answers the question, 7-8 = highly relevant evidence, 5-6 = somewhat related, 0-4 = not relevant.`,
-        messages: [
-          {
-            role: "user",
-            content: `Question: ${query}\n\nPassages:\n${passageList}`,
-          },
-        ],
-        jsonMode: true,
-        noThinking: true,
-        temperature: 0.1,
-        maxTokens: 2048,
-      });
+          messages: [
+            {
+              role: "user",
+              content: `Question: ${query}\n\nPassages:\n${passageList}`,
+            },
+          ],
+          jsonMode: true,
+          noThinking: true,
+          temperature: 0.1,
+          maxTokens: 1024,
+        });
 
-      const scores: { idx: number; score: number; summary: string }[] =
-        JSON.parse(response.content);
+        const scores: { idx: number; score: number; summary: string }[] =
+          JSON.parse(response.content);
 
-      for (const s of scores) {
-        if (s.idx >= 0 && s.idx < batch.length) {
-          allRanked.push({
+        return scores
+          .filter((s) => s.idx >= 0 && s.idx < batch.length)
+          .map((s) => ({
             ...batch[s.idx],
             relevance: s.score,
             summary: s.summary ?? "",
-          });
-        }
+          }));
+      } catch {
+        return batch.map((c) => ({ ...c, relevance: c.score * 10, summary: "" }));
       }
-    } catch {
-      // Fallback: keep original scores
-      for (const c of batch) {
-        allRanked.push({ ...c, relevance: c.score * 10, summary: "" });
-      }
-    }
+    }),
+  );
+
+  for (const results of batchResults) {
+    allRanked.push(...results);
   }
 
   // Sort by relevance and return top K
@@ -266,6 +271,7 @@ export async function* answerQuestion(
         content: `## 文献来源（${relevant.length} 个相关段落）\n\n${sourcesContext}\n\n## 用户问题\n\n${question}`,
       },
     ],
+    noThinking: true,
     temperature: 0.3,
     maxTokens: 4096,
   });
