@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useAbort } from "@/hooks/use-abort";
@@ -15,19 +15,9 @@ import {
 import type { AcademicTerm, PaperAnalysis, TranslateStreamEvent } from "@/lib/research/paper-translator";
 import { generateTranslationDocx, downloadBlob } from "@/lib/docx-export";
 
-interface Paper {
-  id: string;
-  title: string;
-  abstract?: string | null;
-  authors: { name: string }[];
-  year?: number | null;
-  venue?: string | null;
-  fullText?: string | null;
-  pdfFileName?: string | null;
-}
-
 type Phase =
   | "idle"
+  | "uploading"
   | "translating"
   | "extracting-terms"
   | "analyzing"
@@ -40,8 +30,62 @@ interface ExtractedFigure {
   page: number;
   width: number;
   height: number;
-  base64: string; // PNG base64
+  base64: string;
 }
+
+// ─── pdf.js helpers (client-side text extraction) ──────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function ensurePdfJs(): Promise<any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let lib: any = (window as any).pdfjsLib;
+  if (!lib) {
+    await new Promise<void>((resolve) => {
+      const script = document.createElement("script");
+      script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+      script.onload = () => resolve();
+      script.onerror = () => resolve();
+      document.head.appendChild(script);
+    });
+    lib = (window as any).pdfjsLib;
+  }
+  if (lib?.GlobalWorkerOptions) {
+    lib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  }
+  return lib;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function extractTextFromPdf(file: File, pdfjsLib: any): Promise<string> {
+  if (!pdfjsLib) return "";
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+    const pages: string[] = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      pages.push(content.items.map((item: any) => item.str).join(" "));
+    }
+    return pages.join("\n\n");
+  } catch {
+    return "";
+  }
+}
+
+function extractTitle(fullText: string, fileName: string): string {
+  const lines = fullText.split("\n").map((l) => l.trim()).filter(Boolean);
+  for (const line of lines.slice(0, 20)) {
+    if (line.length >= 15 && line.length <= 250 && !/^[\d\s.]+$/.test(line) && !line.startsWith("http")) {
+      return line;
+    }
+  }
+  return fileName.replace(/\.pdf$/i, "");
+}
+
+// ─── Component ─────────────────────────────────────────────────────────────
 
 export default function TranslatePage() {
   const params = useParams();
@@ -49,43 +93,86 @@ export default function TranslatePage() {
   const NS = `translate-${projectId}`;
 
   const [provider, setProvider] = usePersistedState<AIProvider>(NS, "provider", "deepseek-fast");
-  const [papers, setPapers] = useState<Paper[]>([]);
-  const [selectedPaperId, setSelectedPaperId] = usePersistedState<string>(NS, "paperId", "");
   const [phase, setPhase] = usePersistedState<Phase>(NS, "phase", "idle");
   const [translatedText, setTranslatedText] = usePersistedState<string>(NS, "translated", "");
   const [terms, setTerms] = usePersistedState<AcademicTerm[]>(NS, "terms", []);
   const [analysis, setAnalysis] = usePersistedState<PaperAnalysis | null>(NS, "analysis", null);
+  const [paperTitle, setPaperTitle] = usePersistedState<string>(NS, "title", "");
+  const [paperFileName, setPaperFileName] = usePersistedState<string>(NS, "fileName", "");
+  const [paperCharCount, setPaperCharCount] = usePersistedState<number>(NS, "charCount", 0);
   const [figures, setFigures] = useState<ExtractedFigure[]>([]);
   const [figuresLoading, setFiguresLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("translation");
   const [sectionProgress, setSectionProgress] = useState({ current: 0, total: 0, heading: "" });
   const [exporting, setExporting] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
 
   const { getSignal, abort, reset } = useAbort();
   const translatedRef = useRef("");
-
-  // Load papers list (without fullText — fetch detail separately when translating)
-  useEffect(() => {
-    fetch(`/api/papers?projectId=${projectId}&source=catalog`)
-      .then((r) => r.json())
-      .then((d) => {
-        const list: Paper[] = (d.papers ?? []).filter(
-          (p: Paper) => p.fullText != null // __has_fulltext__ marker
-        );
-        setPapers(list);
-      })
-      .catch(console.error);
-  }, [projectId]);
-
-  const selectedPaper = papers.find((p) => p.id === selectedPaperId) ?? null;
+  const paperTextRef = useRef(""); // full text from uploaded PDF
+  const pdfBytesRef = useRef<ArrayBuffer | null>(null); // raw PDF for image extraction
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleStop = useCallback(() => {
     abort();
     setPhase("done");
   }, [abort]);
 
+  // ─── PDF upload & text extraction ──────────────────────────────────────
+
+  async function handleFile(file: File) {
+    if (!file.name.toLowerCase().endsWith(".pdf")) return;
+
+    setPhase("uploading");
+    setTranslatedText("");
+    setTerms([]);
+    setAnalysis(null);
+    setFigures([]);
+    translatedRef.current = "";
+
+    try {
+      const pdfjsLib = await ensurePdfJs();
+      const [text, arrayBuffer] = await Promise.all([
+        extractTextFromPdf(file, pdfjsLib),
+        file.arrayBuffer(),
+      ]);
+
+      if (!text || text.trim().length < 100) {
+        alert("无法提取文本，可能是扫描版 PDF 或加密文档。");
+        setPhase("idle");
+        return;
+      }
+
+      paperTextRef.current = text;
+      pdfBytesRef.current = arrayBuffer;
+      const title = extractTitle(text, file.name);
+      setPaperTitle(title);
+      setPaperFileName(file.name);
+      setPaperCharCount(text.length);
+      setPhase("idle");
+    } catch (err) {
+      console.error("[translate] PDF extraction error:", err);
+      setPhase("idle");
+    }
+  }
+
+  function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) handleFile(file);
+    e.target.value = "";
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  }
+
+  // ─── Translation ──────────────────────────────────────────────────────
+
   async function handleTranslate() {
-    if (!selectedPaper) return;
+    if (!paperTextRef.current) return;
     reset();
     setPhase("translating");
     setTranslatedText("");
@@ -96,30 +183,14 @@ export default function TranslatePage() {
     setSectionProgress({ current: 0, total: 0, heading: "" });
     setActiveTab("translation");
 
-    // Fetch fullText if not loaded yet
-    let paperText = selectedPaper.fullText ?? "";
-    if (!paperText || paperText === "__has_fulltext__") {
-      try {
-        const detail = await fetch(`/api/papers/${selectedPaper.id}`).then((r) => r.json());
-        paperText = detail.paper?.fullText ?? "";
-      } catch {
-        setPhase("done");
-        return;
-      }
-    }
-    if (!paperText || paperText.trim().length < 100) {
-      setPhase("done");
-      return;
-    }
-
     try {
       const res = await fetch("/api/research/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "translate",
-          text: paperText,
-          title: selectedPaper.title,
+          text: paperTextRef.current,
+          title: paperTitle,
           provider,
         }),
         signal: getSignal(),
@@ -157,8 +228,7 @@ export default function TranslatePage() {
               translatedRef.current += event.text;
               setTranslatedText(translatedRef.current);
             } else if (event.phase === "done") {
-              // Start background tasks
-              startBackgroundTasks(selectedPaper.title, paperText, translatedRef.current);
+              startBackgroundTasks(paperTitle, paperTextRef.current, translatedRef.current);
             } else if (event.phase === "error") {
               console.error("[translate] stream error:", event.error);
             }
@@ -175,16 +245,17 @@ export default function TranslatePage() {
     }
   }
 
-  async function startBackgroundTasks(title: string, paperText: string, finalText: string) {
-    void finalText;
+  // ─── Background tasks (terms + analysis + image extraction) ────────────
 
-    // Extract PDF images (parallel with terms)
-    if (selectedPaperId) {
+  async function startBackgroundTasks(title: string, paperText: string, _finalText: string) {
+    // Extract PDF images in parallel (send raw PDF bytes to server)
+    if (pdfBytesRef.current) {
       setFiguresLoading(true);
+      const formData = new FormData();
+      formData.append("pdf", new Blob([pdfBytesRef.current], { type: "application/pdf" }), "paper.pdf");
       fetch("/api/research/translate/images", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paperId: selectedPaperId }),
+        body: formData,
       })
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
@@ -239,15 +310,15 @@ export default function TranslatePage() {
     setPhase("done");
   }
 
+  // ─── Word export ──────────────────────────────────────────────────────
+
   async function handleExport() {
-    if (!selectedPaper || !translatedText) return;
+    if (!translatedText) return;
     setExporting(true);
     try {
-      // Attempt to get a translated title from the first line
-      const firstLine = translatedText.split("\n").find((l) => l.trim().length > 5) ?? selectedPaper.title;
+      const firstLine = translatedText.split("\n").find((l) => l.trim().length > 5) ?? paperTitle;
       const translatedTitle = firstLine.replace(/^#+\s*/, "").trim().slice(0, 120);
 
-      // Convert base64 figures to FigureImage format for docx
       const figureImages = figures.map((f) => ({
         label: f.label,
         caption: `来源：原文第 ${f.page} 页`,
@@ -257,17 +328,14 @@ export default function TranslatePage() {
       }));
 
       const blob = await generateTranslationDocx({
-        originalTitle: selectedPaper.title,
+        originalTitle: paperTitle,
         translatedTitle,
-        authors: selectedPaper.authors?.map((a) => a.name).join(", "),
-        year: selectedPaper.year ?? undefined,
-        venue: selectedPaper.venue ?? undefined,
         translatedText,
         terms,
         analysis,
         figures: figureImages,
       });
-      const filename = `[译文] ${selectedPaper.title.slice(0, 40)}.docx`;
+      const filename = `[译文] ${(paperTitle || paperFileName).slice(0, 40)}.docx`;
       downloadBlob(blob, filename);
     } catch (err) {
       console.error("[export]", err);
@@ -277,6 +345,7 @@ export default function TranslatePage() {
   }
 
   const isRunning = phase === "translating" || phase === "extracting-terms" || phase === "analyzing";
+  const hasUploadedPdf = !!paperTextRef.current || paperCharCount > 0;
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
@@ -285,59 +354,77 @@ export default function TranslatePage() {
         <div>
           <h1 className="text-xl font-semibold">文献翻译</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            英文学术论文 → 中文，含关键词核验与论文分析
+            上传英文 PDF → 中文翻译，含关键词核验与论文分析
           </p>
         </div>
         <AIProviderSelect value={provider} onChange={setProvider} />
       </div>
 
-      {/* Paper selector */}
+      {/* PDF upload area */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium">选择论文</CardTitle>
+          <CardTitle className="text-sm font-medium">上传 PDF</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          {papers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              文献库中暂无已上传原文的论文。请先在「文献库」上传 PDF 原文。
-            </p>
-          ) : (
-            <select
-              className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background"
-              value={selectedPaperId}
-              onChange={(e) => {
-                setSelectedPaperId(e.target.value);
-                setPhase("idle");
-                setTranslatedText("");
-                setTerms([]);
-                setAnalysis(null);
-                setFigures([]);
-              }}
+        <CardContent>
+          {!hasUploadedPdf ? (
+            <div
+              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
+                dragOver
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:border-primary/50"
+              } ${phase === "uploading" ? "opacity-60 pointer-events-none" : ""}`}
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
             >
-              <option value="">— 请选择论文 —</option>
-              {papers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title}
-                  {p.year ? ` (${p.year})` : ""}
-                  {p.fullText ? ` [${Math.round(p.fullText.length / 1000)}k字符]` : ""}
-                </option>
-              ))}
-            </select>
-          )}
-
-          {selectedPaper && (
-            <div className="text-xs text-muted-foreground space-y-0.5">
-              <div>
-                <span className="font-medium">作者：</span>
-                {selectedPaper.authors?.map((a) => a.name).join(", ") || "—"}
+              <div className="text-3xl mb-2 opacity-40">
+                {phase === "uploading" ? "⏳" : "📄"}
               </div>
-              {selectedPaper.venue && (
-                <div>
-                  <span className="font-medium">期刊：</span>
-                  {selectedPaper.venue}
-                  {selectedPaper.year ? ` (${selectedPaper.year})` : ""}
+              <p className="text-sm text-muted-foreground">
+                {phase === "uploading"
+                  ? "正在提取文本..."
+                  : "点击上传或拖拽 PDF 文件到此处"}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                支持英文学术论文 PDF（需包含可复制文本）
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf"
+                className="hidden"
+                onChange={handleFileInput}
+              />
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-4 p-3 bg-muted/30 rounded-lg">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium truncate">{paperTitle}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {paperFileName} · {Math.round(paperCharCount / 1000)}k 字符
                 </div>
-              )}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0 text-xs"
+                onClick={() => {
+                  paperTextRef.current = "";
+                  pdfBytesRef.current = null;
+                  setPaperTitle("");
+                  setPaperFileName("");
+                  setPaperCharCount(0);
+                  setPhase("idle");
+                  setTranslatedText("");
+                  setTerms([]);
+                  setAnalysis(null);
+                  setFigures([]);
+                }}
+                disabled={isRunning}
+              >
+                更换文件
+              </Button>
             </div>
           )}
         </CardContent>
@@ -347,10 +434,14 @@ export default function TranslatePage() {
       <div className="flex items-center gap-3">
         <Button
           onClick={handleTranslate}
-          disabled={!selectedPaper || isRunning}
+          disabled={!hasUploadedPdf || isRunning}
           size="sm"
         >
-          {phase === "idle" ? "开始翻译" : phase === "done" ? "重新翻译" : "翻译中..."}
+          {phase === "idle" || phase === "uploading"
+            ? "开始翻译"
+            : phase === "done"
+            ? "重新翻译"
+            : "翻译中..."}
         </Button>
         <StopButton show={isRunning} onClick={handleStop} />
         {translatedText && !isRunning && (
@@ -547,7 +638,7 @@ export default function TranslatePage() {
                   <p className="text-sm text-muted-foreground">
                     {figuresLoading
                       ? "正在从 PDF 中提取图表..."
-                      : "未提取到图表（翻译完成后自动从 PDF 提取，需要论文有已上传的 PDF 文件）"}
+                      : "未提取到图表（翻译完成后自动提取）"}
                   </p>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
