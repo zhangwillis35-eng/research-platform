@@ -391,6 +391,56 @@ export default function PapersPage() {
     }
   }
 
+  // ─── Shared: load pdf.js and extract text client-side ───
+  async function ensurePdfJs() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let lib: any = (window as any).pdfjsLib;
+    if (!lib) {
+      await new Promise<void>((resolve) => {
+        const script = document.createElement("script");
+        script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+        script.onload = () => resolve();
+        script.onerror = () => resolve();
+        document.head.appendChild(script);
+      });
+      lib = (window as any).pdfjsLib;
+    }
+    if (lib?.GlobalWorkerOptions) {
+      lib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    }
+    return lib;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function extractTextClientSide(file: File, pdfjsLib: any): Promise<string> {
+    if (!pdfjsLib) return "";
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+      const pages: string[] = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        pages.push(content.items.map((item: any) => item.str).join(" "));
+      }
+      return pages.join("\n\n");
+    } catch {
+      return "";
+    }
+  }
+
+  function extractTitle(fullText: string, fileName: string): string {
+    const lines = fullText.split("\n").map((l: string) => l.trim()).filter(Boolean);
+    for (const line of lines.slice(0, 20)) {
+      if (line.length >= 15 && line.length <= 250 && !/^[\d\s.]+$/.test(line) && !line.startsWith("http")) {
+        return line;
+      }
+    }
+    return fileName.replace(/\.pdf$/i, "");
+  }
+
   // Upload new PDFs (creates new paper entries)
   async function handleUploadPDF(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
@@ -400,11 +450,20 @@ export default function PapersPage() {
     setUploadResult(null);
     let uploaded = 0;
 
+    const pdfjsLib = await ensurePdfJs();
+
     for (const file of Array.from(files)) {
       try {
+        // Extract text client-side first (avoids server-side unpdf dependency)
+        const clientText = await extractTextClientSide(file, pdfjsLib);
+
         const formData = new FormData();
         formData.append("file", file);
         formData.append("projectId", projectId);
+        if (clientText.trim().length >= 50) {
+          formData.append("fullText", clientText);
+          formData.append("title", extractTitle(clientText, file.name));
+        }
 
         const res = await fetch("/api/papers/upload", {
           method: "POST",
@@ -446,61 +505,20 @@ export default function PapersPage() {
 
     setFolderProgress({ current: 0, total: files.length, name: "加载 PDF 解析器..." });
 
-    // Load pdf.js UMD from CDN (creates window.pdfjsLib — works on all browsers)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let pdfjsLib: any = (window as any).pdfjsLib;
-    if (!pdfjsLib) {
-      await new Promise<void>((resolve) => {
-        const script = document.createElement("script");
-        script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-        script.onload = () => resolve();
-        script.onerror = () => resolve();
-        document.head.appendChild(script);
-      });
-      pdfjsLib = (window as any).pdfjsLib;
-    }
-
-    if (pdfjsLib?.GlobalWorkerOptions) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc =
-        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-    }
+    const pdfjsLib = await ensurePdfJs();
 
     setFolderProgress({ current: 0, total: files.length, name: "开始提取文本..." });
-
-    async function extractTextFromPdf(file: File): Promise<string> {
-      // If pdf.js loaded, extract in browser
-      if (pdfjsLib) {
-        const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        const pages: string[] = [];
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const content = await page.getTextContent();
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          pages.push(content.items.map((item: any) => item.str).join(" "));
-        }
-        return pages.join("\n\n");
-      }
-      // Fallback: send PDF to server for extraction
-      return "";
-    }
 
     async function uploadOne(file: File) {
       try {
         let fullText = "";
         try {
-          fullText = (await extractTextFromPdf(file)).trim();
+          fullText = (await extractTextClientSide(file, pdfjsLib)).trim();
         } catch { /* pdf.js extraction failed */ }
 
         if (fullText.length >= 50) {
           // Fast path: send extracted text as JSON
-          const lines = fullText.split("\n").map((l: string) => l.trim()).filter(Boolean);
-          let title = file.name.replace(/\.pdf$/i, "");
-          for (const line of lines.slice(0, 20)) {
-            if (line.length >= 15 && line.length <= 250 && !/^[\d\s.]+$/.test(line) && !line.startsWith("http")) {
-              title = line; break;
-            }
-          }
+          const title = extractTitle(fullText, file.name);
           const res = await fetch("/api/papers/batch-upload-text", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -567,10 +585,16 @@ export default function PapersPage() {
     setUploadResult(null);
 
     try {
+      const pdfjsLib = await ensurePdfJs();
+      const clientText = await extractTextClientSide(file, pdfjsLib);
+
       const formData = new FormData();
       formData.append("file", file);
       formData.append("projectId", projectId);
       formData.append("paperId", attachTarget);
+      if (clientText.trim().length >= 50) {
+        formData.append("fullText", clientText);
+      }
 
       const res = await fetch("/api/papers/upload", {
         method: "POST",

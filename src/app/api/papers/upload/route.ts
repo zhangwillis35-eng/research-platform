@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
 import { requireProjectAccess } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { extractText, getMeta } from "unpdf";
 import { uploadPdf, pdfKey } from "@/lib/oss";
 
 /**
- * POST /api/papers/upload — Upload a PDF, extract text, store in OSS.
+ * POST /api/papers/upload — Upload a PDF, store in OSS.
  *
  * Accepts multipart/form-data with:
  *   - file: PDF file
  *   - projectId: project ID
  *   - paperId: (optional) existing paper ID to attach fullText to
+ *   - fullText: (optional) pre-extracted text from client-side pdf.js
+ *   - title: (optional) pre-extracted title
  */
 export async function POST(request: Request) {
   try {
@@ -18,6 +19,8 @@ export async function POST(request: Request) {
     const file = formData.get("file") as File | null;
     const projectId = formData.get("projectId") as string | null;
     const paperId = formData.get("paperId") as string | null;
+    let fullText = (formData.get("fullText") as string | null) ?? "";
+    const clientTitle = formData.get("title") as string | null;
 
     if (!file || !projectId) {
       return NextResponse.json(
@@ -36,31 +39,31 @@ export async function POST(request: Request) {
       );
     }
 
-    // Read PDF buffer — copy to avoid detached ArrayBuffer after extractText
+    // Read PDF buffer
     const arrayBuffer = await file.arrayBuffer();
     const pdfBytes = Buffer.from(arrayBuffer);
-    const buffer = new Uint8Array(pdfBytes);
 
-    // Extract text
-    let { text: fullText } = await extractText(buffer, { mergePages: true });
     // Strip null bytes — PostgreSQL TEXT rejects \x00
     if (fullText) fullText = fullText.replace(/\x00/g, "");
 
+    // If client didn't send fullText, try server-side extraction as fallback
+    if (!fullText || fullText.trim().length < 50) {
+      try {
+        const { extractText } = await import("unpdf");
+        const buffer = new Uint8Array(pdfBytes);
+        const result = await extractText(buffer, { mergePages: true });
+        fullText = (result.text ?? "").replace(/\x00/g, "");
+      } catch {
+        // unpdf not available or failed — continue without fullText
+      }
+    }
+
     if (!fullText || fullText.trim().length < 50) {
       return NextResponse.json(
-        { error: "文本过少，可能是扫描版 PDF 或加密文档" },
+        { error: "文本过少，可能是扫描版 PDF 或加密文档。请确保 PDF 包含可复制的文本。" },
         { status: 422 }
       );
     }
-
-    // Extract metadata
-    let pdfTitle: string | undefined;
-    let pdfAuthor: string | undefined;
-    try {
-      const meta = await getMeta(buffer);
-      pdfTitle = meta.info?.Title as string | undefined;
-      pdfAuthor = meta.info?.Author as string | undefined;
-    } catch { /* metadata extraction is optional */ }
 
     // Try to extract abstract from the full text
     const abstractMatch = fullText.match(
@@ -80,7 +83,6 @@ export async function POST(request: Request) {
           fullText: fullText.trim(),
           pdfFileName: file.name,
           pdfOssKey: ossKey,
-          // Keep pdfData as fallback if OSS upload failed
           ...(ossKey ? { pdfData: null } : { pdfData: pdfBytes }),
         },
       });
@@ -92,18 +94,15 @@ export async function POST(request: Request) {
       });
     }
 
-    // Create new paper first to get ID
-    const title = pdfTitle || file.name.replace(/\.pdf$/i, "");
-    const authors = pdfAuthor
-      ? pdfAuthor.split(/[,;，；]/).map((name: string) => ({ name: name.trim() }))
-      : [];
+    // Create new paper
+    const title = clientTitle || file.name.replace(/\.pdf$/i, "");
 
     const paper = await prisma.paper.create({
       data: {
         projectId,
         title,
         abstract: extractedAbstract ?? fullText.slice(0, 500),
-        authors,
+        authors: [],
         source: "manual",
         citationCount: 0,
         referenceCount: 0,
@@ -138,4 +137,4 @@ export async function POST(request: Request) {
   }
 }
 
-export const maxDuration = 60;
+export const maxDuration = 120;
