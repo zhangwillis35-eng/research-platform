@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -89,7 +89,6 @@ function PasswordStrength({ password }: { password: string }) {
 export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("login");
-  const [checkingSession, setCheckingSession] = useState(true);
 
   // Login
   const [loginEmail, setLoginEmail] = useState("");
@@ -107,20 +106,6 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    fetch("/api/auth", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "me" }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.user) router.replace("/projects");
-        else setCheckingSession(false);
-      })
-      .catch(() => setCheckingSession(false));
-  }, [router]);
-
   // ─── Login ──────────────────────────────────────
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -134,7 +119,7 @@ export default function LoginPage() {
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error); return; }
-      router.push("/projects");
+      router.replace("/projects");
     } finally {
       setLoading(false);
     }
@@ -179,14 +164,6 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
-  }
-
-  if (checkingSession) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="w-6 h-6 border-2 border-teal border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
   }
 
   const titles: Record<Mode, string> = {

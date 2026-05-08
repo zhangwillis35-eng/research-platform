@@ -36,6 +36,7 @@ import { StopButton } from "@/components/stop-button";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedAnalysis } from "@/hooks/use-saved-analysis";
 import { AnalysisChat } from "@/components/analysis-chat";
+import { toPng } from "html-to-image";
 
 // ─── Custom Node Component ──────────────────────
 
@@ -317,6 +318,22 @@ ${paperContext || "（无文献，请基于常见管理学变量关系生成示�
     }
   }
 
+  async function exportToPng() {
+    if (!reactFlowRef.current) return;
+    try {
+      const dataUrl = await toPng(reactFlowRef.current, {
+        backgroundColor: "#ffffff",
+        pixelRatio: 2,
+      });
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      a.download = "概念模型.png";
+      a.click();
+    } catch (e) {
+      console.error("PNG export failed:", e);
+    }
+  }
+
   // Edit node label on double-click
   function onNodeDoubleClick(_: React.MouseEvent, node: Node) {
     const newLabel = prompt("变量名称:", node.data.label as string);
@@ -421,6 +438,17 @@ ${paperContext || "（无文献，请基于常见管理学变量关系生成示�
           {generating ? "AI 生成中..." : "AI 自动生成模型"}
         </Button>
         <StopButton show={generating} onClick={xAbort.abort} />
+
+        {nodes.length > 0 && (
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={exportToPng}>
+            导出 PNG
+          </Button>
+        )}
+        {nodes.length > 0 && (
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => saveModel({ nodes, edges })}>
+            保存
+          </Button>
+        )}
 
         {paperCount === 0 && (
           <span className="text-[10px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">

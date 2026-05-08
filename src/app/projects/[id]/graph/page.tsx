@@ -128,6 +128,36 @@ const maturityLabels: Record<string, { label: string; color: string; icon: strin
   mature: { label: "高度成熟", color: "bg-teal-100 text-teal-700", icon: "🏛️" },
 };
 
+function exportEdgesCSV(edges: GraphEdge[], nodes: GraphNode[]) {
+  const header = "自变量,因变量,关系类型,方向,研究数量(k),一致性,证据强度,代表性效应\n";
+  const rows = edges
+    .sort((a, b) => b.weight - a.weight)
+    .map(edge => {
+      const src = typeof edge.source === "string" ? edge.source : (edge.source as GraphNode).id;
+      const tgt = typeof edge.target === "string" ? edge.target : (edge.target as GraphNode).id;
+      const dirMap: Record<string, string> = { positive: "正向(+)", negative: "负向(-)", mixed: "混合(±)", nonsignificant: "不显著" };
+      const consMap: Record<string, string> = { consistent: "高度一致", mostly_consistent: "基本一致", mixed: "结论分歧", contradictory: "相互矛盾" };
+      const evMap: Record<string, string> = { strong: "强证据", moderate: "中等证据", weak: "弱证据", insufficient: "证据不足" };
+      const cell = (s: string) => `"${(s ?? "").replace(/"/g, '""')}"`;
+      return [
+        cell(src), cell(tgt), cell(edge.type),
+        cell(dirMap[edge.direction] ?? edge.direction),
+        String(edge.weight),
+        cell(consMap[edge.consistency ?? ""] ?? edge.consistency ?? ""),
+        cell(evMap[edge.evidenceStrength ?? ""] ?? edge.evidenceStrength ?? ""),
+        cell(edge.findings?.[0]?.effect ?? ""),
+      ].join(",");
+    })
+    .join("\n");
+  const blob = new Blob(["\uFEFF" + header + rows], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "研究变量关系.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function GraphPage() {
   const params = useParams();
   const projectId = params.id as string;
@@ -600,7 +630,14 @@ export default function GraphPage() {
 
           {/* Evidence table */}
           <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm">关系证据汇总表（类 Vote Counting）</CardTitle></CardHeader>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm">关系证据汇总表（类 Vote Counting）</CardTitle>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => exportEdgesCSV(edges, nodes)}>
+                  导出 CSV
+                </Button>
+              </div>
+            </CardHeader>
             <CardContent className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>

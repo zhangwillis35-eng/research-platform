@@ -16,14 +16,15 @@ const providers: {
   tag: string;
   tagColor: string;
   disabled?: boolean;
+  note?: string;
 }[] = [
   { id: "deepseek-fast", name: "DeepSeek V4 Flash", tag: "最快", tagColor: "text-blue-500" },
   { id: "deepseek-pro", name: "DeepSeek V4 Pro", tag: "最强", tagColor: "text-blue-700" },
   { id: "deepseek", name: "DeepSeek R1", tag: "深度推理", tagColor: "text-blue-600" },
   { id: "qwen", name: "通义千问 Qwen Plus", tag: "国产", tagColor: "text-orange-500" },
   { id: "glm", name: "智谱 GLM-4 Plus", tag: "国产", tagColor: "text-purple-500" },
-  { id: "gemini-pro", name: "Gemini 3.1 Pro", tag: "需代理", tagColor: "text-red-400" },
-  { id: "gemini", name: "Gemini 3.0 Flash", tag: "需代理", tagColor: "text-red-400" },
+  { id: "gemini-pro", name: "Gemini 2.5 Pro", tag: "暂停", tagColor: "text-gray-400", disabled: true, note: "需代理，暂未接入" },
+  { id: "gemini", name: "Gemini 2.0 Flash", tag: "暂停", tagColor: "text-gray-400", disabled: true, note: "需代理，暂未接入" },
   { id: "chatgpt", name: "GPT-4o", tag: "暂停", tagColor: "text-gray-400", disabled: true },
   { id: "claude", name: "Claude Sonnet 4", tag: "暂停", tagColor: "text-gray-400", disabled: true },
 ];
@@ -35,9 +36,12 @@ export function AIProviderSelect({
   value: AIProvider;
   onChange: (value: AIProvider) => void;
 }) {
+  // If current value is a disabled provider (e.g. gemini), reset to deepseek-fast
+  const safeValue = providers.find((p) => p.id === value && !p.disabled) ? value : "deepseek-fast";
+
   return (
-    <Select value={value} onValueChange={(v) => v && onChange(v as AIProvider)}>
-      <SelectTrigger className="w-[220px]">
+    <Select value={safeValue} onValueChange={(v) => v && onChange(v as AIProvider)}>
+      <SelectTrigger className="w-[200px]">
         <SelectValue placeholder="选择 AI 模型" />
       </SelectTrigger>
       <SelectContent>
@@ -46,6 +50,7 @@ export function AIProviderSelect({
             <span className={`flex items-center gap-2 ${p.disabled ? "opacity-40" : ""}`}>
               {p.name}
               <span className={`text-xs ${p.tagColor}`}>{p.tag}</span>
+              {p.note && <span className="text-[10px] text-muted-foreground">{p.note}</span>}
             </span>
           </SelectItem>
         ))}

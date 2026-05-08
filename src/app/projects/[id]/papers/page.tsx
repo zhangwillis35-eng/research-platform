@@ -74,6 +74,26 @@ export default function PapersPage() {
 
   // Full text viewer state
   const [fullTextPaper, setFullTextPaper] = useState<Paper | null>(null);
+  const [fullTextLoading, setFullTextLoading] = useState(false);
+
+  async function viewFullText(paper: Paper) {
+    // If we only have the marker, fetch the actual full text from API
+    if (paper.fullText === "__has_fulltext__" || !paper.fullText) {
+      setFullTextLoading(true);
+      setFullTextPaper({ ...paper, fullText: "加载中..." });
+      try {
+        const res = await fetch(`/api/papers/${paper.id}`);
+        const data = await res.json();
+        setFullTextPaper(data.paper ?? paper);
+      } catch {
+        setFullTextPaper({ ...paper, fullText: "全文加载失败，请重试。" });
+      } finally {
+        setFullTextLoading(false);
+      }
+    } else {
+      setFullTextPaper(paper);
+    }
+  }
 
   // Multi-select delete state
   const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(new Set());
@@ -1094,7 +1114,7 @@ export default function PapersPage() {
               paper={p}
               onToggle={() => toggleSelected(p.id, p.isSelected)}
               onDelete={() => deletePaper(p.id)}
-              onViewFullText={p.fullText ? () => setFullTextPaper(p) : undefined}
+              onViewFullText={p.fullText ? () => viewFullText(p) : undefined}
               onAttachPDF={() => {
                 setAttachTarget(p.id);
                 attachInputRef.current?.click();

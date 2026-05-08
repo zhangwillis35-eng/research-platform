@@ -51,20 +51,7 @@ export async function POST(request: Request) {
       );
     }
 
-    let notebookUrl: string | null = null;
-    if (engine === "notebooklm") {
-      const project = await prisma.researchProject.findUnique({
-        where: { id: projectId },
-        select: { notebookUrl: true },
-      });
-      notebookUrl = project?.notebookUrl ?? null;
-      if (!notebookUrl) {
-        return NextResponse.json(
-          { error: "NotebookLM notebook URL not configured. Please set it in Settings." },
-          { status: 400 }
-        );
-      }
-    }
+    const notebookUrl: string | null = null;
 
     const encoder = new TextEncoder();
     const readable = new ReadableStream({

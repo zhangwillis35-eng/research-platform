@@ -1,6 +1,7 @@
 import {
   generateOutline,
   generateReviewStream,
+  type ReviewOutline,
 } from "@/lib/research/storm-review";
 import { setAIContext } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
@@ -20,12 +21,16 @@ export async function POST(request: Request) {
       perspectives,
       provider = "deepseek-fast",
       wordCount,
+      outlineOnly = false,
+      outline: providedOutline,
     } = body as {
       topic: string;
       papers: UnifiedPaper[];
       perspectives?: string[];
       provider?: AIProvider;
       wordCount?: { min: number; max: number };
+      outlineOnly?: boolean;
+      outline?: ReviewOutline;
     };
 
     if (!topic || !papers?.length) {
@@ -39,22 +44,40 @@ export async function POST(request: Request) {
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          // Phase 1: Generate outline
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "phase", phase: "outline", message: "正在生成综述大纲..." })}\n\n`
-            )
-          );
+          let outline: ReviewOutline;
 
-          const outline = await generateOutline(
-            { topic, papers, perspectives, provider, wordCount }
-          );
+          if (providedOutline) {
+            // Skip Phase 1 — use the caller-supplied (possibly user-edited) outline
+            outline = providedOutline;
+          } else {
+            // Phase 1: Generate outline
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "phase", phase: "outline", message: "正在生成综述大纲..." })}\n\n`
+              )
+            );
+
+            outline = await generateOutline(
+              { topic, papers, perspectives, provider, wordCount }
+            );
+          }
 
           controller.enqueue(
             encoder.encode(
               `data: ${JSON.stringify({ type: "outline", outline })}\n\n`
             )
           );
+
+          // If outlineOnly mode, stop here and let the user review/edit the outline
+          if (outlineOnly) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "done" })}\n\n`
+              )
+            );
+            controller.close();
+            return;
+          }
 
           // Phase 2: Stream full review
           controller.enqueue(

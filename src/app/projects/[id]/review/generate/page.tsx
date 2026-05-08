@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -22,6 +23,7 @@ import {
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 import { consumeCrossFeatureData } from "@/lib/cross-feature";
+import { generateReviewDocx, downloadBlob } from "@/lib/docx-export";
 
 interface Paper {
   id: string;
@@ -51,7 +53,7 @@ interface ReviewOutline {
   futureDirections: string[];
 }
 
-type Phase = "idle" | "outlining" | "writing" | "done";
+type Phase = "idle" | "outlining" | "outline-review" | "writing" | "done";
 
 export default function ReviewGeneratePage() {
   const params = useParams();
@@ -72,6 +74,13 @@ export default function ReviewGeneratePage() {
   const [papersLoading, setPapersLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [crossFeatureBanner, setCrossFeatureBanner] = useState<string | null>(null);
+  // Outline modification chat
+  const [outlineModInput, setOutlineModInput] = useState("");
+  const [outlineModLoading, setOutlineModLoading] = useState(false);
+  const [outlineModError, setOutlineModError] = useState<string | null>(null);
+  // Keep papers reference stable for writing phase
+  const papersForReviewRef = useRef<Paper[]>([]);
+
   const xAbort = useAbort();
 
   // Load papers with full text from project library
@@ -103,6 +112,8 @@ export default function ReviewGeneratePage() {
     setError(null);
     setOutline(null);
     setReviewText("");
+    setOutlineModInput("");
+    setOutlineModError(null);
 
     // Optional: STORM pre-analysis
     if (analysisEngine === "storm") {
@@ -127,23 +138,95 @@ export default function ReviewGeneratePage() {
       } catch { /* continue */ }
     }
 
-    // Generate outline + stream review
     setPhase("outlining");
 
     const papersForReview = activePapers.map((p) => ({
       ...p,
       fullText: p.fullText?.slice(0, 5000),
     }));
+    papersForReviewRef.current = papersForReview;
 
     try {
       const reviewRes = await fetch("/api/research/review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, papers: papersForReview, provider, wordCount: { min: wordCountMin, max: wordCountMax } }),
+        body: JSON.stringify({
+          topic,
+          papers: papersForReview,
+          provider,
+          wordCount: { min: wordCountMin, max: wordCountMax },
+          outlineOnly: true,
+        }),
         signal,
       });
 
-      if (!reviewRes.ok) throw new Error("综述生成失败");
+      if (!reviewRes.ok) throw new Error("大纲生成失败");
+
+      const reader = reviewRes.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (reader) {
+        let buffer = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.type === "outline") {
+                setOutline(data.outline);
+              } else if (data.type === "done") {
+                // Outline phase complete — move to review phase
+                setPhase("outline-review");
+              } else if (data.type === "error") {
+                throw new Error(data.error);
+              }
+            } catch (parseErr) {
+              if (parseErr instanceof Error && parseErr.message !== "Unexpected end of JSON input") {
+                throw parseErr;
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") { setPhase("idle"); return; }
+      setError(String(err));
+      setPhase("idle");
+    }
+  }
+
+  async function handleConfirmAndWrite() {
+    if (!outline) return;
+
+    const signal = xAbort.reset();
+    setError(null);
+    setReviewText("");
+    setPhase("writing");
+
+    const papersForReview = papersForReviewRef.current.length > 0
+      ? papersForReviewRef.current
+      : activePapers.map((p) => ({ ...p, fullText: p.fullText?.slice(0, 5000) }));
+
+    try {
+      const reviewRes = await fetch("/api/research/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic,
+          papers: papersForReview,
+          provider,
+          wordCount: { min: wordCountMin, max: wordCountMax },
+          outline,
+        }),
+        signal,
+      });
+
+      if (!reviewRes.ok) throw new Error("综述撰写失败");
 
       const reader = reviewRes.body?.getReader();
       const decoder = new TextDecoder();
@@ -161,32 +244,109 @@ export default function ReviewGeneratePage() {
             if (!line.startsWith("data: ")) continue;
             try {
               const data = JSON.parse(line.slice(6));
-              if (data.type === "outline") {
-                setOutline(data.outline);
-                setPhase("writing");
-              } else if (data.type === "text") {
+              if (data.type === "text") {
                 text += data.text;
                 setReviewText(text);
               } else if (data.type === "done") {
                 setPhase("done");
+              } else if (data.type === "error") {
+                throw new Error(data.error);
               }
-            } catch { /* skip */ }
+            } catch (parseErr) {
+              if (parseErr instanceof Error && parseErr.message !== "Unexpected end of JSON input") {
+                throw parseErr;
+              }
+            }
           }
         }
       }
     } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") { setPhase("idle"); return; }
+      if (err instanceof Error && err.name === "AbortError") { setPhase("outline-review"); return; }
       setError(String(err));
-      setPhase("idle");
+      setPhase("outline-review");
     }
+  }
+
+  async function handleOutlineModify() {
+    if (!outlineModInput.trim() || !outline) return;
+
+    setOutlineModLoading(true);
+    setOutlineModError(null);
+
+    const systemPrompt = `You are an academic outline editor. The user has a review outline in JSON format and wants to modify it.
+Apply the user's requested changes to the outline and return ONLY valid JSON matching the original structure.
+Do not add commentary. Output only the modified JSON object.`;
+
+    const userMessage = `Current outline:
+${JSON.stringify(outline, null, 2)}
+
+Modification request: ${outlineModInput}
+
+Return the modified outline as JSON only.`;
+
+    try {
+      const res = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userMessage }],
+        }),
+      });
+
+      if (!res.ok) throw new Error("AI 请求失败");
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let fullText = "";
+      let buffer = "";
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.text) fullText += data.text;
+            } catch { /* skip */ }
+          }
+        }
+      }
+
+      // Extract JSON from the response (may be wrapped in markdown code blocks)
+      const jsonMatch = fullText.match(/```(?:json)?\s*([\s\S]*?)```/) ?? null;
+      const jsonStr = jsonMatch ? jsonMatch[1].trim() : fullText.trim();
+      const newOutline = JSON.parse(jsonStr) as ReviewOutline;
+      setOutline(newOutline);
+      setOutlineModInput("");
+    } catch (err) {
+      setOutlineModError(`大纲修改失败：${String(err)}`);
+    } finally {
+      setOutlineModLoading(false);
+    }
+  }
+
+  async function handleExportWord() {
+    if (!reviewText) return;
+    const blob = await generateReviewDocx(outline?.title ?? topic, reviewText);
+    downloadBlob(blob, `综述-${topic.slice(0, 20)}.docx`);
   }
 
   const phaseLabels: Record<Phase, string> = {
     idle: "",
     outlining: "正在生成大纲...",
+    "outline-review": "大纲已生成，请审阅",
     writing: "正在撰写综述...",
     done: "综述生成完成",
   };
+
+  const progressPhases: Phase[] = ["outlining", "outline-review", "writing", "done"];
 
   return (
     <div className="space-y-6">
@@ -298,7 +458,7 @@ export default function ReviewGeneratePage() {
           >
             生成综述
           </Button>
-          <StopButton show={phase !== "idle" && phase !== "done"} onClick={xAbort.abort} />
+          <StopButton show={phase !== "idle" && phase !== "done" && phase !== "outline-review"} onClick={xAbort.abort} />
         </div>
       </form>
 
@@ -306,11 +466,11 @@ export default function ReviewGeneratePage() {
       {phase !== "idle" && (
         <div className="flex items-center gap-3 text-sm">
           <div className="flex gap-1">
-            {(["outlining", "writing", "done"] as Phase[]).map((p, i, arr) => (
+            {progressPhases.map((p, i) => (
               <div
                 key={p}
                 className={`h-1.5 w-10 rounded-full transition-colors ${
-                  arr.indexOf(phase) >= i ? "bg-teal" : "bg-border"
+                  progressPhases.indexOf(phase) >= i ? "bg-teal" : "bg-border"
                 }`}
               />
             ))}
@@ -332,20 +492,19 @@ export default function ReviewGeneratePage() {
         </div>
       )}
 
-      <div className="grid lg:grid-cols-[280px_1fr] gap-6">
-        {/* Outline sidebar */}
-        {outline && (
-          <div className="space-y-4">
+      {/* Outline Review Phase */}
+      {phase === "outline-review" && outline && (
+        <div className="space-y-4">
+          <div className="grid lg:grid-cols-2 gap-4">
+            {/* Outline sections */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm">综述大纲</CardTitle>
+                <CardTitle className="text-sm">综述大纲 — {outline.title}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
                 {outline.sections.map((s, i) => (
                   <div key={i} className="flex gap-2">
-                    <span className="text-teal font-bold shrink-0">
-                      {i + 1}.
-                    </span>
+                    <span className="text-teal font-bold shrink-0">{i + 1}.</span>
                     <div>
                       <p className="font-medium leading-snug">{s.heading}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
@@ -357,103 +516,219 @@ export default function ReviewGeneratePage() {
               </CardContent>
             </Card>
 
-            {outline.gaps.length > 0 && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm text-amber-600">研究空白</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {outline.gaps.map((gap, i) => (
-                    <p key={i} className="text-xs text-muted-foreground">
-                      • {gap}
-                    </p>
+            <div className="space-y-4">
+              {outline.gaps.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm text-amber-600">研究空白</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {outline.gaps.map((gap, i) => (
+                      <p key={i} className="text-xs text-muted-foreground">• {gap}</p>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {outline.futureDirections.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm text-teal">未来方向</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {outline.futureDirections.map((dir, i) => (
+                      <p key={i} className="text-xs text-muted-foreground">• {dir}</p>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {outline.perspectives.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {outline.perspectives.map((p) => (
+                    <Badge key={p} variant="secondary" className="text-[10px]">{p}</Badge>
                   ))}
-                </CardContent>
-              </Card>
-            )}
-
-            {outline.futureDirections.length > 0 && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm text-teal">未来方向</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {outline.futureDirections.map((dir, i) => (
-                    <p key={i} className="text-xs text-muted-foreground">
-                      • {dir}
-                    </p>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
-
-            {outline.perspectives.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {outline.perspectives.map((p) => (
-                  <Badge key={p} variant="secondary" className="text-[10px]">
-                    {p}
-                  </Badge>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Review text — editable per-section after done, plain during generation */}
-        {phase === "done" && reviewText && (
-          <ReviewEditor
-            text={reviewText}
-            onChange={setReviewText}
-            provider={provider}
-            title={outline?.title ?? topic}
-          />
-        )}
-        {phase !== "done" && (reviewText || phase === "outlining") && (
-          <Card className="min-h-[400px]">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-heading">
-                {outline?.title ?? topic}
-              </CardTitle>
-            </CardHeader>
-            <Separator />
-            <CardContent className="pt-4">
-              {reviewText ? (
-                <div className="prose prose-sm max-w-none text-foreground leading-relaxed whitespace-pre-wrap">
-                  {reviewText}
                 </div>
-              ) : (
-                <p className="text-sm text-muted-foreground animate-pulse">
-                  正在生成大纲，请稍候...
-                </p>
               )}
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          </div>
 
-        {/* Empty state */}
-        {phase === "idle" && !outline && (
-          <Card className="min-h-[400px] flex items-center justify-center lg:col-span-2">
-            <CardContent className="text-center text-muted-foreground">
-              <div className="text-4xl mb-4">📝</div>
-              {papers.length > 0 ? (
-                <>
-                  <p className="font-medium">输入研究主题，基于 {activePapers.length} 篇已上传原文的文献生成综述</p>
-                  <p className="text-sm mt-2 max-w-md mx-auto">
-                    基于文献库全文 → 识别研究视角 → 生成结构化大纲 → 流式撰写带引文的完整综述
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="font-medium">暂无已上传原文的文献</p>
-                  <p className="text-sm mt-2 max-w-md mx-auto">
-                    请先在「文献库」中上传 PDF 文献，然后返回此页面生成综述。
-                  </p>
-                </>
+          {/* Outline modification chat */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">修改大纲（可选）</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex gap-2">
+                <Textarea
+                  placeholder="描述你想要的修改，例如：增加一节关于方法论比较的内容，删除未来方向第2条..."
+                  value={outlineModInput}
+                  onChange={(e) => setOutlineModInput(e.target.value)}
+                  className="flex-1 min-h-[80px] text-sm"
+                  disabled={outlineModLoading}
+                />
+              </div>
+              {outlineModError && (
+                <p className="text-xs text-destructive">{outlineModError}</p>
               )}
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleOutlineModify}
+                  disabled={outlineModLoading || !outlineModInput.trim()}
+                  className="text-xs"
+                >
+                  {outlineModLoading ? "AI 正在修改..." : "发送修改请求"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
-        )}
-      </div>
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={handleConfirmAndWrite}
+              className="bg-green-600 text-white hover:bg-green-700"
+            >
+              确认大纲，开始撰写完整综述
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => { setPhase("idle"); setOutline(null); }}
+            >
+              重新生成大纲
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Writing / Done phases */}
+      {(phase === "writing" || phase === "done") && (
+        <div className="grid lg:grid-cols-[280px_1fr] gap-6">
+          {/* Outline sidebar */}
+          {outline && (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">综述大纲</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  {outline.sections.map((s, i) => (
+                    <div key={i} className="flex gap-2">
+                      <span className="text-teal font-bold shrink-0">{i + 1}.</span>
+                      <div>
+                        <p className="font-medium leading-snug">{s.heading}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {s.perspective} · {s.paperRefs.length} 篇引用
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+
+              {outline.gaps.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm text-amber-600">研究空白</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {outline.gaps.map((gap, i) => (
+                      <p key={i} className="text-xs text-muted-foreground">• {gap}</p>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {outline.futureDirections.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm text-teal">未来方向</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {outline.futureDirections.map((dir, i) => (
+                      <p key={i} className="text-xs text-muted-foreground">• {dir}</p>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {outline.perspectives.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {outline.perspectives.map((p) => (
+                    <Badge key={p} variant="secondary" className="text-[10px]">{p}</Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Review text */}
+          {phase === "done" && reviewText ? (
+            <ReviewEditor
+              text={reviewText}
+              onChange={setReviewText}
+              provider={provider}
+              title={outline?.title ?? topic}
+              onExportWord={handleExportWord}
+            />
+          ) : (
+            <Card className="min-h-[400px]">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-heading">
+                  {outline?.title ?? topic}
+                </CardTitle>
+              </CardHeader>
+              <Separator />
+              <CardContent className="pt-4">
+                {reviewText ? (
+                  <div className="prose prose-sm max-w-none text-foreground leading-relaxed whitespace-pre-wrap">
+                    {reviewText}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground animate-pulse">
+                    正在撰写综述，请稍候...
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Outlining spinner (no outline yet) */}
+      {phase === "outlining" && !outline && (
+        <Card className="min-h-[200px] flex items-center justify-center">
+          <CardContent className="text-center text-muted-foreground">
+            <p className="text-sm animate-pulse">正在生成大纲，请稍候...</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Empty state */}
+      {phase === "idle" && !outline && (
+        <Card className="min-h-[400px] flex items-center justify-center lg:col-span-2">
+          <CardContent className="text-center text-muted-foreground">
+            <div className="text-4xl mb-4">📝</div>
+            {papers.length > 0 ? (
+              <>
+                <p className="font-medium">输入研究主题，基于 {activePapers.length} 篇已上传原文的文献生成综述</p>
+                <p className="text-sm mt-2 max-w-md mx-auto">
+                  基于文献库全文 → 识别研究视角 → 生成结构化大纲 → 审阅确认 → 流式撰写带引文的完整综述
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-medium">暂无已上传原文的文献</p>
+                <p className="text-sm mt-2 max-w-md mx-auto">
+                  请先在「文献库」中上传 PDF 文献，然后返回此页面生成综述。
+                </p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
