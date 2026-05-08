@@ -241,15 +241,20 @@ export function PaperAnalysisTab({
         </div>
         <div className="flex items-center gap-2">
           <AIProviderSelect value={aiProvider} onChange={onProviderChange} />
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs h-7"
-            onClick={handleIndex}
-            disabled={indexing}
-          >
-            {indexing ? "索引中..." : indexed ? "重建索引" : "构建索引"}
-          </Button>
+          <div className="relative group">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs h-7"
+              onClick={handleIndex}
+              disabled={indexing}
+            >
+              {indexing ? "索引中..." : indexed ? "重建索引" : "构建索引"}
+            </Button>
+            <div className="absolute right-0 top-full mt-1.5 w-64 p-2.5 bg-popover border border-border rounded-lg shadow-lg text-[11px] text-muted-foreground leading-relaxed opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity z-50">
+              将所有已上传 PDF 的全文按学术章节（摘要、方法、结果等）切分为段落并建立检索索引。上传新 PDF 后需重建索引，新论文才能被 AI 问答检索到。
+            </div>
+          </div>
           {indexed && (
             <Badge variant="secondary" className="text-[10px]">
               已索引 {papers.length} 篇
