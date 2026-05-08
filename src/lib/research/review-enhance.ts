@@ -120,25 +120,53 @@ export async function analyzeDraft(
   libraryPapers: LibraryPaper[],
   provider: AIProvider,
 ): Promise<DraftAnalysis> {
-  const libraryContext = libraryPapers.slice(0, 50).map((p, i) => {
-    const authors = typeof p.authors === "string" ? p.authors : (p.authors ?? []).slice(0, 3).map(a => a.name).join(", ");
-    return `[Lib-${i + 1}] ${p.title} (${p.year ?? "?"}) — ${authors}${p.abstract ? `\nAbstract: ${p.abstract.slice(0, 200)}` : ""}`;
-  }).join("\n\n");
+  // Two parallel calls: (A) analyze draft structure, (B) match library papers
+  // This halves wall-clock time vs one giant call
 
-  const response = await callAI({
+  const draftSlice = draftText.slice(0, 12000);
+
+  // Call A: Analyze draft (no library context needed — faster)
+  const draftPromise = callAI({
     provider,
-    system: ANALYZE_DRAFT_PROMPT,
-    messages: [{
-      role: "user",
-      content: `## Draft Literature Review (${draftText.length} chars):\n\n${draftText.slice(0, 15000)}\n\n## User's Paper Library (${libraryPapers.length} papers):\n\n${libraryContext}`,
-    }],
+    system: `You are an academic literature review analysis expert. Analyze the draft review and extract:
+1. topic: Main research topic (1-2 sentences, Chinese)
+2. keyThemes: 3-8 major themes (Chinese)
+3. citedReferences: All cited papers from the text, format "Author (Year). Title"
+4. structureOutline: Section headings with summary and citation count
+5. keywords: 5-10 English search keywords for international databases
+6. weakSections: Thin sections lacking citations or arguments (Chinese)
+
+Output JSON:
+{"topic":"...","keyThemes":["..."],"citedReferences":["..."],"structureOutline":[{"heading":"...","summary":"...","citationCount":0}],"keywords":["..."],"weakSections":["..."]}`,
+    messages: [{ role: "user", content: draftSlice }],
     jsonMode: true,
     noThinking: true,
     temperature: 0.2,
-    maxTokens: 4096,
+    maxTokens: 3000,
   });
 
-  return JSON.parse(response.content);
+  // Call B: Match library papers against draft (compact — titles only)
+  const libraryTitles = libraryPapers.slice(0, 50).map((p, i) =>
+    `[${i + 1}] ${p.title} (${p.year ?? "?"})`
+  ).join("\n");
+
+  const matchPromise = callAI({
+    provider,
+    system: `Count how many of these library papers are cited or closely referenced in the draft. Return JSON: {"libraryMatchCount": N}`,
+    messages: [{ role: "user", content: `Draft (first 5000 chars):\n${draftSlice.slice(0, 5000)}\n\nLibrary papers:\n${libraryTitles}` }],
+    jsonMode: true,
+    noThinking: true,
+    temperature: 0,
+    maxTokens: 100,
+  });
+
+  const [draftRes, matchRes] = await Promise.all([draftPromise, matchPromise]);
+
+  const draft = JSON.parse(draftRes.content);
+  let matchCount = 0;
+  try { matchCount = JSON.parse(matchRes.content).libraryMatchCount ?? 0; } catch { /* skip */ }
+
+  return { ...draft, libraryMatchCount: matchCount };
 }
 
 // ─── Phase 2: Gap Analysis ───────────────────────
