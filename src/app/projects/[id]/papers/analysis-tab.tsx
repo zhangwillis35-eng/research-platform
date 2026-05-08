@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +33,8 @@ interface PaperAnalysisTabProps {
   onPaperCategoryChange: (paperId: string, category: string | null) => void;
 }
 
+const CHAT_QUERY = "__paper_analysis__";
+
 export function PaperAnalysisTab({
   projectId,
   papers,
@@ -42,8 +44,9 @@ export function PaperAnalysisTab({
 }: PaperAnalysisTabProps) {
   const NS = `analysis-${projectId}`;
 
-  // Chat state
-  const [chatHistory, setChatHistory] = usePersistedState<ChatMessage[]>(NS, "chat", []);
+  // Chat state — local state with DB persistence
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [chatLoaded, setChatLoaded] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [indexing, setIndexing] = useState(false);
@@ -65,12 +68,40 @@ export function PaperAnalysisTab({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistory]);
 
+  // ── Load chat history from DB on mount ────────────
+  useEffect(() => {
+    fetch(`/api/chat-history?projectId=${projectId}&query=${encodeURIComponent(CHAT_QUERY)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const msgs = data.messages as ChatMessage[] | undefined;
+        if (msgs && msgs.length > 0) {
+          setChatHistory(msgs);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setChatLoaded(true));
+  }, [projectId]);
+
   // Auto-index on first visit
   useEffect(() => {
     if (!indexed && papers.length > 0) {
       handleIndex();
     }
   }, [papers.length]);
+
+  // ── Save chat to DB (debounced after streaming completes) ──
+  function saveChatToDB(messages: ChatMessage[]) {
+    fetch("/api/chat-history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId,
+        query: CHAT_QUERY,
+        messages,
+        provider: aiProvider,
+      }),
+    }).catch(() => {});
+  }
 
   // ── Index papers ──────────────────────────────────
   async function handleIndex() {
@@ -102,7 +133,7 @@ export function PaperAnalysisTab({
     const userMsg: ChatMessage = { role: "user", content: question };
     const assistantMsg: ChatMessage = { role: "assistant", content: "" };
 
-    setChatHistory((prev: ChatMessage[]) => [...prev, userMsg, assistantMsg]);
+    setChatHistory((prev) => [...prev, userMsg, assistantMsg]);
     setIsStreaming(true);
     const signal = chatAbort.reset();
 
@@ -140,7 +171,7 @@ export function PaperAnalysisTab({
             const evt = JSON.parse(line.slice(6));
             if (evt.type === "text") {
               fullText += evt.text;
-              setChatHistory((prev: ChatMessage[]) => {
+              setChatHistory((prev) => {
                 const updated = [...prev];
                 updated[updated.length - 1] = { role: "assistant", content: fullText };
                 return updated;
@@ -149,17 +180,32 @@ export function PaperAnalysisTab({
           } catch { /* skip */ }
         }
       }
+
+      // Save to DB after streaming completes
+      setChatHistory((prev) => {
+        saveChatToDB(prev);
+        return prev;
+      });
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
-        setChatHistory((prev: ChatMessage[]) => {
+        setChatHistory((prev) => {
           const updated = [...prev];
           updated[updated.length - 1] = { role: "assistant", content: "请求失败，请重试。" };
+          saveChatToDB(updated);
           return updated;
         });
       }
     } finally {
       setIsStreaming(false);
     }
+  }
+
+  // ── Clear chat ────────────────────────────────────
+  function handleClearChat() {
+    setChatHistory([]);
+    fetch(`/api/chat-history?projectId=${projectId}&query=${encodeURIComponent(CHAT_QUERY)}`, {
+      method: "DELETE",
+    }).catch(() => {});
   }
 
   // ── Drag handlers ─────────────────────────────────
@@ -181,6 +227,8 @@ export function PaperAnalysisTab({
     "基于这些文献，有哪些尚未被充分探索的研究空白？",
   ];
 
+  const questionCount = chatHistory.filter((m) => m.role === "user").length;
+
   return (
     <div className="space-y-4">
       {/* ── Header ── */}
@@ -188,7 +236,7 @@ export function PaperAnalysisTab({
         <div>
           <h3 className="text-sm font-medium">文献分析工作台</h3>
           <p className="text-[10px] text-muted-foreground mt-0.5">
-            拖拽文献分类 · 基于全文的 AI 自由问答 · 引用溯源
+            拖拽文献分类 · 基于全文的 AI 自由问答 · 对话记录自动保存
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -285,11 +333,16 @@ export function PaperAnalysisTab({
             <span className="text-[10px] text-muted-foreground">
               基于 {papers.length} 篇全文 · PaperQA 检索 + LLM 重排序 · 引用溯源
             </span>
+            {questionCount > 0 && (
+              <Badge variant="secondary" className="text-[10px]">
+                {questionCount} 条对话
+              </Badge>
+            )}
           </div>
           {chatHistory.length > 0 && (
             <button
               className="text-[10px] text-muted-foreground hover:text-destructive"
-              onClick={() => setChatHistory([])}
+              onClick={handleClearChat}
             >
               清空对话
             </button>
@@ -297,12 +350,19 @@ export function PaperAnalysisTab({
         </div>
 
         {/* Chat messages */}
-        <div className="max-h-[400px] overflow-y-auto p-4 space-y-4">
-          {chatHistory.length === 0 && !isStreaming ? (
+        <div className="max-h-[500px] overflow-y-auto p-4 space-y-4">
+          {!chatLoaded ? (
+            <div className="text-center py-8">
+              <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+                <span className="w-3 h-3 border-2 border-teal/30 border-t-teal rounded-full animate-spin" />
+                加载对话记录...
+              </span>
+            </div>
+          ) : chatHistory.length === 0 && !isStreaming ? (
             <div className="text-center py-8">
               <p className="text-sm text-muted-foreground mb-4">
                 {indexed
-                  ? "文献已索引，可以开始提问"
+                  ? "文献已索引，可以开始提问。对话记录会自动保存。"
                   : indexing
                     ? "正在构建文献索引..."
                     : "上传 PDF 后即可对文献提问"}
