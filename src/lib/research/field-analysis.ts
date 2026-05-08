@@ -8,6 +8,7 @@
  */
 
 import { streamAI } from "@/lib/ai";
+import { batchStream } from "@/lib/batch-stream";
 import type { AIProvider } from "@/lib/ai";
 import { runStormAnalysis } from "@/lib/integrations/storm";
 import { askNotebookLM, batchImportToNotebookLM } from "@/lib/integrations/notebooklm";
@@ -95,7 +96,7 @@ export async function* streamFieldTakeaways(
     maxTokens: 8000,
   });
 
-  for await (const chunk of stream) {
+  for await (const chunk of batchStream(stream, 30)) {
     yield chunk;
   }
 }
@@ -182,7 +183,7 @@ export async function* streamAssumptionsAnalysis(
     maxTokens: 8000,
   });
 
-  for await (const chunk of stream) {
+  for await (const chunk of batchStream(stream, 30)) {
     yield chunk;
   }
 }

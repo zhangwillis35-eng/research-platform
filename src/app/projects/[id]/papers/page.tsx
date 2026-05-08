@@ -402,6 +402,8 @@ export default function PapersPage() {
       const decoder = new TextDecoder();
       let text = "";
       let buf = "";
+      let rafId: number | null = null;
+      const flushOverview = () => { setOverview(text); rafId = null; };
       if (reader) {
         while (true) {
           const { done, value } = await reader.read();
@@ -413,10 +415,12 @@ export default function PapersPage() {
             if (!line.startsWith("data: ")) continue;
             try {
               const d = JSON.parse(line.slice(6));
-              if (d.text) { text += d.text; setOverview(text); }
+              if (d.text) { text += d.text; if (rafId === null) rafId = requestAnimationFrame(flushOverview); }
             } catch { /* skip */ }
           }
         }
+        if (rafId !== null) cancelAnimationFrame(rafId);
+        flushOverview();
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {

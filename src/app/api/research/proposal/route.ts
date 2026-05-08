@@ -8,6 +8,7 @@
 import { streamAI, setAIContext } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
 import type { UnifiedPaper } from "@/lib/sources/types";
+import { batchStream } from "@/lib/batch-stream";
 import { formatCitation } from "@/lib/citation";
 import { requireAuth } from "@/lib/auth";
 import { NextResponse } from "next/server";
@@ -118,7 +119,7 @@ export async function POST(request: Request) {
             temperature: 0.4,
           });
 
-          for await (const chunk of stream) {
+          for await (const chunk of batchStream(stream, 30)) {
             controller.enqueue(
               encoder.encode(`data: ${JSON.stringify({ type: "text", text: chunk })}\n\n`)
             );

@@ -9,6 +9,7 @@
  */
 import { callAI, streamAI } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
+import { batchStream } from "@/lib/batch-stream";
 
 export interface AcademicTerm {
   en: string;
@@ -184,14 +185,14 @@ export async function* translatePaperStream(
             ? `Paper title: "${title}"\n\n${chunk}`
             : chunk;
 
-        for await (const token of streamAI({
+        for await (const chunk of batchStream(streamAI({
           provider,
           system: TRANSLATE_SYSTEM,
           messages: [{ role: "user", content: userMsg }],
           temperature: 0.1,
           maxTokens: 8000,
-        })) {
-          yield { phase: "chunk", text: token };
+        }), 30)) {
+          yield { phase: "chunk", text: chunk };
         }
       }
     } catch (err) {

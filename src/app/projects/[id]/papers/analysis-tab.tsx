@@ -156,6 +156,16 @@ export function PaperAnalysisTab({
       const decoder = new TextDecoder();
       let buffer = "";
       let fullText = "";
+      let rafId: number | null = null;
+
+      const flushChat = () => {
+        setChatHistory((prev) => {
+          const updated = [...prev];
+          updated[updated.length - 1] = { role: "assistant", content: fullText };
+          return updated;
+        });
+        rafId = null;
+      };
 
       while (true) {
         const { done, value } = await reader.read();
@@ -171,15 +181,13 @@ export function PaperAnalysisTab({
             const evt = JSON.parse(line.slice(6));
             if (evt.type === "text") {
               fullText += evt.text;
-              setChatHistory((prev) => {
-                const updated = [...prev];
-                updated[updated.length - 1] = { role: "assistant", content: fullText };
-                return updated;
-              });
+              if (rafId === null) rafId = requestAnimationFrame(flushChat);
             }
           } catch { /* skip */ }
         }
       }
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      flushChat();
 
       // Save to DB after streaming completes
       setChatHistory((prev) => {

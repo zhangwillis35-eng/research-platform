@@ -2,6 +2,7 @@ import { requireAuth } from "@/lib/auth";
 import { streamAI, setAIContext } from "@/lib/ai";
 import { NextResponse } from "next/server";
 import type { AIProvider } from "@/lib/ai/types";
+import { batchStream } from "@/lib/batch-stream";
 
 export const maxDuration = 120;
 
@@ -88,10 +89,8 @@ Format requirements:
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          let result = await stream.next();
-          while (!result.done) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: result.value })}\n\n`));
-            result = await stream.next();
+          for await (const chunk of batchStream(stream, 30)) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: chunk })}\n\n`));
           }
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`));
           controller.close();

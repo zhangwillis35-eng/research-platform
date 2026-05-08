@@ -198,7 +198,8 @@ export async function* generateReviewStream(
     maxTokens: Math.max(8192, Math.ceil(totalTarget * 1.5)),
   });
 
-  for await (const chunk of stream) {
+  const { batchStream } = await import("@/lib/batch-stream");
+  for await (const chunk of batchStream(stream, 30)) {
     yield chunk;
   }
 }

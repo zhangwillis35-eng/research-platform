@@ -2,6 +2,7 @@ import { streamAI, setAIContext } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
 import { NextResponse } from "next/server";
+import { batchStream } from "@/lib/batch-stream";
 
 export async function POST(request: Request) {
   try {
@@ -39,17 +40,15 @@ export async function POST(request: Request) {
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          let result = await stream.next();
-          while (!result.done) {
+          for await (const chunk of batchStream(stream, 30)) {
             controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ text: result.value })}\n\n`)
+              encoder.encode(`data: ${JSON.stringify({ text: chunk })}\n\n`)
             );
-            result = await stream.next();
           }
           // Send final message with metadata
           controller.enqueue(
             encoder.encode(
-              `data: ${JSON.stringify({ done: true, provider: result.value.provider, model: result.value.model })}\n\n`
+              `data: ${JSON.stringify({ done: true })}\n\n`
             )
           );
           controller.close();

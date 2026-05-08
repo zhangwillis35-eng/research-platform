@@ -14,6 +14,7 @@ import {
 } from "@/components/ai-provider-select";
 import type { AcademicTerm, PaperAnalysis, TranslateStreamEvent } from "@/lib/research/paper-translator";
 import { generateTranslationDocx, downloadBlob } from "@/lib/docx-export";
+import { useThrottledStream } from "@/hooks/use-throttled-stream";
 
 type Phase =
   | "idle"
@@ -108,7 +109,7 @@ export default function TranslatePage() {
   const [dragOver, setDragOver] = useState(false);
 
   const { getSignal, abort, reset } = useAbort();
-  const translatedRef = useRef("");
+  const stream = useThrottledStream(setTranslatedText);
   const paperTextRef = useRef(""); // full text from uploaded PDF
   const pdfBytesRef = useRef<ArrayBuffer | null>(null); // raw PDF for image extraction
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -128,7 +129,7 @@ export default function TranslatePage() {
     setTerms([]);
     setAnalysis(null);
     setFigures([]);
-    translatedRef.current = "";
+    stream.reset();
 
     try {
       const pdfjsLib = await ensurePdfJs();
@@ -179,7 +180,7 @@ export default function TranslatePage() {
     setTerms([]);
     setAnalysis(null);
     setFigures([]);
-    translatedRef.current = "";
+    stream.reset();
     setSectionProgress({ current: 0, total: 0, heading: "" });
     setActiveTab("translation");
 
@@ -220,15 +221,13 @@ export default function TranslatePage() {
                 heading: event.heading,
               });
               if (event.heading) {
-                const hMarker = `\n\n## ${event.heading}\n\n`;
-                translatedRef.current += hMarker;
-                setTranslatedText(translatedRef.current);
+                stream.append(`\n\n## ${event.heading}\n\n`);
               }
             } else if (event.phase === "chunk") {
-              translatedRef.current += event.text;
-              setTranslatedText(translatedRef.current);
+              stream.append(event.text);
             } else if (event.phase === "done") {
-              startBackgroundTasks(paperTitle, paperTextRef.current, translatedRef.current);
+              stream.flush();
+              startBackgroundTasks(paperTitle, paperTextRef.current, stream.getText());
             } else if (event.phase === "error") {
               console.error("[translate] stream error:", event.error);
             }

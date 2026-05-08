@@ -410,6 +410,16 @@ Answer in Chinese. Be specific and actionable.`;
       const decoder = new TextDecoder();
       let buf = "";
       let fullText = "";
+      let rafId: number | null = null;
+
+      const flushChat = () => {
+        setChatMessages(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = { role: "assistant", content: fullText };
+          return updated;
+        });
+        rafId = null;
+      };
 
       while (true) {
         const { done, value } = await reader.read();
@@ -423,15 +433,13 @@ Answer in Chinese. Be specific and actionable.`;
             const evt = JSON.parse(line.slice(6));
             if (evt.text) {
               fullText += evt.text;
-              setChatMessages(prev => {
-                const updated = [...prev];
-                updated[updated.length - 1] = { role: "assistant", content: fullText };
-                return updated;
-              });
+              if (rafId === null) rafId = requestAnimationFrame(flushChat);
             }
           } catch { /* skip */ }
         }
       }
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      flushChat();
 
       // Check for direct review modification
       const modifiedMatch = fullText.match(/<modified-review>([\s\S]*?)<\/modified-review>/);

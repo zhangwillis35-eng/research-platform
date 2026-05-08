@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { usePersistedState } from "@/hooks/use-persisted-state";
+import { useThrottledStream } from "@/hooks/use-throttled-stream";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,6 +47,8 @@ export default function ProposalPage() {
   const [proposalText, setProposalText] = usePersistedState<string>(NS, "proposalText", "");
   const [topic, setTopic] = usePersistedState<string>(NS, "topic", "");
   const [ideas, setIdeas] = usePersistedState<string>(NS, "ideas", "");
+
+  const proposalStream = useThrottledStream(setProposalText);
 
   // Transient
   const [papersLoading, setPapersLoading] = useState(true);
@@ -131,7 +134,7 @@ export default function ProposalPage() {
 
       setLoadingPhase("");
       const decoder = new TextDecoder();
-      let text = "";
+      proposalStream.reset();
       let buffer = "";
 
       while (true) {
@@ -145,12 +148,12 @@ export default function ProposalPage() {
           try {
             const data = JSON.parse(line.slice(6));
             if (data.text) {
-              text += data.text;
-              setProposalText(text);
+              proposalStream.append(data.text);
             }
           } catch { /* skip */ }
         }
       }
+      proposalStream.flush();
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") { setLoading(false); setLoadingPhase(""); return; }
       setProposalText(`生成失败: ${String(err)}`);

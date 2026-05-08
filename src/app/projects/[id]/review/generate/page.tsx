@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { usePersistedState } from "@/hooks/use-persisted-state";
+import { useThrottledStream } from "@/hooks/use-throttled-stream";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -69,6 +70,8 @@ export default function ReviewGeneratePage() {
   const [analysisEngine, setAnalysisEngine] = usePersistedState<AnalysisEngine>(NS, "engine", "builtin");
   const [wordCountMin, setWordCountMin] = usePersistedState<number>(NS, "wcMin", 6000);
   const [wordCountMax, setWordCountMax] = usePersistedState<number>(NS, "wcMax", 8000);
+
+  const reviewStream = useThrottledStream(setReviewText);
 
   // Transient state
   const [phase, setPhase] = useState<Phase>("idle");
@@ -233,7 +236,7 @@ export default function ReviewGeneratePage() {
       const decoder = new TextDecoder();
 
       if (reader) {
-        let text = "";
+        reviewStream.reset();
         let buffer = "";
         while (true) {
           const { done, value } = await reader.read();
@@ -246,9 +249,9 @@ export default function ReviewGeneratePage() {
             try {
               const data = JSON.parse(line.slice(6));
               if (data.type === "text") {
-                text += data.text;
-                setReviewText(text);
+                reviewStream.append(data.text);
               } else if (data.type === "done") {
+                reviewStream.flush();
                 setPhase("done");
               } else if (data.type === "error") {
                 throw new Error(data.error);
