@@ -3,6 +3,7 @@
  */
 
 import { callAI, streamAI } from "@/lib/ai";
+import { batchStream } from "@/lib/batch-stream";
 import type { AIProvider } from "@/lib/ai";
 
 // ─── Types ───────────────────────────────────────
@@ -390,7 +391,7 @@ export async function* rewriteReviewStream(
     maxTokens: wordCount ? Math.max(8192, Math.ceil(wordCount.max * 1.5)) : 8192,
   });
 
-  for await (const chunk of stream) {
+  for await (const chunk of batchStream(stream, 30)) {
     yield chunk;
   }
 }
@@ -429,7 +430,7 @@ export async function* integratePapersStream(
     maxTokens: 8192,
   });
 
-  for await (const chunk of stream) {
+  for await (const chunk of batchStream(stream, 30)) {
     yield chunk;
   }
 }

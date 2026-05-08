@@ -43,14 +43,17 @@ export async function POST(request: Request) {
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
       async start(controller) {
+        // Keepalive: prevent SSE timeout during long generation phases
+        const keepalive = setInterval(() => {
+          try { controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "ping" })}\n\n`)); } catch { /* closed */ }
+        }, 10000);
+
         try {
           let outline: ReviewOutline;
 
           if (providedOutline) {
-            // Skip Phase 1 — use the caller-supplied (possibly user-edited) outline
             outline = providedOutline;
           } else {
-            // Phase 1: Generate outline
             controller.enqueue(
               encoder.encode(
                 `data: ${JSON.stringify({ type: "phase", phase: "outline", message: "正在生成综述大纲..." })}\n\n`
@@ -68,18 +71,17 @@ export async function POST(request: Request) {
             )
           );
 
-          // If outlineOnly mode, stop here and let the user review/edit the outline
           if (outlineOnly) {
             controller.enqueue(
               encoder.encode(
                 `data: ${JSON.stringify({ type: "done" })}\n\n`
               )
             );
+            clearInterval(keepalive);
             controller.close();
             return;
           }
 
-          // Phase 2: Stream full review
           controller.enqueue(
             encoder.encode(
               `data: ${JSON.stringify({ type: "phase", phase: "writing", message: "正在撰写综述..." })}\n\n`
@@ -101,12 +103,14 @@ export async function POST(request: Request) {
             )
           );
         } catch (err) {
+          console.error("[review] Generation error:", err);
           controller.enqueue(
             encoder.encode(
               `data: ${JSON.stringify({ type: "error", error: String(err) })}\n\n`
             )
           );
         }
+        clearInterval(keepalive);
         controller.close();
       },
     });
@@ -127,4 +131,4 @@ export async function POST(request: Request) {
   }
 }
 
-export const maxDuration = 120;
+export const maxDuration = 300;

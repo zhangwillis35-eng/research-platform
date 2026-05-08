@@ -8,6 +8,7 @@ import { callAI, streamAI } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
 import type { UnifiedPaper } from "@/lib/sources/types";
 import { concurrentPool } from "@/lib/concurrent-pool";
+import { batchStream } from "@/lib/batch-stream";
 
 export interface ReviewOutline {
   title: string;
@@ -187,19 +188,31 @@ export async function* generateReviewStream(
   const rawDraft = `# ${outline.title}\n\n${assembled}${gapsText}${futureText}\n\n## 参考文献\n\n${paperList}`;
 
   // Coherence pass — stream the final polished version
-  const stream = streamAI({
-    provider,
-    system: COHERENCE_SYSTEM,
-    messages: [{
-      role: "user",
-      content: `以下是由多个章节并行生成后拼接的文献综述草稿。请润色为一篇连贯的完整综述。\n\n目标字数: ${totalTarget} 字（${wordCount ? `${wordCount.min}-${wordCount.max}` : "约6000"}字）\n\n${rawDraft}`,
-    }],
-    temperature: 0.3,
-    maxTokens: Math.max(8192, Math.ceil(totalTarget * 1.5)),
-  });
+  // Trim draft if too long to avoid exceeding context window
+  const maxDraftLen = 30000;
+  const trimmedDraft = rawDraft.length > maxDraftLen
+    ? rawDraft.slice(0, maxDraftLen) + "\n\n[...部分内容已截断以适应模型上下文长度]"
+    : rawDraft;
 
-  const { batchStream } = await import("@/lib/batch-stream");
-  for await (const chunk of batchStream(stream, 30)) {
-    yield chunk;
+  try {
+    const stream = streamAI({
+      provider,
+      system: COHERENCE_SYSTEM,
+      messages: [{
+        role: "user",
+        content: `以下是由多个章节并行生成后拼接的文献综述草稿。请润色为一篇连贯的完整综述。\n\n目标字数: ${totalTarget} 字（${wordCount ? `${wordCount.min}-${wordCount.max}` : "约6000"}字）\n\n${trimmedDraft}`,
+      }],
+      temperature: 0.3,
+      maxTokens: Math.max(8192, Math.ceil(totalTarget * 1.5)),
+    });
+
+    for await (const chunk of batchStream(stream, 30)) {
+      yield chunk;
+    }
+  } catch (err) {
+    // If coherence pass fails, yield the raw draft instead of nothing
+    console.error("[storm-review] Coherence pass failed:", err);
+    yield "\n\n[润色步骤失败，以下为原始拼接版本]\n\n";
+    yield trimmedDraft;
   }
 }
