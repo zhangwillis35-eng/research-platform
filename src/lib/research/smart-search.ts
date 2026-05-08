@@ -189,180 +189,42 @@ function applyTieredLimit(papers: ScoredPaper[], limit: number, relevanceScored:
   return combined.slice(0, limit);
 }
 
-const EXTRACT_SYSTEM = `You are an academic literature search expert. Follow these steps IN ORDER:
+const EXTRACT_SYSTEM = `You are an academic literature search expert. Given a user query (any language), output a JSON search plan.
 
-STEP 1 — TRANSLATE: If the user's input contains ANY Chinese, first translate the ENTIRE input into English. Remove filler words (帮我找, 有关, 的文章, 相关论文, 请搜索, etc.). Keep only the academic meaning.
-Example: "帮我找AI washing的文章" → "AI washing"
-Example: "数字化转型与组织韧性的关系" → "digital transformation and organizational resilience"
-Example: "ESG对企业创新的影响" → "ESG impact on corporate innovation"
-Example: "企业招聘数据的处理方法" → "methods for processing corporate recruitment data"
+TRANSLATE: Strip Chinese filler words (帮我找/有关/的文章/请搜索). Translate to English academic terms.
 
-STEP 2 — UNDERSTAND QUERY INTENT: Determine the type of research query:
-- TOPICAL: user wants papers about a specific topic/phenomenon (e.g. "AI washing")
-- RELATIONAL: user wants papers about relationships between variables (e.g. "ESG对企业创新的影响")
-- METHODOLOGICAL: user wants papers about methods/techniques/approaches (e.g. "招聘数据的处理方法", "文本分析方法")
-- REVIEW: user wants survey/review papers (e.g. "数字化转型综述")
+QUERY INTENT: TOPICAL | RELATIONAL | METHODOLOGICAL | REVIEW
 
-This matters for STEP 3 — different query types need different term extraction strategies.
+KEY TERMS (3-5 complete academic phrases):
+- NEVER split compound terms ("AI washing" = one term)
+- RELATIONAL queries (A与B): include BOTH A→B AND B→A directions
+- METHODOLOGICAL queries: include domain+method combinations (e.g. "text mining job postings")
+- Use the FORMAL academic term top journals use, not literal translation (e.g. "AI谄媚" → "sycophancy")
+- For broad concepts (e.g. "碳排放"): include the full semantic family (carbon emissions, CO2, net-zero, decarbonization, greenhouse gas)
 
-STEP 3 — EXTRACT KEY TERMS: From the English translation, extract 3-6 core academic search terms. Each term must be a complete, meaningful academic phrase.
-NEVER break compound terms: "AI washing" is ONE term, not "AI" + "washing".
+SYNONYMS (6-8 per key term, ALL English): cover — direct synonyms, broader/narrower terms, adjacent research streams, formal academic terms, mechanism/measurement terms.
 
-CRITICAL — BIDIRECTIONAL INTERPRETATION: When two concepts A and B are mentioned together (e.g. "AI与碳排放"), ALWAYS consider BOTH causal directions:
-- A affects B (e.g. "AI's carbon emissions" — AI training causes CO2)
-- B is affected by A (e.g. "AI for decarbonization" — AI helps reduce emissions)
-- A and B interact (e.g. "AI climate policy" — the intersection)
-You MUST generate key terms covering ALL directions. Missing one direction = missing half the literature.
-Example: "AI与碳排放" → MUST include ALL of:
-  - "AI carbon footprint" (AI causes emissions)
-  - "AI for decarbonization" (AI helps reduce emissions)
-  - "AI net-zero emissions" (AI's role in achieving net-zero — this is the term Nature/Science uses!)
-  - "AI climate mitigation" (AI for climate action)
-  - "AI energy consumption" (AI's energy/power usage)
-  - "sustainable AI" (making AI itself greener)
-Example: "数字化转型与员工" → BOTH "digital transformation employee displacement" AND "digital transformation employee empowerment"
+QUERIES:
+- precisionQueries (4-6): exact-phrase searches using key terms + top synonyms
+- broadQueries (2-3): OR-connected synonym groups; for RELATIONAL include both directions in one broad query
 
-ALSO CRITICAL — SEMANTIC BREADTH: For any concept like "碳排放" (carbon emissions), you MUST include the FULL semantic family, not just the literal translation:
-  "carbon emissions" → also "CO2 emissions", "greenhouse gas", "net-zero", "climate change", "global warming", "decarbonization", "emission reduction", "carbon neutrality"
-  Missing "net-zero" when searching for "carbon emissions" = missing landmark Nature/Science papers!
+FILTERS (only extract if user explicitly mentioned):
+- Journal: "SSCI"→requireSSCI, "SCI"→requireSCI, "ABS3星+"→minABS="3", "JCR Q1"→minJCR="Q1", "CCF A"→minCCF="A", "CSSCI/C刊"→requireCSSCI, "北大核心"→requirePKUCore, "UTD24"→requireUTD24, "FT50"→requireFT50, "FMS"→requireFMS, "高质量/好期刊/权威期刊"→requireHighQuality, "影响因子N+"→minIF, "引用N+"→minCitations
+- Year: "2020以后"→yearFrom:2020, "近两年"→yearFrom:${new Date().getFullYear() - 2}, "近三年"→yearFrom:${new Date().getFullYear() - 3}, "近五年"→yearFrom:${new Date().getFullYear() - 5}, "最新/最近"→yearFrom:${new Date().getFullYear() - 1}, "今年"→yearFrom+yearTo:${new Date().getFullYear()}
+- requireHighQuality = ANY quality index (SSCI/SCI/CSSCI/UTD24/FT50/ABS2+/JCR Q1-Q2/CCF A-B/CAS一二区)
 
-For METHODOLOGICAL queries, you MUST:
-- Include the domain + method as a combined term (e.g. "recruitment data analysis")
-- Include specific methodological terms used in the field (e.g. "text mining job postings", "NLP hiring data", "web scraping job ads")
-- Think about what CONCRETE methods researchers actually use in this domain
-- Do NOT just list synonyms of the domain — focus on METHOD + DOMAIN combinations
-
-For RELATIONAL queries:
-- Include the full relationship as one term (e.g. "ESG corporate innovation")
-- Include each variable separately for broader coverage
-
-STEP 4 — SYNONYMS (CRITICAL — most important step): For each key term, list 10-15 English synonyms and semantically related terms. Be MAXIMALLY EXHAUSTIVE — cover ALL 8 dimensions below:
-
-Dimension 1: DIRECT SYNONYMS — exact same concept, different wording
-  e.g. "AI washing" → "AI greenwashing", "artificial intelligence washing"
-
-Dimension 2: BROADER CATEGORY — parent concepts or umbrella terms
-  e.g. "AI washing" → "technology greenwashing", "digital deception", "corporate digital fraud"
-
-Dimension 3: NARROWER SUBTYPES — specific instances or manifestations
-  e.g. "AI sycophancy" → "reward hacking", "specification gaming", "preference falsification", "people-pleasing AI"
-
-Dimension 4: ADJACENT RESEARCH STREAMS — different fields studying the SAME phenomenon
-  e.g. "AI sycophancy" → "AI alignment", "AI safety", "value misalignment", "RLHF failure modes", "human feedback bias"
-  e.g. "AI谄媚" → researchers in HCI call it "AI agreeableness", in philosophy it's "epistemic deference"
-
-Dimension 5: FORMAL ACADEMIC TERMS — the precise terminology used in Nature/Science/top journals
-  e.g. "AI谄媚" → "sycophancy" (NOT just "flattery"), "sycophantic behavior", "AI sycophant"
-  e.g. "AI幻觉" → "hallucination" AND "confabulation" AND "factual grounding failure"
-  e.g. "大模型对齐" → "alignment", "RLHF", "constitutional AI", "preference optimization"
-
-Dimension 6: CAUSE/EFFECT/MECHANISM terms — what causes it or what it leads to
-  e.g. "AI sycophancy" → "output bias from RLHF", "human feedback loop", "reward model overoptimization"
-
-Dimension 7: MEASUREMENT/METHOD terms — how researchers study this phenomenon
-  e.g. "AI sycophancy" → "sycophancy benchmark", "opinion conformity test", "user study AI agreement"
-
-Dimension 8: HISTORICAL/FOUNDATIONAL terms — how the concept was referred to before the current term emerged
-  e.g. "AI sycophancy" → "yes-man AI", "AI obsequiousness" (older/informal), "social desirability bias in AI"
-
-CRITICAL RULES:
-- For Chinese concepts, ALWAYS include the MOST FORMAL English academic term, not just literal translation
-- Think: "What would a Nature/Science paper title say?" — use THAT term
-- Each key term MUST have at least 10 synonyms covering at least 5 of the 8 dimensions above
-- Missing a synonym = missing a landmark paper from a top journal
-- For emerging topics (2023+), include BOTH the new term AND the older terms the concept was known by
-- For RELATIONAL/TOPICAL queries with two concepts (A与B), generate synonyms for BOTH directions:
-  Direction 1: A→B (how A affects/causes B)
-  Direction 2: B→A (how B is addressed/mitigated by A)
-  Example: "AI carbon emissions" synonyms must include BOTH "AI training carbon footprint" AND "AI for decarbonization", "AI climate mitigation", "AI net-zero", "machine learning emission reduction"
-
-STEP 5 — BUILD QUERIES: Construct precision and broad search queries.
-- precisionQueries (5-8): Each key term + top synonyms as exact-phrase searches. Include at least one query using Dimension 4 (adjacent stream) and Dimension 5 (formal academic term) synonyms.
-- broadQueries (3-5): OR-combined synonym groups. Ensure one query covers Dimensions 1-3, another covers Dimensions 4-6, and a third covers Dimensions 5-8. This maximizes coverage across different research communities.
-
-For METHODOLOGICAL queries, also include queries like:
-- "methodology" OR "method" combined with the domain
-- Specific technique names combined with the domain data source
-
-STEP 6 — EXTRACT FILTERS: If the user specifies quality requirements OR time ranges, extract them as filters. These are NOT search terms.
-
-IMPORTANT: "高质量期刊" / "好期刊" / "权威期刊" / "核心期刊" / "高水平期刊" → filters.requireHighQuality = true
-This means: keep papers from ANY recognized quality index (SSCI, SCI, CSSCI, UTD24, FT50, ABS 2+, JCR Q1-Q2, CCF A/B, 中科院一二区, 北大核心, etc.)
-Do NOT interpret "高质量" as only SSCI or only one specific index.
-
-Specific filter examples:
-- "ABS3星以上" → filters.minABS = "3"
-- "SSCI期刊" → filters.requireSSCI = true
-- "SCI期刊" → filters.requireSCI = true
-- "CSSCI" / "C刊" / "南大核心" → filters.requireCSSCI = true
-- "北大核心" / "中文核心" → filters.requirePKUCore = true
-- "中科院一区" → filters.minCASZone = "一区"
-- "JCR Q1" / "JCR一区" → filters.minJCR = "Q1"
-- "CCF A类" / "CCF-A" → filters.minCCF = "A"
-- "CCF B类以上" → filters.minCCF = "B"
-- "FMS推荐" → filters.requireFMS = true
-- "影响因子5以上" → filters.minIF = 5
-- "引用100以上" → filters.minCitations = 100
-- "UTD24期刊" → filters.requireUTD24 = true
-- "FT50" → filters.requireFT50 = true
-- "高质量期刊" / "好期刊" / "权威期刊" → filters.requireHighQuality = true
-
-Year/time filter examples (IMPORTANT — extract ALL time references):
-- "2020年以后" / "2020年之后" / "从2020年开始" → filters.yearFrom = 2020
-- "2025年以前" / "2025年之前" → filters.yearTo = 2025
-- "2025-2026年" / "2025到2026年" / "2025-2026年间" / "发表于2025至2026" → filters.yearFrom = 2025, filters.yearTo = 2026
-- "近两年" / "最近两年" → filters.yearFrom = ${new Date().getFullYear() - 2}
-- "近三年" → filters.yearFrom = ${new Date().getFullYear() - 3}
-- "近五年" → filters.yearFrom = ${new Date().getFullYear() - 5}
-- "最新的" / "最近的" / "最新研究" → filters.yearFrom = ${new Date().getFullYear() - 1}
-- "今年" → filters.yearFrom = ${new Date().getFullYear()}, filters.yearTo = ${new Date().getFullYear()}
-
-Output STRICT JSON only:
+Output STRICT JSON:
 {
-  "translatedInput": "the full English translation (search part only, not filters)",
-  "queryIntent": "TOPICAL" | "RELATIONAL" | "METHODOLOGICAL" | "REVIEW",
+  "translatedInput": "English translation of search topic only",
+  "queryIntent": "TOPICAL",
   "keyTerms": ["AI washing"],
-  "synonyms": {
-    "AI washing": ["AI greenwashing", "artificial intelligence washing", "AI hype", "AI fraud"]
-  },
-  "precisionQueries": ["\"AI washing\""],
-  "broadQueries": ["\"AI washing\" OR \"AI greenwashing\" OR \"artificial intelligence washing\" OR \"AI hype\""],
-  "filters": {
-    "minABS": "3",
-    "requireSSCI": true
-  }
+  "synonyms": { "AI washing": ["AI greenwashing", "technology washing", "AI hype", "digital deception", "AI fraud disclosure", "corporate AI misrepresentation"] },
+  "precisionQueries": ["\"AI washing\"", "\"AI greenwashing\""],
+  "broadQueries": ["\"AI washing\" OR \"AI greenwashing\" OR \"technology washing\" OR \"AI hype\" OR \"digital deception\""],
+  "filters": {}
 }
 
-Example for METHODOLOGICAL query:
-Input: "企业招聘数据的处理方法，2025-2026年"
-{
-  "translatedInput": "methods for processing corporate recruitment data",
-  "queryIntent": "METHODOLOGICAL",
-  "keyTerms": ["recruitment data processing methodology", "text mining job postings", "online job advertisement data", "labor market analytics"],
-  "synonyms": {
-    "recruitment data processing methodology": ["hiring data analysis methods", "job posting data methodology", "employment data processing"],
-    "text mining job postings": ["NLP job advertisements", "web scraping job ads", "automated job posting analysis"],
-    "online job advertisement data": ["online vacancy data", "job board data", "digital hiring data"],
-    "labor market analytics": ["workforce analytics", "talent analytics", "HR analytics"]
-  },
-  "precisionQueries": ["\"recruitment data\" methodology", "\"job posting\" \"text mining\"", "\"online job advertisement\" data analysis"],
-  "broadQueries": [
-    "(\"recruitment data\" OR \"job posting data\" OR \"hiring data\" OR \"job advertisement data\") AND (methodology OR \"text mining\" OR \"machine learning\" OR \"data processing\" OR NLP OR \"web scraping\")",
-    "\"labor market data\" AND (method OR analysis OR processing)"
-  ],
-  "filters": { "yearFrom": 2025, "yearTo": 2026 }
-}
-
-RULES:
-- ENGLISH ONLY: ALL keyTerms, synonyms, precisionQueries, and broadQueries MUST be in English. The search targets English-language journals (SSCI, SCI, UTD24, FT50, etc.). NEVER include Chinese terms in any search query — Chinese is reserved exclusively for CNKI searches.
-- keyTerms = complete English academic phrases, NEVER single letters or broken words
-- synonyms: 5-8 per key term, ALL IN ENGLISH. Cover direct synonyms, broader terms, related concepts, academic jargon variants
-- precisionQueries = each keyTerm as exact phrase + top synonyms as exact phrases (5-8 total), ALL IN ENGLISH. Include terms from Dimensions 4 and 5 (adjacent streams + formal terms)
-- broadQueries = ALL English synonyms connected with OR; different concept groups connected with AND. Generate 3-5 broad queries covering different synonym dimensions to maximize coverage across research communities
-- If only one concept, broadQuery = all English synonyms joined with OR (include ALL of them)
-- filters: only include fields the user explicitly mentioned. If no filters mentioned, return empty object {}
-- SEPARATE search terms from quality requirements. "ABS3星以上" is a FILTER, not a search term
-- ALWAYS extract year/time references into filters — they are NOT search terms`;
+RULES: ALL keyTerms/synonyms/queries in English only (never Chinese — Chinese reserved for CNKI). Filters not in queries.`;
 
 const EXTRACT_SYSTEM_ZH = `You are an academic search assistant. Given a research topic (in any language), extract CHINESE keywords and queries for searching Chinese academic databases (CNKI 知网, CSSCI, PKU Core).
 
@@ -403,7 +265,9 @@ export async function buildSmartSearchPlan(
       system,
       messages: [{ role: "user", content: input }],
       jsonMode: true,
+      noThinking: true,
       temperature: 0.2,
+      maxTokens: 1500,
     });
 
     console.log(`[smart-search] AI response (${response.provider}):`, response.content.slice(0, 200));
