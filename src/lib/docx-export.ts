@@ -11,11 +11,6 @@ import {
   HeadingLevel,
   AlignmentType,
   ImageRun,
-  Table,
-  TableRow,
-  TableCell,
-  WidthType,
-  BorderStyle,
 } from "docx";
 import type { AcademicTerm, PaperAnalysis } from "./research/paper-translator";
 
@@ -334,55 +329,6 @@ export async function generateTranslationDocx(options: {
       })
     );
 
-    // Terms table
-    const headerRow = new TableRow({
-      children: [
-        new TableCell({ children: [new Paragraph({ children: splitByLanguage("英文术语", BODY_SIZE, true) })], width: { size: 30, type: WidthType.PERCENTAGE } }),
-        new TableCell({ children: [new Paragraph({ children: splitByLanguage("中文翻译", BODY_SIZE, true) })], width: { size: 30, type: WidthType.PERCENTAGE } }),
-        new TableCell({ children: [new Paragraph({ children: splitByLanguage("类别", BODY_SIZE, true) })], width: { size: 20, type: WidthType.PERCENTAGE } }),
-        new TableCell({ children: [new Paragraph({ children: splitByLanguage("核验", BODY_SIZE, true) })], width: { size: 20, type: WidthType.PERCENTAGE } }),
-      ],
-    });
-
-    const termRows = terms.map(
-      (t) =>
-        new TableRow({
-          children: [
-            new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: t.en, font: EN_FONT, size: BODY_SIZE })] })] }),
-            new TableCell({ children: [new Paragraph({ children: splitByLanguage(t.correction ?? t.zh, BODY_SIZE) })] }),
-            new TableCell({
-              children: [
-                new Paragraph({
-                  children: splitByLanguage(
-                    t.category === "theory" ? "理论" : t.category === "method" ? "方法" : t.category === "concept" ? "概念" : "其他",
-                    BODY_SIZE
-                  ),
-                }),
-              ],
-            }),
-            new TableCell({
-              children: [
-                new Paragraph({
-                  children: [
-                    new TextRun({
-                      text: t.isAccurate ? "✓" : "已修正",
-                      font: CN_FONT,
-                      size: BODY_SIZE,
-                      color: t.isAccurate ? "22C55E" : "EF4444",
-                    }),
-                  ],
-                }),
-              ],
-            }),
-          ],
-        })
-    );
-
-    allChildren.push(
-      new Paragraph({ children: [] }) // spacing before table
-    );
-    // Note: Table is separate from Paragraph children - we need to include it in the section
-    // For simplicity, render terms as paragraphs instead of table
     allChildren.push(
       new Paragraph({
         children: [
@@ -415,7 +361,6 @@ export async function generateTranslationDocx(options: {
       );
     }
     // Suppress unused variables from table attempt
-    void headerRow; void termRows;
   }
 
   // ── Analysis ───────────────────────────────────────────────────────────

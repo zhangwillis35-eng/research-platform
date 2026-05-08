@@ -33,7 +33,15 @@ type Phase =
   | "analyzing"
   | "done";
 
-type ActiveTab = "translation" | "terms" | "analysis";
+type ActiveTab = "translation" | "terms" | "analysis" | "figures";
+
+interface ExtractedFigure {
+  label: string;
+  page: number;
+  width: number;
+  height: number;
+  base64: string; // PNG base64
+}
 
 export default function TranslatePage() {
   const params = useParams();
@@ -47,6 +55,8 @@ export default function TranslatePage() {
   const [translatedText, setTranslatedText] = usePersistedState<string>(NS, "translated", "");
   const [terms, setTerms] = usePersistedState<AcademicTerm[]>(NS, "terms", []);
   const [analysis, setAnalysis] = usePersistedState<PaperAnalysis | null>(NS, "analysis", null);
+  const [figures, setFigures] = useState<ExtractedFigure[]>([]);
+  const [figuresLoading, setFiguresLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("translation");
   const [sectionProgress, setSectionProgress] = useState({ current: 0, total: 0, heading: "" });
   const [exporting, setExporting] = useState(false);
@@ -81,6 +91,7 @@ export default function TranslatePage() {
     setTranslatedText("");
     setTerms([]);
     setAnalysis(null);
+    setFigures([]);
     translatedRef.current = "";
     setSectionProgress({ current: 0, total: 0, heading: "" });
     setActiveTab("translation");
@@ -167,6 +178,22 @@ export default function TranslatePage() {
   async function startBackgroundTasks(title: string, paperText: string, finalText: string) {
     void finalText;
 
+    // Extract PDF images (parallel with terms)
+    if (selectedPaperId) {
+      setFiguresLoading(true);
+      fetch("/api/research/translate/images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paperId: selectedPaperId }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (d?.images) setFigures(d.images);
+        })
+        .catch(() => {})
+        .finally(() => setFiguresLoading(false));
+    }
+
     // Extract terms
     setPhase("extracting-terms");
     try {
@@ -220,6 +247,15 @@ export default function TranslatePage() {
       const firstLine = translatedText.split("\n").find((l) => l.trim().length > 5) ?? selectedPaper.title;
       const translatedTitle = firstLine.replace(/^#+\s*/, "").trim().slice(0, 120);
 
+      // Convert base64 figures to FigureImage format for docx
+      const figureImages = figures.map((f) => ({
+        label: f.label,
+        caption: `来源：原文第 ${f.page} 页`,
+        imageData: Uint8Array.from(atob(f.base64), (c) => c.charCodeAt(0)),
+        width: Math.min(f.width, 500),
+        height: Math.min(f.height, Math.round((500 / f.width) * f.height)),
+      }));
+
       const blob = await generateTranslationDocx({
         originalTitle: selectedPaper.title,
         translatedTitle,
@@ -229,6 +265,7 @@ export default function TranslatePage() {
         translatedText,
         terms,
         analysis,
+        figures: figureImages,
       });
       const filename = `[译文] ${selectedPaper.title.slice(0, 40)}.docx`;
       downloadBlob(blob, filename);
@@ -274,6 +311,7 @@ export default function TranslatePage() {
                 setTranslatedText("");
                 setTerms([]);
                 setAnalysis(null);
+                setFigures([]);
               }}
             >
               <option value="">— 请选择论文 —</option>
@@ -368,7 +406,7 @@ export default function TranslatePage() {
       )}
 
       {/* Results tabs */}
-      {(translatedText || terms.length > 0 || analysis) && (
+      {(translatedText || terms.length > 0 || analysis || figures.length > 0) && (
         <div className="space-y-4">
           {/* Tab bar */}
           <div className="flex gap-1 border-b border-border">
@@ -376,6 +414,7 @@ export default function TranslatePage() {
               [
                 { key: "translation", label: "译文", show: !!translatedText },
                 { key: "terms", label: `关键词 ${terms.length > 0 ? `(${terms.length})` : ""}`, show: true },
+                { key: "figures", label: `图表 ${figures.length > 0 ? `(${figures.length})` : figuresLoading ? "..." : ""}`, show: true },
                 { key: "analysis", label: "论文分析", show: true },
               ] as { key: ActiveTab; label: string; show: boolean }[]
             )
@@ -486,6 +525,49 @@ export default function TranslatePage() {
                         })}
                       </tbody>
                     </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Figures tab */}
+          {activeTab === "figures" && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium">
+                  提取的图表
+                  {figuresLoading && (
+                    <span className="ml-2 text-muted-foreground animate-pulse text-xs">提取中...</span>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {figures.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    {figuresLoading
+                      ? "正在从 PDF 中提取图表..."
+                      : "未提取到图表（翻译完成后自动从 PDF 提取，需要论文有已上传的 PDF 文件）"}
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {figures.map((fig, i) => (
+                      <div key={i} className="border border-border rounded-md overflow-hidden">
+                        <div className="bg-muted/30 px-3 py-1.5 border-b border-border flex items-center justify-between">
+                          <span className="text-xs font-medium">{fig.label}</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            第 {fig.page} 页 · {fig.width}×{fig.height}
+                          </span>
+                        </div>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={`data:image/png;base64,${fig.base64}`}
+                          alt={fig.label}
+                          className="w-full h-auto"
+                          loading="lazy"
+                        />
+                      </div>
+                    ))}
                   </div>
                 )}
               </CardContent>

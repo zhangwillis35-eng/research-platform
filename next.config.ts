@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  serverExternalPackages: ["ali-oss", "proxy-agent", "urllib", "nodemailer", "unpdf"],
+  serverExternalPackages: ["ali-oss", "proxy-agent", "urllib", "nodemailer", "unpdf", "mupdf"],
   typescript: {
     ignoreBuildErrors: true, // type checking done locally, skip on server to save memory
   },
