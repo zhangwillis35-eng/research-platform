@@ -93,7 +93,7 @@ export default function TranslatePage() {
   const projectId = params.id as string;
   const NS = `translate-${projectId}`;
 
-  const [provider, setProvider] = usePersistedState<AIProvider>(NS, "provider", "deepseek-fast");
+  const [provider, setProvider] = usePersistedState<AIProvider>(NS, "provider", "deepseek-pro");
   const [phase, setPhase] = usePersistedState<Phase>(NS, "phase", "idle");
   const [translatedText, setTranslatedText] = usePersistedState<string>(NS, "translated", "");
   const [terms, setTerms] = usePersistedState<AcademicTerm[]>(NS, "terms", []);
@@ -104,7 +104,15 @@ export default function TranslatePage() {
   const [figures, setFigures] = useState<ExtractedFigure[]>([]);
   const [figuresLoading, setFiguresLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("translation");
-  const [sectionProgress, setSectionProgress] = useState({ current: 0, total: 0, heading: "" });
+  const [progress, setProgress] = useState({
+    current: 0,       // sections completed
+    total: 0,         // total sections
+    heading: "",       // current section heading
+    inputChars: 0,     // total input chars
+    processedChars: 0, // input chars processed so far
+    outputChars: 0,    // translated chars so far
+    startTime: 0,      // timestamp when translation started
+  });
   const [exporting, setExporting] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
@@ -181,7 +189,7 @@ export default function TranslatePage() {
     setAnalysis(null);
     setFigures([]);
     stream.reset();
-    setSectionProgress({ current: 0, total: 0, heading: "" });
+    setProgress({ current: 0, total: 0, heading: "", inputChars: 0, processedChars: 0, outputChars: 0, startTime: Date.now() });
     setActiveTab("translation");
 
     try {
@@ -214,17 +222,27 @@ export default function TranslatePage() {
           if (!line.startsWith("data: ")) continue;
           try {
             const event = JSON.parse(line.slice(6)) as TranslateStreamEvent;
-            if (event.phase === "section-start") {
-              setSectionProgress({
-                current: event.index + 1,
+            if (event.phase === "meta") {
+              setProgress(p => ({ ...p, inputChars: event.inputChars, total: event.chunkCount }));
+            } else if (event.phase === "section-start") {
+              setProgress(p => ({
+                ...p,
+                current: event.index,
                 total: event.total,
                 heading: event.heading,
-              });
+              }));
               if (event.heading) {
                 stream.append(`\n\n## ${event.heading}\n\n`);
               }
             } else if (event.phase === "chunk") {
               stream.append(event.text);
+            } else if (event.phase === "section-done") {
+              setProgress(p => ({
+                ...p,
+                current: event.index + 1,
+                processedChars: event.inputCharsProcessed,
+                outputChars: stream.getText().length,
+              }));
             } else if (event.phase === "done") {
               stream.flush();
               startBackgroundTasks(paperTitle, paperTextRef.current, stream.getText());
@@ -457,42 +475,79 @@ export default function TranslatePage() {
 
       {/* Progress indicator */}
       {isRunning && (
-        <div className="text-sm text-muted-foreground space-y-1">
-          {phase === "translating" && sectionProgress.total > 0 && (
-            <div className="flex items-center gap-2">
-              <div className="flex gap-1">
-                {Array.from({ length: sectionProgress.total }, (_, i) => (
-                  <div
-                    key={i}
-                    className={`h-1.5 w-6 rounded-full transition-colors ${
-                      i < sectionProgress.current
-                        ? "bg-primary"
-                        : i === sectionProgress.current - 1
-                        ? "bg-primary/60 animate-pulse"
-                        : "bg-muted"
-                    }`}
-                  />
-                ))}
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="pt-4 pb-3 space-y-3">
+            {phase === "translating" && (
+              <>
+                {/* Main progress bar */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-foreground">
+                      翻译中 · 第 {progress.current + 1}/{progress.total || "?"} 段
+                      {progress.heading ? ` — ${progress.heading}` : ""}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {progress.inputChars > 0
+                        ? `${Math.round((progress.processedChars / progress.inputChars) * 100)}%`
+                        : ""}
+                    </span>
+                  </div>
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
+                      style={{
+                        width: `${progress.inputChars > 0 ? Math.max(2, (progress.processedChars / progress.inputChars) * 100) : 0}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Stats row */}
+                <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
+                  <span>原文 {Math.round((progress.inputChars || paperCharCount) / 1000)}k 字符</span>
+                  <span>已翻译 {Math.round(progress.outputChars / 1000)}k 字符</span>
+                  {progress.startTime > 0 && (
+                    <span>
+                      耗时 {Math.round((Date.now() - progress.startTime) / 1000)}s
+                    </span>
+                  )}
+                </div>
+
+                {/* Section dots */}
+                {progress.total > 1 && (
+                  <div className="flex gap-1 flex-wrap">
+                    {Array.from({ length: progress.total }, (_, i) => (
+                      <div
+                        key={i}
+                        className={`h-1.5 rounded-full transition-colors ${
+                          progress.total > 20 ? "w-2" : "w-4"
+                        } ${
+                          i < progress.current
+                            ? "bg-primary"
+                            : i === progress.current
+                            ? "bg-primary/60 animate-pulse"
+                            : "bg-muted-foreground/20"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+            {phase === "extracting-terms" && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="animate-pulse text-primary">●</span>
+                正在提取并核验关键术语...
               </div>
-              <span>
-                第 {sectionProgress.current}/{sectionProgress.total} 节
-                {sectionProgress.heading ? `：${sectionProgress.heading}` : ""}
-              </span>
-            </div>
-          )}
-          {phase === "extracting-terms" && (
-            <div className="flex items-center gap-2">
-              <span className="animate-pulse">●</span>
-              正在提取并核验关键术语...
-            </div>
-          )}
-          {phase === "analyzing" && (
-            <div className="flex items-center gap-2">
-              <span className="animate-pulse">●</span>
-              正在分析论文...
-            </div>
-          )}
-        </div>
+            )}
+            {phase === "analyzing" && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="animate-pulse text-primary">●</span>
+                正在分析论文...
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Results tabs */}

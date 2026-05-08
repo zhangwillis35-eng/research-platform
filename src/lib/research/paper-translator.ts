@@ -27,18 +27,21 @@ export interface PaperAnalysis {
 }
 
 export type TranslateStreamEvent =
+  | { phase: "meta"; inputChars: number; chunkCount: number }
   | { phase: "section-start"; heading: string; index: number; total: number }
   | { phase: "chunk"; text: string }
-  | { phase: "section-done"; index: number }
+  | { phase: "section-done"; index: number; inputCharsProcessed: number }
   | { phase: "terms"; terms: AcademicTerm[] }
   | { phase: "analysis"; analysis: PaperAnalysis }
   | { phase: "done" }
   | { phase: "error"; error: string };
 
 // ─── Section splitter ──────────────────────────────────────
+// Two-pass: first try heading-based splitting, then fall back to
+// paragraph-based chunking. Guarantees multiple chunks for progress.
 
 const HEADING_PATTERN =
-  /^(?:\d{1,2}\.?\s{0,3}(?=[A-Z])|\*{1,3}[A-Z]|(?:ABSTRACT|INTRODUCTION|BACKGROUND|LITERATURE|THEORY|HYPOTHES|METHOD|DATA|MEASURE|RESULT|FINDING|ANALYSIS|DISCUSSION|CONCLUSION|REFERENCE|APPENDIX|ACKNOWLEDG|LIMITATION))/i;
+  /^(?:\d{1,2}\.?\d{0,2}\.?\s{0,3}(?=[A-Z\u4e00-\u9fff])|\*{1,3}[A-Z]|(?:ABSTRACT|INTRODUCTION|BACKGROUND|LITERATURE|THEORY|HYPOTHES|METHOD|DATA|MEASURE|RESULT|FINDING|ANALYSIS|DISCUSSION|CONCLUSION|REFERENCE|APPENDIX|ACKNOWLEDG|LIMITATION))/i;
 
 function isHeading(line: string): boolean {
   const trimmed = line.trim();
@@ -46,9 +49,12 @@ function isHeading(line: string): boolean {
   return HEADING_PATTERN.test(trimmed);
 }
 
+const CHUNK_TARGET = 4000; // ~4000 chars per chunk → ~5-15 chunks for a typical paper
+
 function splitIntoSections(
   text: string
 ): { heading: string; content: string }[] {
+  // Pass 1: try heading-based splitting
   const lines = text.split(/\r?\n/);
   const sections: { heading: string; content: string }[] = [];
   let heading = "";
@@ -69,25 +75,42 @@ function splitIntoSections(
     sections.push({ heading, content: buffer.join("\n").trim() });
   }
 
-  // If splitting yielded nothing useful, return as single block
-  if (sections.length === 0) {
-    return [{ heading: "", content: text.trim() }];
+  // If heading splitting found ≥3 sections, use them (may still need sub-chunking)
+  if (sections.length >= 3) {
+    // Sub-chunk any oversized sections
+    const result: { heading: string; content: string }[] = [];
+    for (const s of sections) {
+      if (s.content.length > CHUNK_TARGET * 1.5) {
+        const subs = splitByParagraphs(s.content, CHUNK_TARGET);
+        subs.forEach((sub, j) => {
+          result.push({ heading: j === 0 ? s.heading : "", content: sub });
+        });
+      } else {
+        result.push(s);
+      }
+    }
+    return result;
   }
-  return sections;
+
+  // Pass 2: fallback — split by paragraphs into even chunks
+  return splitByParagraphs(text.trim(), CHUNK_TARGET).map((chunk, i) => ({
+    heading: i === 0 ? "" : `（续 ${i + 1}）`,
+    content: chunk,
+  }));
 }
 
 // ─── Translation prompt ────────────────────────────────────
 
-const TRANSLATE_SYSTEM = `You are a professional academic translator specializing in management, organizational behavior, and social sciences.
+const TRANSLATE_SYSTEM = `You are a professional academic paper translator (English → Chinese 简体中文).
 
-Rules (MUST follow strictly):
-1. Translate English → Chinese (简体中文) using formal academic writing style.
-2. Preserve ALL citation markers exactly: [1], [1,2,3], (Author, Year), (Author et al., Year).
-3. Preserve figure/table references with standard Chinese: "Figure 1" → "图1", "Table 2" → "表2".
-4. Keep formulas, equations, and statistical notations UNCHANGED (e.g., β = .23, p < .001, R² = .45).
-5. Keep variable names and scale names UNCHANGED on first mention, add Chinese in parentheses.
-6. Standard term translations: hypothesis→假设, mediat*→中介, moderat*→调节, construct→构念, sample→样本, survey→问卷调查, regression→回归, correlation→相关, variance→方差, reliability→信度, validity→效度.
-7. Output ONLY the translated text. No explanations, no original text.`;
+CRITICAL RULES:
+1. Translate ALL content faithfully and completely. Do NOT skip or summarize any part.
+2. Use formal Chinese academic writing style (学术书面语).
+3. Preserve citation markers: [1], [1,2,3], (Author, Year) — keep as-is.
+4. Translate "Figure 1" → "图1", "Table 2" → "表2".
+5. Keep formulas, equations, statistics UNCHANGED: β = .23, p < .001, R² = .45.
+6. Skip metadata noise (DOI, page numbers, journal headers, copyright notices) — do NOT translate these.
+7. Output ONLY the Chinese translation. No explanations, no original text, no comments.`;
 
 // ─── Term extraction prompt ────────────────────────────────
 
@@ -134,6 +157,11 @@ export async function* translatePaperStream(
   const sections = splitIntoSections(text);
   const total = sections.length;
 
+  // Emit metadata so frontend can calculate progress %
+  yield { phase: "meta", inputChars: text.length, chunkCount: total };
+
+  let charsProcessed = 0;
+
   for (let i = 0; i < sections.length; i++) {
     const { heading, content } = sections[i];
 
@@ -141,7 +169,8 @@ export async function* translatePaperStream(
     if (/^references?$/i.test(heading.trim())) {
       yield { phase: "section-start", heading: "参考文献", index: i, total };
       yield { phase: "chunk", text: "\n[参考文献列表保留英文原文，如需翻译请单独处理]\n" };
-      yield { phase: "section-done", index: i };
+      charsProcessed += content.length;
+      yield { phase: "section-done", index: i, inputCharsProcessed: charsProcessed };
       continue;
     }
 
@@ -203,23 +232,47 @@ export async function* translatePaperStream(
       return;
     }
 
-    yield { phase: "section-done", index: i };
+    charsProcessed += content.length;
+    yield { phase: "section-done", index: i, inputCharsProcessed: charsProcessed };
   }
 
   yield { phase: "done" };
 }
 
 function splitByParagraphs(text: string, maxChars: number): string[] {
-  const paragraphs = text.split(/\n\n+/);
+  // Try paragraph-level splitting first
+  let segments = text.split(/\n\n+/).filter((s) => s.trim().length > 0);
+
+  // If no paragraph breaks (common in PDF-extracted text), split on single newlines
+  if (segments.length <= 1) {
+    segments = text.split(/\n/).filter((s) => s.trim().length > 0);
+  }
+
+  // If still a single block, split by sentences (period/。 + space)
+  if (segments.length <= 1) {
+    segments = text.split(/(?<=[.。])\s+/).filter((s) => s.trim().length > 0);
+  }
+
+  // If nothing works, force-split by character count
+  if (segments.length <= 1 && text.length > maxChars) {
+    const result: string[] = [];
+    for (let i = 0; i < text.length; i += maxChars) {
+      result.push(text.slice(i, i + maxChars));
+    }
+    return result;
+  }
+
+  // Accumulate segments into chunks of ~maxChars
   const chunks: string[] = [];
   let current = "";
+  const sep = segments.length > 1 && segments[0].length < 200 ? "\n" : "\n\n";
 
-  for (const para of paragraphs) {
-    if (current.length + para.length > maxChars && current.length > 0) {
+  for (const seg of segments) {
+    if (current.length + seg.length > maxChars && current.length > 0) {
       chunks.push(current.trim());
-      current = para;
+      current = seg;
     } else {
-      current += (current ? "\n\n" : "") + para;
+      current += (current ? sep : "") + seg;
     }
   }
   if (current.trim()) chunks.push(current.trim());
