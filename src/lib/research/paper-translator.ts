@@ -113,7 +113,9 @@ const TRANSLATE_SYSTEM = `You are a senior academic translator with deep experti
 
 ## Absolute Rules
 - Translate EVERY sentence completely. NEVER skip, summarize, or omit any content.
-- Skip only metadata noise: DOI links, page numbers, journal headers, copyright notices, author affiliations, article history dates.
+- Translate: title, abstract, body text, appendices.
+- Do NOT translate: reference lists / bibliography sections — skip them entirely.
+- Skip metadata noise: DOI links, page numbers, journal headers, copyright notices, author affiliations, article history dates.
 - Output ONLY the final polished Chinese translation. No explanations, no original text, no translator notes.
 
 ## Academic Style Guide
@@ -179,7 +181,13 @@ export async function* translatePaperStream(
   title: string,
   provider: AIProvider
 ): AsyncGenerator<TranslateStreamEvent> {
-  const text = fullText.slice(0, 120000);
+  // Strip references section (no need to translate bibliography)
+  let text = fullText.slice(0, 120000);
+  const refMatch = text.match(/\b(References|REFERENCES|Bibliography|BIBLIOGRAPHY|参考文献)\s/);
+  if (refMatch && refMatch.index && refMatch.index > text.length * 0.5) {
+    // Only strip if references appear in the latter half of the paper
+    text = text.slice(0, refMatch.index).trim();
+  }
   const sections = splitIntoSections(text);
   const total = sections.length;
 

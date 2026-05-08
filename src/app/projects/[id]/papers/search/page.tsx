@@ -25,7 +25,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  AIProviderSelect,
   type AIProvider,
 } from "@/components/ai-provider-select";
 import { useAbort } from "@/hooks/use-abort";
@@ -1681,7 +1680,7 @@ Note journal rankings (UTD24/FT50/ABS4*). Use Chinese academic writing style.`,
             多源聚合搜索 · AI 深度问答
           </p>
         </div>
-        <AIProviderSelect value={aiProvider} onChange={setAiProvider} />
+        {/* Provider fixed to deepseek-fast — hidden from UI */}
       </div>
 
       {/* Unified Chat Area */}
