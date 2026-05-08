@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useAbort } from "@/hooks/use-abort";
@@ -121,6 +121,18 @@ export default function TranslatePage() {
   const paperTextRef = useRef(""); // full text from uploaded PDF
   const pdfBytesRef = useRef<ArrayBuffer | null>(null); // raw PDF for image extraction
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [elapsed, setElapsed] = useState(0);
+
+  // Timer: update outputChars + elapsed every second while translating
+  useEffect(() => {
+    if (phase !== "translating") return;
+    const id = setInterval(() => {
+      setProgress(p => ({ ...p, outputChars: stream.getText().length }));
+      setElapsed(progress.startTime > 0 ? Math.round((Date.now() - progress.startTime) / 1000) : 0);
+    }, 1000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   const handleStop = useCallback(() => {
     abort();
@@ -477,63 +489,62 @@ export default function TranslatePage() {
       {isRunning && (
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="pt-4 pb-3 space-y-3">
-            {phase === "translating" && (
-              <>
-                {/* Main progress bar */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-foreground">
-                      翻译中 · 第 {progress.current + 1}/{progress.total || "?"} 段
-                      {progress.heading ? ` — ${progress.heading}` : ""}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {progress.inputChars > 0
-                        ? `${Math.round((progress.processedChars / progress.inputChars) * 100)}%`
-                        : ""}
-                    </span>
-                  </div>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
-                      style={{
-                        width: `${progress.inputChars > 0 ? Math.max(2, (progress.processedChars / progress.inputChars) * 100) : 0}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Stats row */}
-                <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
-                  <span>原文 {Math.round((progress.inputChars || paperCharCount) / 1000)}k 字符</span>
-                  <span>已翻译 {Math.round(progress.outputChars / 1000)}k 字符</span>
-                  {progress.startTime > 0 && (
-                    <span>
-                      耗时 {Math.round((Date.now() - progress.startTime) / 1000)}s
-                    </span>
-                  )}
-                </div>
-
-                {/* Section dots */}
-                {progress.total > 1 && (
-                  <div className="flex gap-1 flex-wrap">
-                    {Array.from({ length: progress.total }, (_, i) => (
+            {phase === "translating" && (() => {
+              // Progress % based on output chars (EN→ZH ratio ~0.7)
+              const expectedOutput = (progress.inputChars || paperCharCount) * 0.7;
+              const pct = expectedOutput > 0
+                ? Math.min(99, Math.round((progress.outputChars / expectedOutput) * 100))
+                : 0;
+              return (
+                <>
+                  {/* Main progress bar */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium text-foreground">
+                        翻译中 · 第 {Math.min(progress.current + 1, progress.total)}/{progress.total || "?"} 段
+                        {progress.heading ? ` — ${progress.heading}` : ""}
+                      </span>
+                      <span className="tabular-nums text-muted-foreground font-medium">
+                        {pct}%
+                      </span>
+                    </div>
+                    <div className="h-2 bg-muted rounded-full overflow-hidden">
                       <div
-                        key={i}
-                        className={`h-1.5 rounded-full transition-colors ${
-                          progress.total > 20 ? "w-2" : "w-4"
-                        } ${
-                          i < progress.current
-                            ? "bg-primary"
-                            : i === progress.current
-                            ? "bg-primary/60 animate-pulse"
-                            : "bg-muted-foreground/20"
-                        }`}
+                        className="h-full bg-primary rounded-full transition-all duration-700 ease-out"
+                        style={{ width: `${Math.max(1, pct)}%` }}
                       />
-                    ))}
+                    </div>
                   </div>
-                )}
-              </>
-            )}
+
+                  {/* Stats row */}
+                  <div className="flex items-center gap-4 text-[11px] text-muted-foreground tabular-nums">
+                    <span>原文 {(Math.round((progress.inputChars || paperCharCount) / 100) / 10).toFixed(1)}k 字符</span>
+                    <span>已翻译 {(Math.round(progress.outputChars / 100) / 10).toFixed(1)}k 字符</span>
+                    <span>耗时 {elapsed}s</span>
+                  </div>
+
+                  {/* Section dots */}
+                  {progress.total > 1 && (
+                    <div className="flex gap-1 flex-wrap">
+                      {Array.from({ length: progress.total }, (_, i) => (
+                        <div
+                          key={i}
+                          className={`h-1.5 rounded-full transition-colors ${
+                            progress.total > 20 ? "w-2" : "w-4"
+                          } ${
+                            i < progress.current
+                              ? "bg-primary"
+                              : i === progress.current
+                              ? "bg-primary/60 animate-pulse"
+                              : "bg-muted-foreground/20"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
             {phase === "extracting-terms" && (
               <div className="flex items-center gap-2 text-sm">
                 <span className="animate-pulse text-primary">●</span>
