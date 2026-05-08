@@ -52,6 +52,7 @@ COPY --from=builder /app/src/generated ./src/generated
 # External packages not bundled by Next.js standalone
 COPY --from=builder /app/node_modules/nodemailer ./node_modules/nodemailer
 COPY --from=builder /app/node_modules/ali-oss ./node_modules/ali-oss
+COPY --from=builder /app/node_modules/unpdf ./node_modules/unpdf
 
 # STORM bridge script
 COPY --from=builder /app/scripts ./scripts
