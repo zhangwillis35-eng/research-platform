@@ -462,6 +462,31 @@ export default function PaperSearchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Load analysis history from DB on mount
+  useEffect(() => {
+    const types = ["variables", "review", "ideas"] as const;
+    Promise.all(
+      types.map(t =>
+        fetch(`/api/chat-history?projectId=${projectId}&query=${encodeURIComponent(`__analysis:${t}`)}`)
+          .then(r => r.json())
+          .catch(() => ({ messages: [] }))
+      )
+    ).then(results => {
+      const records: AnalysisRecord[] = [];
+      results.forEach((data, i) => {
+        const t = types[i];
+        for (const m of data.messages ?? []) {
+          if (m.role === "record") {
+            records.push({ type: t, content: m.content, timestamp: m.timestamp, paperCount: m.paperCount ?? 0 });
+          }
+        }
+      });
+      records.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      setAnalysisHistory(records);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
   // ─── Journal filter state ───
   const [journalFilters, setJournalFilters] = useState<Array<{ id: string; journalName: string; filterType: string }>>([]);
   const [journalFilterMode, setJournalFilterMode] = useState<string | null>(null);
@@ -649,6 +674,16 @@ export default function PaperSearchPage() {
   const [searchProgress, setSearchProgress] = useState<Array<{ phase: string; message: string; done: boolean }>>([]);
   const [progressOpen, setProgressOpen] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
+  const [currentAnalysisType, setCurrentAnalysisType] = useState<"variables"|"review"|"ideas"|null>(null);
+
+  interface AnalysisRecord {
+    type: "variables" | "review" | "ideas";
+    content: string;
+    timestamp: string;
+    paperCount: number;
+  }
+  const [analysisHistory, setAnalysisHistory] = useState<AnalysisRecord[]>([]);
+  const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   const [fullTextPanel, setFullTextPanel] = useState<{
     paperIndex: number;
     loading: boolean;
@@ -1199,39 +1234,55 @@ ${fullTextContext}` : ""}`;
     }
   }
 
+  function buildPaperContent(papers: Paper[], offset = 0): string {
+    return papers.map((p, i) =>
+      `[${i + 1 + offset}] ${p.title}\n${p.authors.map((a) => a.name).join(", ")} (${p.year ?? "N/A"})${p.venue ? ` — ${p.venue}` : ""}${p.journalRanking?.badges?.length ? ` [${p.journalRanking.badges.join(", ")}]` : ""}\n${p.abstract ?? "No abstract"}`
+    ).join("\n\n---\n\n");
+  }
+
+  async function saveAnalysisRecord(type: "variables" | "review" | "ideas", content: string, paperCount: number) {
+    const newMsg = { role: "record", content, timestamp: new Date().toISOString(), paperCount, type };
+    try {
+      const res = await fetch(`/api/chat-history?projectId=${projectId}&query=${encodeURIComponent(`__analysis:${type}`)}`);
+      const data = await res.json();
+      const messages = [...(data.messages ?? []), newMsg];
+      await fetch("/api/chat-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, query: `__analysis:${type}`, messages }),
+      });
+      const record: AnalysisRecord = { type, content, timestamp: newMsg.timestamp, paperCount };
+      setAnalysisHistory(prev => [record, ...prev]);
+    } catch { /* non-critical */ }
+  }
+
   async function handleAnalyze(type: "variables" | "review" | "ideas") {
     if (displayedPapers.length === 0) return;
     setAnalyzing(true);
+    setCurrentAnalysisType(type);
     setAnalysisResult(null);
-
-    const content = displayedPapers
-      .slice(0, 15)
-      .map(
-        (p, i) =>
-          `[${i + 1}] ${p.title}\n${p.authors.map((a) => a.name).join(", ")} (${p.year ?? "N/A"})${p.venue ? ` — ${p.venue}` : ""}${p.journalRanking?.badges?.length ? ` [${p.journalRanking.badges.join(", ")}]` : ""}\n${p.abstract ?? "No abstract"}`
-      )
-      .join("\n\n---\n\n");
-
+    const totalPapers = displayedPapers.length;
     const signal = analyzeAbort.reset();
 
     try {
       if (type === "review") {
+        // Single streaming call with all papers
+        const content = buildPaperContent(displayedPapers);
         const res = await fetch("/api/ai/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal,
           body: JSON.stringify({
             provider: aiProvider,
-            system: `你是管理学文献综述专家。基于用户提供的文献信息，生成结构化文献综述。请按以下结构：
-1. 研究主题聚类
-2. 时间演进脉络
-3. 研究Gap
-4. 未来方向
-注意标注各文献的期刊等级（UTD24/FT50/ABS4*），用中文、学术写作风格。`,
+            system: `You are a management literature review expert. Based on the provided literature, generate a structured review in Chinese with these sections:
+1. 研究主题聚类（group by topic, explain core findings)
+2. 时间演进脉络（temporal trends）
+3. 研究Gap（under-explored areas）
+4. 未来方向（future directions）
+Note journal rankings (UTD24/FT50/ABS4*). Use Chinese academic writing style.`,
             messages: [{ role: "user", content }],
           }),
         });
-
         if (!res.ok) throw new Error("Analysis failed");
         const reader = res.body?.getReader();
         const decoder = new TextDecoder();
@@ -1248,16 +1299,47 @@ ${fullTextContext}` : ""}`;
               if (line.startsWith("data: ")) {
                 try {
                   const data = JSON.parse(line.slice(6));
-                  if (data.text) {
-                    result += data.text;
-                    setAnalysisResult(result);
-                  }
+                  if (data.text) { result += data.text; setAnalysisResult(result); }
                 } catch { /* skip */ }
               }
             }
           }
         }
+        if (result) await saveAnalysisRecord(type, result, totalPapers);
+
+      } else if (type === "ideas") {
+        // Parallel batches of 10 papers each
+        const BATCH = 10;
+        const batches: Paper[][] = [];
+        for (let i = 0; i < displayedPapers.length; i += BATCH) {
+          batches.push(displayedPapers.slice(i, i + BATCH));
+        }
+        interface Idea { title: string; theory: string; context: string; method: string; hypothesis: string; contribution: string; noveltyScore: number; noveltyReason: string; }
+        const allIdeas: Idea[] = [];
+        await Promise.all(
+          batches.map(async (batch, bi) => {
+            const content = buildPaperContent(batch, bi * BATCH);
+            const res = await fetch("/api/ai/analyze", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              signal,
+              body: JSON.stringify({ provider: aiProvider, type: "ideas", content }),
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            const ideas = (data.result?.ideas ?? []) as Idea[];
+            allIdeas.push(...ideas);
+          })
+        );
+        // Sort by novelty descending
+        allIdeas.sort((a, b) => (b.noveltyScore ?? 0) - (a.noveltyScore ?? 0));
+        const resultStr = JSON.stringify({ ideas: allIdeas }, null, 2);
+        setAnalysisResult(resultStr);
+        if (allIdeas.length > 0) await saveAnalysisRecord(type, resultStr, totalPapers);
+
       } else {
+        // variables: send all papers, API handles parallel batching internally
+        const content = buildPaperContent(displayedPapers);
         const res = await fetch("/api/ai/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1266,11 +1348,9 @@ ${fullTextContext}` : ""}`;
         });
         if (!res.ok) throw new Error("Analysis failed");
         const data = await res.json();
-        setAnalysisResult(
-          typeof data.result === "string"
-            ? data.result
-            : JSON.stringify(data.result, null, 2)
-        );
+        const resultStr = typeof data.result === "string" ? data.result : JSON.stringify(data.result, null, 2);
+        setAnalysisResult(resultStr);
+        await saveAnalysisRecord(type, resultStr, totalPapers);
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
@@ -1280,6 +1360,7 @@ ${fullTextContext}` : ""}`;
       }
     } finally {
       setAnalyzing(false);
+      setCurrentAnalysisType(null);
     }
   }
 
@@ -2133,7 +2214,7 @@ ${fullTextContext}` : ""}`;
               AI 分析结果
               {analyzing && (
                 <span className="text-xs text-muted-foreground animate-pulse">
-                  分析中...
+                  正在分析 {displayedPapers.length} 篇文献（{currentAnalysisType === "variables" ? "提取变量" : currentAnalysisType === "review" ? "生成综述" : "生成想法"}）...
                 </span>
               )}
               <Badge variant="secondary" className="text-xs ml-auto">
@@ -2154,6 +2235,51 @@ ${fullTextContext}` : ""}`;
           <CardContent className="pt-4">
             <AnalysisResultView content={analysisResult} papers={displayedPapers} />
           </CardContent>
+        </Card>
+      )}
+
+      {/* AI Analysis History */}
+      {analysisHistory.length > 0 && (
+        <Card className="border-border/50">
+          <CardHeader
+            className="pb-2 py-3 cursor-pointer"
+            onClick={() => setHistoryPanelOpen(v => !v)}
+          >
+            <CardTitle className="text-sm flex items-center gap-2">
+              AI 分析记录
+              <Badge variant="secondary" className="text-xs">{analysisHistory.length} 条</Badge>
+              <span className="ml-auto text-xs text-muted-foreground">{historyPanelOpen ? "▲" : "▼"}</span>
+            </CardTitle>
+          </CardHeader>
+          {historyPanelOpen && (
+            <>
+              <Separator />
+              <CardContent className="pt-3 space-y-3">
+                {analysisHistory.map((r, i) => (
+                  <div key={i} className="border border-border/50 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge className="text-[10px] h-5">
+                        {r.type === "variables" ? "提取变量" : r.type === "review" ? "生成综述" : "生成想法"}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">{r.paperCount} 篇</span>
+                      <span className="text-xs text-muted-foreground ml-auto">
+                        {new Date(r.timestamp).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground line-clamp-2 mb-1.5">
+                      {r.content.slice(0, 120).replace(/[{}"[\]]/g, " ")}...
+                    </div>
+                    <button
+                      className="text-xs text-teal hover:underline"
+                      onClick={() => { setAnalysisResult(r.content); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                    >
+                      查看完整结果 →
+                    </button>
+                  </div>
+                ))}
+              </CardContent>
+            </>
+          )}
         </Card>
       )}
 

@@ -50,7 +50,6 @@ export function AnalysisChat({
   const [streaming, setStreaming] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [open, setOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
   const abort = useAbort();
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -71,8 +70,8 @@ export function AnalysisChat({
   }, [projectId, namespace]);
 
   useEffect(() => {
-    if (open) {
-      scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
+    if (open && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, open]);
 
@@ -214,49 +213,41 @@ ${paperList}
 
       {open && (
         <>
-          {/* ── History section (collapsible) ── */}
+          {/* ── Messages area ── */}
           {hasMessages && (
-            <div className="border-t border-border/30 bg-muted/10">
-              <button
-                type="button"
-                className="w-full flex items-center justify-between px-4 py-2 text-left hover:bg-muted/20 transition-colors"
-                onClick={() => setHistoryOpen((v) => !v)}
-              >
-                <span className="text-xs text-muted-foreground">
-                  📋 历史记录（{messages.length} 条消息）
-                </span>
-                <span className="text-[10px] text-muted-foreground">
-                  {historyOpen ? "▲" : "▼"}
-                </span>
-              </button>
-
-              {historyOpen && (
+            <div
+              ref={scrollRef}
+              className="border-t border-border/30 max-h-[600px] overflow-y-auto px-4 py-3 space-y-3 bg-muted/5"
+            >
+              {messages.map((msg, i) => (
                 <div
-                  ref={scrollRef}
-                  className="max-h-[500px] overflow-y-auto px-4 pb-3 space-y-3"
+                  key={i}
+                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
-                  {messages.map((msg, i) => (
-                    <div
-                      key={i}
-                      className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                    >
-                      <div
-                        className={`max-w-[85%] px-3 py-2 rounded-lg text-xs leading-relaxed whitespace-pre-wrap ${
-                          msg.role === "user"
-                            ? "bg-teal text-white"
-                            : "bg-background border border-border/50 text-foreground"
-                        }`}
-                      >
-                        {msg.content === "..." ? (
-                          <span className="animate-pulse">AI 思考中...</span>
-                        ) : (
-                          msg.content
+                  <div
+                    className={`max-w-[88%] px-3 py-2 rounded-lg text-xs leading-relaxed whitespace-pre-wrap ${
+                      msg.role === "user"
+                        ? "bg-teal text-white"
+                        : "bg-background border border-border/50 text-foreground"
+                    }`}
+                  >
+                    {msg.content === "..." ? (
+                      <span className="flex items-center gap-1 text-muted-foreground">
+                        <span className="inline-block w-1.5 h-1.5 bg-teal rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                        <span className="inline-block w-1.5 h-1.5 bg-teal rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                        <span className="inline-block w-1.5 h-1.5 bg-teal rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                      </span>
+                    ) : (
+                      <>
+                        {msg.content}
+                        {streaming && i === messages.length - 1 && msg.role === "assistant" && (
+                          <span className="inline-block w-0.5 h-3 bg-teal ml-0.5 animate-pulse" />
                         )}
-                      </div>
-                    </div>
-                  ))}
+                      </>
+                    )}
+                  </div>
                 </div>
-              )}
+              ))}
             </div>
           )}
 
@@ -290,7 +281,7 @@ ${paperList}
                   onClick={handleSend}
                   disabled={streaming || !input.trim()}
                 >
-                  {streaming ? "生成中..." : "发送"}
+                  发送
                 </Button>
                 <StopButton show={streaming} onClick={abort.abort} />
               </div>

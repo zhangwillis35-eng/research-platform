@@ -377,13 +377,13 @@ export default function PapersPage() {
   }
 
   async function generateOverview() {
-    if (displayPapers.length === 0) return;
+    if (catalogPapers.length === 0) return;
     setOverviewLoading(true);
     setOverview(null);
     setOverviewOpen(true);
     const signal = overviewAbort.reset();
     try {
-      const papersForAI = displayPapers.slice(0, 50).map((p) => ({
+      const papersForAI = catalogPapers.slice(0, 50).map((p) => ({
         title: p.title,
         authors: p.authors?.map((a) => a.name) ?? [],
         year: p.year,
@@ -394,7 +394,7 @@ export default function PapersPage() {
       const res = await fetch("/api/papers/overview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: activeTab === "weekly" ? "AI 前沿周刊" : "文献目录", papers: papersForAI, provider: aiProvider }),
+        body: JSON.stringify({ query: "文献目录", papers: papersForAI, provider: aiProvider }),
         signal,
       });
       const data = await res.json();
@@ -950,7 +950,7 @@ export default function PapersPage() {
           {overviewLoading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <span className="inline-block w-4 h-4 border-2 border-teal/30 border-t-teal rounded-full animate-spin" />
-              正在分析 {papers.length} 篇文献...
+              正在分析 {catalogPapers.length} 篇文献目录文献...
             </div>
           ) : overview ? (
             <div className="prose prose-sm max-w-none text-sm whitespace-pre-wrap leading-relaxed">

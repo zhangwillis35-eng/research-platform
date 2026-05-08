@@ -43,18 +43,20 @@ const ANALYSIS_PROMPTS: Record<string, string> = {
 
 请用中文回答，保持学术写作风格。`,
 
-  ideas: `你是管理学研究创新专家。基于以下文献中的理论、情境和方法信息，生成新的研究想法。
+  ideas: `You are a management research innovation expert. Based on the theories, contexts, and methods in the provided literature, generate new research ideas.
 
-对每个想法，请提供：
-1. 研究标题
-2. 所用理论
-3. 研究情境
-4. 研究方法
-5. 核心假设
-6. 预期贡献
-7. 新颖性评估（1-10分，附理由）
+For each idea, provide:
+1. Research title
+2. Theory used
+3. Research context
+4. Research method
+5. Core hypothesis
+6. Expected contribution
+7. Novelty evaluation (1-10 with reason)
 
-请严格按JSON格式输出：
+IMPORTANT: ALL field values MUST be written in Chinese (中文).
+
+Output strictly in JSON format:
 {
   "ideas": [
     {
@@ -163,7 +165,8 @@ export async function POST(request: Request) {
                 temperature: 0.2,
                 maxTokens: 4096,
               });
-              const parsed = JSON.parse(res.content);
+              const jsonStr = res.content.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
+              const parsed = JSON.parse(jsonStr);
               const relations: Relation[] = parsed.relations ?? [];
               // Remap sources back to global paper numbers
               for (const rel of relations) {
@@ -218,7 +221,8 @@ export async function POST(request: Request) {
     let parsed = null;
     if (type !== "review") {
       try {
-        parsed = JSON.parse(response.content);
+        const jsonStr = response.content.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
+        parsed = JSON.parse(jsonStr);
       } catch {
         // If JSON parse fails, return raw content
       }

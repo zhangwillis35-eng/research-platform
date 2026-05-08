@@ -58,15 +58,17 @@ function buildBody(options: AIRequestOptions, model: string, isReasoner: boolean
     body.stream_options = { include_usage: true };
   }
 
-  if (!isReasoner) {
+  if (isReasoner) {
+    // For R1 reasoner: optionally disable chain-of-thought for faster structured extraction
+    if (options.noThinking) {
+      body.thinking = { type: "disabled" };
+    }
+  } else {
     body.temperature = options.temperature ?? 0.3;
     if (options.jsonMode) {
       body.response_format = { type: "json_object" };
     }
-    // Disable thinking for structured extraction — skips reasoning tokens, ~2x faster
-    if (options.noThinking) {
-      body.thinking = { type: "disabled" };
-    }
+    // Non-reasoner models (V3/V4-flash/V4-pro) have no thinking parameter
   }
 
   return body;
