@@ -308,6 +308,8 @@ async function handleDirect(papers: Paper[], provider: AIProvider, externalConte
     system: GRAPH_SYSTEM,
     messages: [{ role: "user", content: `以下是 ${papers.length} 篇文献，请进行元分析式编码：\n\n${fullContent}` }],
     jsonMode: true,
+    noThinking: true,
+
     temperature: 0.2,
     maxTokens: 8000,
   });
@@ -337,6 +339,8 @@ async function handleDirect(papers: Paper[], provider: AIProvider, externalConte
         role: "user",
         content: `原始文献（共 ${papers.length} 篇）：\n\n${content.slice(0, 6000)}\n\n元分析结果：\n${JSON.stringify({ nodes: graph.nodes?.slice(0, 30), edges: graph.edges?.slice(0, 40) }, null, 2)}\n\n请基于以上信息，撰写研究领域全景分析报告。`,
       }],
+      noThinking: true,
+
       temperature: 0.3,
       maxTokens: 8000,
     }),
@@ -398,6 +402,8 @@ async function handleParallel(papers: Paper[], provider: AIProvider, externalCon
               content: `以下是第 ${batch.offset + 1}-${batch.offset + batch.papers.length} 篇文献（共 ${papers.length} 篇），请进行元分析式编码：\n\n${batchContent}`,
             }],
             jsonMode: true,
+            noThinking: true,
+
             temperature: 0.2,
             maxTokens: 6000,
           });
@@ -465,6 +471,8 @@ async function handleParallel(papers: Paper[], provider: AIProvider, externalCon
             role: "user",
             content: `原始文献（共 ${papers.length} 篇）：\n\n${allContent.slice(0, 6000)}\n\n元分析图谱结果：\n${graphSummary}\n\n请基于以上信息，撰写研究领域全景分析报告。`,
           }],
+          noThinking: true,
+
           temperature: 0.3,
           maxTokens: 8000,
         }),

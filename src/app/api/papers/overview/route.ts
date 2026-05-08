@@ -81,6 +81,8 @@ Format requirements:
         },
       ],
       system,
+      noThinking: true,
+
       temperature: 0.3,
       maxTokens: 4096,
     });

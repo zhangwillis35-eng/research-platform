@@ -238,6 +238,8 @@ export async function* translatePaperStream(
         provider,
         system: TRANSLATE_SYSTEM,
         messages: [{ role: "user", content: task.userMsg }],
+        noThinking: true,
+
         temperature: 0.1,
         maxTokens: 8000,
       }), 30)) {
@@ -283,6 +285,8 @@ async function translateOneSection(
       provider,
       system: TRANSLATE_SYSTEM,
       messages: [{ role: "user", content: task.userMsg }],
+      noThinking: true,
+
       temperature: 0.1,
       maxTokens: 8000,
     })) {

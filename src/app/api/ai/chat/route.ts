@@ -34,6 +34,7 @@ export async function POST(request: Request) {
         content: m.content,
       })),
       system,
+      noThinking: true,
     });
 
     const encoder = new TextEncoder();

@@ -202,6 +202,8 @@ export async function* generateReviewStream(
         role: "user",
         content: `以下是由多个章节并行生成后拼接的文献综述草稿。请润色为一篇连贯的完整综述。\n\n目标字数: ${totalTarget} 字（${wordCount ? `${wordCount.min}-${wordCount.max}` : "约6000"}字）\n\n${trimmedDraft}`,
       }],
+      noThinking: true,
+
       temperature: 0.3,
       maxTokens: Math.max(8192, Math.ceil(totalTarget * 1.5)),
     });

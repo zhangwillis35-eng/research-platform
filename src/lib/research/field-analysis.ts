@@ -92,6 +92,8 @@ export async function* streamFieldTakeaways(
       { role: "system", content: FIELD_TAKEAWAYS_PROMPT },
       { role: "user", content: `Papers (${papers.length} total):\n\n${papersContext}` },
     ],
+    noThinking: true,
+
     temperature: 0.7,
     maxTokens: 8000,
   });
@@ -179,6 +181,8 @@ export async function* streamAssumptionsAnalysis(
       { role: "system", content: ASSUMPTIONS_PROMPT },
       { role: "user", content: `Papers (${papers.length} total):\n\n${papersContext}` },
     ],
+    noThinking: true,
+
     temperature: 0.7,
     maxTokens: 8000,
   });

@@ -116,6 +116,8 @@ export async function POST(request: Request) {
             system: PROPOSAL_SYSTEM,
             messages: [{ role: "user", content: userContent }],
             maxTokens: 8192,
+            noThinking: true,
+
             temperature: 0.4,
           });
 

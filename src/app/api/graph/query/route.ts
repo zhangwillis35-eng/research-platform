@@ -63,6 +63,8 @@ ${graphContext}`;
     provider: provider as AIProvider,
     system: systemPrompt,
     messages: [{ role: "user", content: question }],
+    noThinking: true,
+
     temperature: 0.3,
   });
 

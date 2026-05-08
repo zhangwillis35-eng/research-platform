@@ -124,6 +124,8 @@ Format requirements:
         },
       ],
       system,
+      noThinking: true,
+
       temperature: 0.2,
       maxTokens: 1500,
     });

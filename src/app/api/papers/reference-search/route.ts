@@ -55,6 +55,8 @@ export async function POST(request: Request) {
       provider,
       system: EXTRACT_TITLES_PROMPT,
       messages: [{ role: "user", content: references }],
+      noThinking: true,
+
       temperature: 0,
     });
 
