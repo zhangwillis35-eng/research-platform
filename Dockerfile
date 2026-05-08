@@ -53,6 +53,8 @@ COPY --from=builder /app/src/generated ./src/generated
 COPY --from=builder /app/node_modules/nodemailer ./node_modules/nodemailer
 COPY --from=builder /app/node_modules/ali-oss ./node_modules/ali-oss
 COPY --from=builder /app/node_modules/unpdf ./node_modules/unpdf
+COPY --from=builder /app/node_modules/mupdf ./node_modules/mupdf
+COPY --from=builder /app/node_modules/mammoth ./node_modules/mammoth
 
 # STORM bridge script
 COPY --from=builder /app/scripts ./scripts

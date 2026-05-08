@@ -70,12 +70,12 @@ export async function checkStormAvailable(): Promise<{
   error?: string;
 }> {
   try {
-    await runPython(["-c", "import knowledge_storm; import litellm; print('ok')"], undefined, 10000);
+    await runPython(["-c", "import litellm; print('ok')"], undefined, 10000);
     return { available: true };
   } catch {
     return {
       available: false,
-      error: "Stanford STORM 未安装。运行: pip3 install knowledge-storm",
+      error: "STORM 不可用：Python3 或 litellm 未安装。运行: pip3 install litellm",
     };
   }
 }
