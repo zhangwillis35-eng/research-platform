@@ -397,8 +397,27 @@ export default function PapersPage() {
         body: JSON.stringify({ query: "文献目录", papers: papersForAI, provider: aiProvider }),
         signal,
       });
-      const data = await res.json();
-      setOverview(data.overview ?? "分析生成失败");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let text = "";
+      let buf = "";
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const d = JSON.parse(line.slice(6));
+              if (d.text) { text += d.text; setOverview(text); }
+            } catch { /* skip */ }
+          }
+        }
+      }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
         setOverview("已停止");

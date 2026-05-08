@@ -13,8 +13,23 @@ import type { UnifiedPaper, SearchOptions, SearchResult } from "./types";
 import { getEnv } from "@/lib/env";
 import { fetchWithRetry } from "@/lib/retry-fetch";
 
-// Track quota exhaustion per provider
-const exhausted: Record<string, boolean> = {};
+// Track quota exhaustion per provider with cooldown
+const exhausted: Record<string, number> = {}; // value = timestamp when exhausted
+const COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes cooldown before retrying
+
+function isExhausted(key: string): boolean {
+  const ts = exhausted[key];
+  if (!ts) return false;
+  if (Date.now() - ts > COOLDOWN_MS) {
+    delete exhausted[key]; // cooldown expired, allow retry
+    return false;
+  }
+  return true;
+}
+
+function markExhausted(key: string) {
+  exhausted[key] = Date.now();
+}
 
 export async function searchGoogleScholar(
   options: SearchOptions
@@ -23,7 +38,7 @@ export async function searchGoogleScholar(
   const serperKey = getEnv("SERPER_API_KEY");
   const serpApiKey = getEnv("SERPAPI_KEY");
 
-  if (serperKey && !exhausted.serper) {
+  if (serperKey && !isExhausted("serper")) {
     try {
       return await searchViaSerper(options, serperKey);
     } catch (err) {
@@ -32,7 +47,7 @@ export async function searchGoogleScholar(
     }
   }
 
-  if (serpApiKey && !exhausted.serpapi) {
+  if (serpApiKey && !isExhausted("serpapi")) {
     try {
       return await searchViaSerpAPI(options, serpApiKey);
     } catch (err) {
@@ -51,46 +66,46 @@ async function searchViaSerper(
   apiKey: string
 ): Promise<SearchResult> {
   const { query, limit = 40, yearFrom, yearTo } = options;
+  const NUM_PER_PAGE = 20; // Serper Scholar max = 20 per page
 
-  // Serper supports num=20 per page for Google Scholar
-  // Page 1: always fetch 20 results
-  const page1 = await fetchSerperPage(query, apiKey, 20, 0, yearFrom, yearTo);
+  // Always fetch page 1
+  const page1 = await fetchSerperPage(query, apiKey, NUM_PER_PAGE, 1, yearFrom, yearTo);
   if (!page1) return { papers: [], total: 0, source: "google_scholar" };
 
   let allPapers = page1;
 
-  // Page 2: fetch if we need more and page 1 was full
+  // Page 2 (limit > 20 and page 1 had results)
   if (limit > 20 && page1.length >= 15) {
-    const page2 = await fetchSerperPage(query, apiKey, 20, 20, yearFrom, yearTo);
-    if (page2) allPapers = [...page1, ...page2];
+    const page2 = await fetchSerperPage(query, apiKey, NUM_PER_PAGE, 2, yearFrom, yearTo);
+    if (page2) allPapers = [...allPapers, ...page2];
   }
 
-  // Page 3: for unlimited/100 mode, fetch even more
-  if (limit > 50 && allPapers.length >= 35) {
-    const page3 = await fetchSerperPage(query, apiKey, 20, 40, yearFrom, yearTo);
+  // Page 3 (limit > 40)
+  if (limit > 40 && allPapers.length >= 35) {
+    const page3 = await fetchSerperPage(query, apiKey, NUM_PER_PAGE, 3, yearFrom, yearTo);
     if (page3) allPapers = [...allPapers, ...page3];
   }
 
-  const pages = limit > 50 ? 3 : limit > 20 ? 2 : 1;
-  console.log(`[google-scholar] Serper returned ${allPapers.length} papers (${pages} page${pages > 1 ? "s" : ""})`);
+  // Page 4 (unlimited/999 mode)
+  if (limit > 60 && allPapers.length >= 55) {
+    const page4 = await fetchSerperPage(query, apiKey, NUM_PER_PAGE, 4, yearFrom, yearTo);
+    if (page4) allPapers = [...allPapers, ...page4];
+  }
 
-  return {
-    papers: allPapers,
-    total: allPapers.length,
-    source: "google_scholar",
-  };
+  console.log(`[google-scholar] Serper returned ${allPapers.length} papers`);
+  return { papers: allPapers, total: allPapers.length, source: "google_scholar" };
 }
 
 async function fetchSerperPage(
   q: string,
   apiKey: string,
   num: number,
-  page: number,
+  pageNum: number,  // 1-indexed page number
   yearFrom?: number,
   yearTo?: number
 ): Promise<UnifiedPaper[] | null> {
   const body: Record<string, unknown> = { q, num };
-  if (page > 0) body.page = Math.floor(page / 10) + 1;
+  if (pageNum > 1) body.page = pageNum;
   if (yearFrom != null) body.as_ylo = yearFrom;
   if (yearTo != null) body.as_yhi = yearTo;
 
@@ -108,14 +123,14 @@ async function fetchSerperPage(
   );
 
   if (res.status === 403 || res.status === 429) {
-    exhausted.serper = true;
+    markExhausted("serper");
     return null;
   }
   if (!res.ok) return null;
 
   const data = await res.json();
   if (data.message?.includes("Unauthorized") || data.statusCode === 403) {
-    exhausted.serper = true;
+    markExhausted("serper");
     return null;
   }
 
@@ -179,7 +194,7 @@ async function searchViaSerpAPI(
   const data = await res.json();
 
   if (data.error?.includes("run out of searches") || data.error?.includes("Invalid API key")) {
-    exhausted.serpapi = true;
+    markExhausted("serpapi");
     throw new Error("SerpAPI quota exhausted");
   }
 

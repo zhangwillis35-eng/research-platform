@@ -1,7 +1,9 @@
-import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
-import { callAI, setAIContext } from "@/lib/ai";
+import { streamAI, setAIContext } from "@/lib/ai";
+import { NextResponse } from "next/server";
 import type { AIProvider } from "@/lib/ai/types";
+
+export const maxDuration = 120;
 
 export async function POST(request: Request) {
   const auth = await requireAuth();
@@ -69,7 +71,7 @@ Format requirements:
 - Analysis should be deep, not surface-level
 - Minimum 1500 Chinese characters, be thorough and comprehensive`;
 
-    const result = await callAI({
+    const stream = streamAI({
       provider: provider as AIProvider,
       messages: [
         {
@@ -79,10 +81,35 @@ Format requirements:
       ],
       system,
       temperature: 0.3,
-      maxTokens: 8000,
+      maxTokens: 4096,
     });
 
-    return NextResponse.json({ overview: result.content, thinking: result.thinking });
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream({
+      async start(controller) {
+        try {
+          let result = await stream.next();
+          while (!result.done) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: result.value })}\n\n`));
+            result = await stream.next();
+          }
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`));
+          controller.close();
+        } catch (err) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: String(err) })}\n\n`));
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      },
+    });
   } catch (error) {
     console.error("[overview] Error:", error);
     return NextResponse.json(
