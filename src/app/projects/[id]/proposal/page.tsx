@@ -19,7 +19,7 @@ import {
 } from "@/components/analysis-engine-select";
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
-import { ProjectNote } from "@/components/project-note";
+import { AnalysisChat } from "@/components/analysis-chat";
 
 interface Paper {
   id: string;
@@ -380,7 +380,14 @@ export default function ProposalPage() {
         </Card>
       )}
 
-      <ProjectNote projectId={projectId} section="proposal" label="提案记录" />
+      <AnalysisChat
+        namespace={`proposal-${projectId}`}
+        projectId={projectId}
+        analysisContext={proposalText.slice(0, 8000)}
+        systemPrompt="你是学术研究提案分析助手。用户可以对 Research Proposal 的内容提出问题、优化意见或深入探讨研究方法与理论框架。"
+        provider={aiProvider}
+        paperTitles={papers.map(p => p.title)}
+      />
     </div>
   );
 }

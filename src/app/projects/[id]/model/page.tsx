@@ -36,7 +36,6 @@ import { StopButton } from "@/components/stop-button";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedAnalysis } from "@/hooks/use-saved-analysis";
 import { AnalysisChat } from "@/components/analysis-chat";
-import { ProjectNote } from "@/components/project-note";
 import { toPng } from "html-to-image";
 
 // ─── Custom Node Component ──────────────────────
@@ -527,6 +526,7 @@ ${paperContext || "（无文献，请基于常见管理学变量关系生成示�
 
       <AnalysisChat
         namespace={`model-${projectId}`}
+        projectId={projectId}
         analysisContext={
           "概念模型变量:\n" +
           nodes.map(n => `- ${n.data.label} (${n.data.varType})`).join("\n") +
@@ -538,7 +538,6 @@ ${paperContext || "（无文献，请基于常见管理学变量关系生成示�
         paperTitles={papers.map(p => p.title)}
       />
 
-      <ProjectNote projectId={projectId} section="model" label="模型记录" />
     </div>
   );
 }

@@ -23,7 +23,6 @@ import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedAnalysis } from "@/hooks/use-saved-analysis";
 import { consumeCrossFeatureData } from "@/lib/cross-feature";
 import { AnalysisChat } from "@/components/analysis-chat";
-import { ProjectNote } from "@/components/project-note";
 
 interface Paper {
   id: string;
@@ -427,6 +426,7 @@ export default function TheoriesIntegratePage() {
 
       <AnalysisChat
         namespace={`theories-${projectId}`}
+        projectId={projectId}
         analysisContext={
           (theories.length > 0
             ? "已识别理论:\n" + theories.map(t => `- ${t.name} (${t.nameEn}): 核心构念=${t.coreConstructs.join(", ")}; 假设=${t.assumptions.join("; ")}; 边界=${t.boundaries.join("; ")}`).join("\n")
@@ -440,7 +440,6 @@ export default function TheoriesIntegratePage() {
         paperTitles={papers.map(p => p.title)}
       />
 
-      <ProjectNote projectId={projectId} section="theories" label="理论记录" />
     </div>
   );
 }

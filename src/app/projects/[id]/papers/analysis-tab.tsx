@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { AIProviderSelect, type AIProvider } from "@/components/ai-provider-select";
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
-import { ProjectNote } from "@/components/project-note";
 
 interface Paper {
   id: string;
@@ -447,7 +446,6 @@ export function PaperAnalysisTab({
         </div>
       </div>
 
-      <ProjectNote projectId={projectId} section="analysis" label="分析记录" />
     </div>
   );
 }

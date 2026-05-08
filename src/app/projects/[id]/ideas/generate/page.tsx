@@ -22,7 +22,6 @@ import { consumeCrossFeatureData, setCrossFeatureData } from "@/lib/cross-featur
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedAnalysis } from "@/hooks/use-saved-analysis";
 import { AnalysisChat } from "@/components/analysis-chat";
-import { ProjectNote } from "@/components/project-note";
 
 interface Paper {
   id: string;
@@ -569,6 +568,7 @@ export default function IdeasGeneratePage() {
       {ideas.length > 0 && (
         <AnalysisChat
           namespace={`ideas-${projectId}`}
+          projectId={projectId}
           analysisContext={ideas.map(idea => `${idea.title}: ${idea.hypothesis} (${idea.contribution})`).join("\n\n")}
           systemPrompt="你是管理学研究想法分析助手。用户可以对生成的研究想法提出优化意见或深入探讨。"
           provider={provider}
@@ -576,7 +576,6 @@ export default function IdeasGeneratePage() {
         />
       )}
 
-      <ProjectNote projectId={projectId} section="ideas" label="想法记录" />
     </div>
   );
 }

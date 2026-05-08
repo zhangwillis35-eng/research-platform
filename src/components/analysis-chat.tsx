@@ -1,8 +1,18 @@
 "use client";
 
+/**
+ * AnalysisChat — DB-persisted LLM conversation panel.
+ *
+ * - Loads chat history from DB on mount (survives browser close/refresh)
+ * - Saves to DB after every assistant reply
+ * - LLM receives full conversation history for multi-turn context
+ * - Collapsible panel with message count badge
+ * - "历史记录" expandable section shows all past messages
+ */
+
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { usePersistedState } from "@/hooks/use-persisted-state";
+import { Badge } from "@/components/ui/badge";
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 import type { AIProvider } from "@/components/ai-provider-select";
@@ -13,8 +23,10 @@ interface Message {
 }
 
 interface AnalysisChatProps {
-  /** Namespace for persisted state (e.g., "graph-{projectId}") */
+  /** Namespace for state key, e.g. "graph-{projectId}" — also used as DB query key */
   namespace: string;
+  /** projectId — required for DB persistence */
+  projectId: string;
   /** Current analysis result text to use as context */
   analysisContext: string;
   /** Page-specific system prompt prefix */
@@ -27,26 +39,60 @@ interface AnalysisChatProps {
 
 export function AnalysisChat({
   namespace,
+  projectId,
   analysisContext,
   systemPrompt,
   provider,
   paperTitles,
 }: AnalysisChatProps) {
-  const [messages, setMessages] = usePersistedState<Message[]>(namespace, "chatMessages", []);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const abort = useAbort();
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // ── Load from DB on mount ──────────────────────────
   useEffect(() => {
-    scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
-  }, [messages]);
+    fetch(`/api/chat-history?projectId=${projectId}&query=${encodeURIComponent(namespace)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        const msgs = d.messages as Message[] | undefined;
+        if (Array.isArray(msgs) && msgs.length > 0) {
+          setMessages(msgs);
+          setOpen(true); // auto-open if there's history
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, [projectId, namespace]);
 
+  useEffect(() => {
+    if (open) {
+      scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
+    }
+  }, [messages, open]);
+
+  // ── Save to DB ─────────────────────────────────────
+  async function saveToDb(msgs: Message[]) {
+    try {
+      await fetch("/api/chat-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, query: namespace, messages: msgs }),
+      });
+    } catch { /* non-critical */ }
+  }
+
+  // ── Send message ───────────────────────────────────
   async function handleSend() {
     const text = input.trim();
     if (!text || streaming) return;
     setInput("");
+    if (!open) setOpen(true);
 
     const userMsg: Message = { role: "user", content: text };
     const newMessages = [...messages, userMsg];
@@ -57,7 +103,6 @@ export function AnalysisChat({
     const assistantIdx = newMessages.length;
 
     try {
-      // Build context: analysis results + paper list
       const paperList = paperTitles?.length
         ? `\n\n## 文献列表\n${paperTitles.map((t, i) => `[${i + 1}] ${t}`).join("\n")}`
         : "";
@@ -92,10 +137,10 @@ ${paperList}
       let accumulated = "";
       let buffer = "";
 
-      if (reader) {
-        // Add placeholder
-        setMessages((prev) => [...prev, { role: "assistant", content: "..." }]);
+      // Add placeholder
+      setMessages((prev) => [...prev, { role: "assistant", content: "..." }]);
 
+      if (reader) {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -118,78 +163,152 @@ ${paperList}
           }
         }
       }
+
+      // Save completed conversation to DB
+      const finalMessages: Message[] = [
+        ...newMessages,
+        { role: "assistant", content: accumulated },
+      ];
+      await saveToDb(finalMessages);
+      setMessages(finalMessages);
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
-        setMessages((prev) => [
-          ...prev.slice(0, assistantIdx),
+        const errMessages: Message[] = [
+          ...newMessages,
           { role: "assistant", content: "请求失败，请重试。" },
-        ]);
+        ];
+        setMessages(errMessages);
       }
     }
     setStreaming(false);
   }
 
-  function clearChat() {
+  async function clearChat() {
     setMessages([]);
+    await saveToDb([]);
   }
 
+  const hasMessages = messages.length > 0;
+  const msgCount = messages.filter((m) => m.role === "user").length;
+
   return (
-    <div className="border border-border/50 rounded-lg bg-card overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border/30 bg-muted/30">
-        <span className="text-xs font-medium">AI 对话</span>
+    <div className="border border-border/50 rounded-xl overflow-hidden bg-card shadow-sm mt-6">
+      {/* ── Header ── */}
+      <div
+        className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-muted/30 transition-colors select-none"
+        onClick={() => setOpen((v) => !v)}
+      >
         <div className="flex items-center gap-2">
-          {messages.length > 0 && (
-            <button className="text-[10px] text-muted-foreground hover:text-foreground" onClick={clearChat}>
-              清空对话
-            </button>
+          <span className="text-sm font-medium">💬 AI 对话 &amp; 记录</span>
+          {hasMessages && (
+            <Badge variant="secondary" className="text-[10px] px-1.5">
+              {msgCount} 条对话
+            </Badge>
+          )}
+          {!loaded && (
+            <span className="text-[10px] text-muted-foreground animate-pulse">加载中...</span>
           )}
         </div>
+        <span className="text-xs text-muted-foreground">{open ? "▲ 收起" : "▼ 展开"}</span>
       </div>
 
-      {/* Messages */}
-      <div ref={scrollRef} className="max-h-[300px] overflow-y-auto p-3 space-y-3">
-        {messages.length === 0 && (
-          <p className="text-xs text-muted-foreground text-center py-4">
-            对生成结果提问、要求优化、或深入探讨
-          </p>
-        )}
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div
-              className={`max-w-[85%] px-3 py-2 rounded-lg text-xs leading-relaxed whitespace-pre-wrap ${
-                msg.role === "user"
-                  ? "bg-teal text-white"
-                  : "bg-muted/50 text-foreground"
-              }`}
-            >
-              {msg.content}
+      {open && (
+        <>
+          {/* ── History section (collapsible) ── */}
+          {hasMessages && (
+            <div className="border-t border-border/30 bg-muted/10">
+              <button
+                type="button"
+                className="w-full flex items-center justify-between px-4 py-2 text-left hover:bg-muted/20 transition-colors"
+                onClick={() => setHistoryOpen((v) => !v)}
+              >
+                <span className="text-xs text-muted-foreground">
+                  📋 历史记录（{messages.length} 条消息）
+                </span>
+                <span className="text-[10px] text-muted-foreground">
+                  {historyOpen ? "▲" : "▼"}
+                </span>
+              </button>
+
+              {historyOpen && (
+                <div
+                  ref={scrollRef}
+                  className="max-h-[500px] overflow-y-auto px-4 pb-3 space-y-3"
+                >
+                  {messages.map((msg, i) => (
+                    <div
+                      key={i}
+                      className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                    >
+                      <div
+                        className={`max-w-[85%] px-3 py-2 rounded-lg text-xs leading-relaxed whitespace-pre-wrap ${
+                          msg.role === "user"
+                            ? "bg-teal text-white"
+                            : "bg-background border border-border/50 text-foreground"
+                        }`}
+                      >
+                        {msg.content === "..." ? (
+                          <span className="animate-pulse">AI 思考中...</span>
+                        ) : (
+                          msg.content
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
-      </div>
+          )}
 
-      {/* Input */}
-      <div className="flex items-center gap-2 px-3 py-2 border-t border-border/30">
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
-          placeholder="输入问题或优化意见..."
-          className="flex-1 px-2 py-1.5 text-xs border border-input rounded bg-background resize-none h-8 min-h-[32px] max-h-[80px]"
-          rows={1}
-          disabled={streaming}
-        />
-        <Button size="sm" className="h-8 text-xs bg-teal text-white hover:bg-teal/90" onClick={handleSend} disabled={streaming || !input.trim()}>
-          {streaming ? "生成中..." : "发送"}
-        </Button>
-        <StopButton show={streaming} onClick={abort.abort} />
-      </div>
+          {/* ── Input area ── */}
+          <div className="border-t border-border/30 p-3">
+            {!hasMessages && loaded && (
+              <p className="text-xs text-muted-foreground text-center pb-2">
+                对分析结果提问、要求深化或优化 — 对话记录将自动保存，下次打开可继续
+              </p>
+            )}
+            <div className="flex items-end gap-2">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder="输入问题或优化意见... (Enter 发送，Shift+Enter 换行)"
+                className="flex-1 px-3 py-2 text-xs border border-input rounded-lg bg-background resize-none min-h-[40px] max-h-[100px] focus:outline-none focus:ring-1 focus:ring-teal/40"
+                rows={1}
+                disabled={streaming}
+              />
+              <div className="flex flex-col gap-1 shrink-0">
+                <Button
+                  size="sm"
+                  className="h-8 text-xs bg-teal text-white hover:bg-teal/90"
+                  onClick={handleSend}
+                  disabled={streaming || !input.trim()}
+                >
+                  {streaming ? "生成中..." : "发送"}
+                </Button>
+                <StopButton show={streaming} onClick={abort.abort} />
+              </div>
+            </div>
+            {hasMessages && (
+              <div className="flex justify-end mt-1.5">
+                <button
+                  type="button"
+                  className="text-[10px] text-muted-foreground hover:text-destructive transition-colors"
+                  onClick={clearChat}
+                >
+                  清空所有对话记录
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

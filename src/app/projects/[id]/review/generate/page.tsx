@@ -24,7 +24,7 @@ import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 import { consumeCrossFeatureData } from "@/lib/cross-feature";
 import { generateReviewDocx, downloadBlob } from "@/lib/docx-export";
-import { ProjectNote } from "@/components/project-note";
+import { AnalysisChat } from "@/components/analysis-chat";
 
 interface Paper {
   id: string;
@@ -731,7 +731,14 @@ Return the modified outline as JSON only.`;
         </Card>
       )}
 
-      <ProjectNote projectId={projectId} section="review" label="综述记录" />
+      <AnalysisChat
+        namespace={`review-${projectId}`}
+        projectId={projectId}
+        analysisContext={reviewText.slice(0, 8000)}
+        systemPrompt="你是学术文献综述分析助手。用户可以对综述内容提出问题、优化意见，或探讨综述中的理论观点和研究空白。"
+        provider={provider}
+        paperTitles={papers.map(p => p.title)}
+      />
     </div>
   );
 }

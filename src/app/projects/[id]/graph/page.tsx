@@ -22,7 +22,6 @@ import { KnowledgeGraph } from "@/components/graph/KnowledgeGraph";
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 import { AnalysisChat } from "@/components/analysis-chat";
-import { ProjectNote } from "@/components/project-note";
 
 interface Paper {
   id: string;
@@ -853,6 +852,7 @@ export default function GraphPage() {
       {hasResults && (
         <AnalysisChat
           namespace={NS}
+          projectId={projectId}
           analysisContext={landscape || (metaSummary ? JSON.stringify(metaSummary) : "")}
           systemPrompt="你是管理学知识图谱分析助手。用户可以对知识图谱的分析结果提出优化意见或深入提问。"
           provider={provider}
@@ -860,7 +860,6 @@ export default function GraphPage() {
         />
       )}
 
-      <ProjectNote projectId={projectId} section="graph" label="图谱记录" />
     </div>
   );
 }
