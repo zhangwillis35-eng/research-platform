@@ -163,20 +163,29 @@ Output JSON (ALL values in Chinese 中文):
 
 // ─── Public API ────────────────────────────────────────────
 
-const PARALLEL = 3; // Translate 3 chunks concurrently
+const PARALLEL = 3; // Background parallel translation concurrency
 
+/**
+ * Hybrid streaming strategy:
+ * - Section 0: stream tokens directly to the user (immediate feedback)
+ * - Sections 1+: translate in background (PARALLEL concurrent), emit
+ *   completed results in order as soon as the previous section is done.
+ *
+ * This gives instant feedback (first token in ~3-6s) while background
+ * parallelism keeps total time under budget.
+ */
 export async function* translatePaperStream(
   fullText: string,
   title: string,
   provider: AIProvider
 ): AsyncGenerator<TranslateStreamEvent> {
-  const text = fullText.slice(0, 120000); // Up to 120k chars
+  const text = fullText.slice(0, 120000);
   const sections = splitIntoSections(text);
   const total = sections.length;
 
   yield { phase: "meta", inputChars: text.length, chunkCount: total };
 
-  // Prepare all translation tasks
+  // Prepare tasks
   const tasks = sections.map(({ heading, content }, idx) => ({
     idx,
     heading: translateHeading(heading),
@@ -185,61 +194,96 @@ export async function* translatePaperStream(
     isRef: /^references?$/i.test(heading.trim()),
   }));
 
-  // Translate in parallel batches of PARALLEL, emit each batch in order
-  for (let batchStart = 0; batchStart < tasks.length; batchStart += PARALLEL) {
-    const batch = tasks.slice(batchStart, batchStart + PARALLEL);
+  // Start background translation for sections 1+ immediately
+  const bgResults = new Map<number, string>();
+  const bgPromises: Promise<void>[] = [];
+  let bgRunning = 0;
+  let bgNextIdx = 1; // start from section 1
 
-    // Launch all in batch concurrently
-    const promises = batch.map(async (task) => {
-      if (task.isRef) return "\n[参考文献列表保留英文原文，如需翻译请单独处理]\n";
-      try {
-        let result = "";
-        const stream = streamAI({
-          provider,
-          system: TRANSLATE_SYSTEM,
-          messages: [{ role: "user", content: task.userMsg }],
-          temperature: 0.1,
-          maxTokens: 8000,
-        });
-        for await (const token of stream) {
-          result += token;
-        }
-        return result;
-      } catch (err) {
-        return `[翻译出错: ${String(err)}]`;
+  function launchBg() {
+    while (bgRunning < PARALLEL && bgNextIdx < tasks.length) {
+      const task = tasks[bgNextIdx];
+      const idx = bgNextIdx++;
+      bgRunning++;
+      bgPromises.push(
+        translateOneSection(task, provider).then((result) => {
+          bgResults.set(idx, result);
+          bgRunning--;
+          launchBg(); // fill the slot
+        })
+      );
+    }
+  }
+  if (tasks.length > 1) launchBg();
+
+  // Stream section 0 with real-time token output
+  let charsProcessed = 0;
+  if (tasks.length > 0) {
+    const task = tasks[0];
+    yield { phase: "section-start", heading: task.heading, index: 0, total };
+    if (task.heading) yield { phase: "chunk", text: task.heading + "\n\n" };
+
+    if (task.isRef) {
+      yield { phase: "chunk", text: "\n[参考文献列表保留英文原文，如需翻译请单独处理]\n" };
+    } else {
+      for await (const chunk of batchStream(streamAI({
+        provider,
+        system: TRANSLATE_SYSTEM,
+        messages: [{ role: "user", content: task.userMsg }],
+        temperature: 0.1,
+        maxTokens: 8000,
+      }), 30)) {
+        yield { phase: "chunk", text: chunk };
       }
-    });
+    }
+    charsProcessed += task.content.length;
+    yield { phase: "section-done", index: 0, inputCharsProcessed: charsProcessed };
+  }
 
-    const results = await Promise.all(promises);
+  // Emit background results in order (1, 2, 3, ...)
+  for (let i = 1; i < tasks.length; i++) {
+    // Wait for section i to complete
+    while (!bgResults.has(i)) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    const task = tasks[i];
+    const translated = bgResults.get(i)!;
 
-    // Emit results in order
-    let charsProcessed = 0;
-    for (let i = 0; i < tasks.length && i < batchStart; i++) {
-      charsProcessed += tasks[i].content.length;
+    yield { phase: "section-start", heading: task.heading, index: i, total };
+    if (task.heading) yield { phase: "chunk", text: task.heading + "\n\n" };
+
+    // Emit in 200-char batches for smooth UI
+    for (let k = 0; k < translated.length; k += 200) {
+      yield { phase: "chunk", text: translated.slice(k, k + 200) };
     }
 
-    for (let j = 0; j < batch.length; j++) {
-      const task = batch[j];
-      const translated = results[j];
-
-      yield { phase: "section-start", heading: task.heading, index: task.idx, total };
-
-      // Emit heading if present
-      if (task.heading) {
-        yield { phase: "chunk", text: task.heading + "\n\n" };
-      }
-      // Emit translated text in batches for smooth UI
-      const chunkSize = 200;
-      for (let k = 0; k < translated.length; k += chunkSize) {
-        yield { phase: "chunk", text: translated.slice(k, k + chunkSize) };
-      }
-
-      charsProcessed += task.content.length;
-      yield { phase: "section-done", index: task.idx, inputCharsProcessed: charsProcessed };
-    }
+    charsProcessed += task.content.length;
+    yield { phase: "section-done", index: i, inputCharsProcessed: charsProcessed };
   }
 
   yield { phase: "done" };
+}
+
+async function translateOneSection(
+  task: { content: string; userMsg: string; isRef: boolean },
+  provider: AIProvider
+): Promise<string> {
+  if (task.isRef) return "\n[参考文献列表保留英文原文，如需翻译请单独处理]\n";
+  try {
+    let result = "";
+    for await (const token of streamAI({
+      provider,
+      system: TRANSLATE_SYSTEM,
+      messages: [{ role: "user", content: task.userMsg }],
+      temperature: 0.1,
+      maxTokens: 8000,
+    })) {
+      result += token;
+    }
+    return result;
+  } catch (err) {
+    return `[翻译出错: ${String(err)}]`;
+  }
 }
 
 function translateHeading(heading: string): string {

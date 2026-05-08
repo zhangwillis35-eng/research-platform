@@ -93,7 +93,7 @@ export default function TranslatePage() {
   const projectId = params.id as string;
   const NS = `translate-${projectId}`;
 
-  const [provider, setProvider] = usePersistedState<AIProvider>(NS, "provider", "deepseek-pro");
+  const [provider, setProvider] = usePersistedState<AIProvider>(NS, "provider", "deepseek-fast");
   const [phase, setPhase] = usePersistedState<Phase>(NS, "phase", "idle");
   const [translatedText, setTranslatedText] = usePersistedState<string>(NS, "translated", "");
   const [terms, setTerms] = usePersistedState<AcademicTerm[]>(NS, "terms", []);
