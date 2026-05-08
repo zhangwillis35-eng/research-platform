@@ -1,12 +1,12 @@
 /**
- * AI-Researcher style 6-step research idea pipeline.
+ * AI-Researcher style research idea pipeline.
  *
- * 1. Literature analysis → extract theories, contexts, methods
- * 2. Concept generation → combine dimensions creatively
- * 3. Deduplication → check against existing literature
- * 4. Proposal generation → flesh out each idea
- * 5. Ranking → score by novelty, feasibility, impact
- * 6. Peer review simulation → strength/weakness analysis
+ * Optimized pipeline (single LLM call for dimensions + ideas):
+ * 1. extractAndGenerateIdeas → dimensions + ideas in ONE call (saves ~10s vs sequential)
+ * 2. simulatePeerReview × 2 (top 2 only, parallel-ready)
+ *
+ * Streaming version: runIdeaPipelineStream (async generator)
+ * Legacy blocking version: runIdeaPipeline (kept for compatibility)
  */
 import { callAI } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
@@ -47,62 +47,41 @@ export interface IdeaPipelineResult {
   provider: string;
 }
 
-// Step 1: Extract research dimensions from literature
-async function extractDimensions(
+export type IdeaStreamEvent =
+  | { phase: "ideas"; dimensions: ResearchDimensions; ideas: ResearchIdea[] }
+  | { phase: "review"; ideaId: string; review: ResearchIdea["peerReview"] }
+  | { phase: "done" }
+  | { phase: "error"; error: string };
+
+// Combined Step 1+2: Extract dimensions AND generate ideas in a single LLM call
+async function extractAndGenerateIdeas(
   papers: UnifiedPaper[],
   provider: AIProvider,
   engineContext: string = ""
-): Promise<ResearchDimensions> {
+): Promise<{ dimensions: ResearchDimensions; ideas: ResearchIdea[] }> {
   const content = papers
     .slice(0, 20)
     .map(
       (p, i) =>
-        `[${i + 1}] ${p.title} (${p.year}) ${p.venue ?? ""}${p.journalRanking?.badges?.length ? ` [${p.journalRanking.badges.join("/")}]` : ""}\n${p.abstract ?? ""}`
+        `[${i + 1}] ${p.title} (${p.year ?? "N/A"}) ${p.venue ?? ""}${p.journalRanking?.badges?.length ? ` [${p.journalRanking.badges.join("/")}]` : ""}\n${p.abstract ?? ""}`
     )
     .join("\n---\n");
 
   try {
     const response = await callAI({
       provider,
-      system: `You are a management research methodology expert. Extract research dimensions from the provided literature.
+      system: `You are a management research expert. Analyze the provided literature and generate innovative research ideas in a single pass.
 
-Output JSON:
-{
-  "theories": ["Theory 1: brief description", ...],
-  "contexts": ["Context 1: brief description", ...],
-  "methods": ["Method 1: brief description", ...],
-  "gaps": ["Gap 1: unexplored combination or contradiction", ...]
-}
-
-Extract 4-8 items per dimension, at least 3 research gaps. All values MUST be in Chinese (中文). List theories, contexts, and methods separately.`,
-      messages: [{ role: "user", content: content + (engineContext ? `\n\n## 深度分析结果\n\n${engineContext}\n\n请结合以上分析来提取更精确的维度。` : "") }],
-      jsonMode: true,
-      noThinking: true,
-      temperature: 0.2,
-    });
-    const jsonStr = response.content.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
-    return JSON.parse(jsonStr);
-  } catch {
-    return { theories: [], contexts: [], methods: [], gaps: [] };
-  }
-}
-
-// Steps 2-5: Generate, deduplicate, rank ideas
-async function generateAndRankIdeas(
-  dimensions: ResearchDimensions,
-  papers: UnifiedPaper[],
-  provider: AIProvider,
-  engineContext: string = ""
-): Promise<ResearchIdea[]> {
-  try {
-    const response = await callAI({
-      provider,
-      system: `You are a management research innovation expert. Based on the provided theory×context×method dimensions and research gaps, generate 5-8 innovative research ideas.
-
-Each idea must be a novel combination of theory, context, and method, prioritizing identified research gaps.
+First extract research dimensions, then immediately use them to generate 5-8 novel research ideas.
 
 Output JSON (ALL values MUST be in Chinese 中文):
 {
+  "dimensions": {
+    "theories": ["理论1：简要描述", ...],
+    "contexts": ["情境1：简要描述", ...],
+    "methods": ["方法1：简要描述", ...],
+    "gaps": ["研究空白1：未探索的组合或矛盾", ...]
+  },
   "ideas": [
     {
       "id": "idea-1",
@@ -122,36 +101,53 @@ Output JSON (ALL values MUST be in Chinese 中文):
   ]
 }
 
-Scoring (1-10):
-- novelty: fewer similar studies = higher score
-- feasibility: data availability and methodological feasibility
-- impact: potential contribution to management theory and practice
-- overall: weighted average (novelty×0.4 + feasibility×0.3 + impact×0.3)
-
-Sort by overall score descending.`,
+Rules:
+- Dimensions: 4-8 items per category, at least 3 research gaps
+- Each idea must be a novel theory × context × method combination, prioritizing identified gaps
+- Scoring (1-10): novelty (fewer similar studies = higher), feasibility (data availability), impact (theory/practice contribution)
+- overall = novelty×0.4 + feasibility×0.3 + impact×0.3
+- Sort ideas by overall score descending`,
       messages: [
         {
           role: "user",
-          content: `维度提取结果：\n${JSON.stringify(dimensions, null, 2)}\n\n参考文献数量：${papers.length} 篇\n顶级期刊（UTD24/FT50）：${papers.filter((p) => p.journalRanking?.utd24 || p.journalRanking?.ft50).length} 篇${engineContext ? `\n\n## 深度分析结果\n\n${engineContext}\n\n请基于以上分析结果，生成更具针对性和创新性的研究想法。` : ""}`,
+          content:
+            content +
+            (engineContext
+              ? `\n\n## 深度分析结果\n\n${engineContext}\n\n请结合以上分析来提取更精确的维度并生成更具针对性的研究想法。`
+              : ""),
         },
       ],
       jsonMode: true,
       noThinking: true,
-      temperature: 0.7,
-      maxTokens: 4096,
+      temperature: 0.5,
+      maxTokens: 6000,
     });
-    const jsonStr = response.content.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
+    const jsonStr = response.content
+      .replace(/^```(?:json)?\s*/m, "")
+      .replace(/\s*```\s*$/m, "")
+      .trim();
     const parsed = JSON.parse(jsonStr);
-    return (parsed.ideas ?? []).sort(
-      (a: ResearchIdea, b: ResearchIdea) =>
-        b.scores.overall - a.scores.overall
+    const ideas = (parsed.ideas ?? []).sort(
+      (a: ResearchIdea, b: ResearchIdea) => b.scores.overall - a.scores.overall
     );
+    return {
+      dimensions: parsed.dimensions ?? {
+        theories: [],
+        contexts: [],
+        methods: [],
+        gaps: [],
+      },
+      ideas,
+    };
   } catch {
-    return [];
+    return {
+      dimensions: { theories: [], contexts: [], methods: [], gaps: [] },
+      ideas: [],
+    };
   }
 }
 
-// Step 6: Peer review simulation
+// Step 3: Peer review simulation
 async function simulatePeerReview(
   idea: ResearchIdea,
   provider: AIProvider
@@ -181,29 +177,58 @@ Review criteria: theoretical contribution, methodological rigor, originality, pr
       temperature: 0.3,
       maxTokens: 2048,
     });
-    const jsonStr = response.content.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
+    const jsonStr = response.content
+      .replace(/^```(?:json)?\s*/m, "")
+      .replace(/\s*```\s*$/m, "")
+      .trim();
     return JSON.parse(jsonStr);
   } catch {
     return undefined;
   }
 }
 
-// Full pipeline
+// Streaming pipeline — yields events so frontend can show ideas immediately
+export async function* runIdeaPipelineStream(
+  papers: UnifiedPaper[],
+  provider: AIProvider = "deepseek-fast",
+  withPeerReview: boolean = true,
+  engineContext: string = ""
+): AsyncGenerator<IdeaStreamEvent> {
+  // Single combined call → dimensions + ideas
+  const { dimensions, ideas } = await extractAndGenerateIdeas(
+    papers,
+    provider,
+    engineContext
+  );
+
+  // Emit ideas immediately — user sees results without waiting for peer review
+  yield { phase: "ideas", dimensions, ideas };
+
+  // Peer review top 2 sequentially (streaming each as it completes)
+  if (withPeerReview && ideas.length > 0) {
+    const topIdeas = ideas.slice(0, 2);
+    for (const idea of topIdeas) {
+      const review = await simulatePeerReview(idea, provider);
+      if (review) {
+        yield { phase: "review", ideaId: idea.id, review };
+      }
+    }
+  }
+
+  yield { phase: "done" };
+}
+
+// Legacy blocking pipeline — kept for compatibility
 export async function runIdeaPipeline(
   papers: UnifiedPaper[],
   provider: AIProvider = "deepseek-fast",
   withPeerReview: boolean = true,
-  topic?: string
+  _topic?: string
 ): Promise<IdeaPipelineResult> {
-  // Step 1: Extract dimensions
-  const dimensions = await extractDimensions(papers, provider);
+  const { dimensions, ideas } = await extractAndGenerateIdeas(papers, provider);
 
-  // Steps 2-5: Generate and rank
-  const ideas = await generateAndRankIdeas(dimensions, papers, provider);
-
-  // Step 6: Peer review top 3
   if (withPeerReview && ideas.length > 0) {
-    const topIdeas = ideas.slice(0, 3);
+    const topIdeas = ideas.slice(0, 2);
     const reviews = await Promise.all(
       topIdeas.map((idea) => simulatePeerReview(idea, provider))
     );

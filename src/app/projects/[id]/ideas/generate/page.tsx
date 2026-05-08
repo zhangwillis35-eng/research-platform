@@ -69,7 +69,7 @@ interface Dimensions {
   gaps: string[];
 }
 
-type Phase = "idle" | "loading-storm" | "extracting" | "generating" | "done";
+type Phase = "idle" | "loading-storm" | "generating" | "reviewing" | "done";
 
 const verdictLabels: Record<string, { label: string; color: string }> = {
   strong_accept: { label: "强烈接收", color: "text-green-600" },
@@ -176,7 +176,7 @@ export default function IdeasGeneratePage() {
         /* continue without STORM */
       }
     }
-    setPhase("extracting");
+    setPhase("generating");
     try {
       const res = await fetch("/api/research/ideas", {
         method: "POST",
@@ -193,14 +193,59 @@ export default function IdeasGeneratePage() {
         signal,
       });
       if (!res.ok) throw new Error("想法生成失败");
-      const data = await res.json();
-      setDimensions(data.dimensions);
-      setPhase("generating");
 
-      await new Promise((r) => setTimeout(r, 300));
-      setIdeas(data.ideas);
-      setPhase("done");
-      saveIdeas({ dimensions: data.dimensions, ideas: data.ideas });
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalDimensions: Dimensions | null = null;
+      let finalIdeas: Idea[] = [];
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const event = JSON.parse(line.slice(6));
+              if (event.phase === "ideas") {
+                // Ideas ready — show immediately, then start peer reviews
+                finalDimensions = event.dimensions;
+                finalIdeas = event.ideas;
+                setDimensions(event.dimensions);
+                setIdeas(event.ideas);
+                setPhase("reviewing");
+              } else if (event.phase === "review") {
+                // Patch individual idea with peer review as it arrives
+                setIdeas((prev) =>
+                  prev.map((idea) =>
+                    idea.id === event.ideaId
+                      ? { ...idea, peerReview: event.review }
+                      : idea
+                  )
+                );
+                finalIdeas = finalIdeas.map((idea) =>
+                  idea.id === event.ideaId
+                    ? { ...idea, peerReview: event.review }
+                    : idea
+                );
+              } else if (event.phase === "done") {
+                setPhase("done");
+                if (finalDimensions) {
+                  saveIdeas({ dimensions: finalDimensions, ideas: finalIdeas });
+                }
+              } else if (event.phase === "error") {
+                throw new Error(event.error);
+              }
+            } catch (parseErr) {
+              // skip malformed events
+            }
+          }
+        }
+      }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") { setPhase("idle"); return; }
       setError(String(err));
@@ -302,34 +347,35 @@ export default function IdeasGeneratePage() {
       <div className="flex items-center gap-4">
         <Button
           onClick={handleGenerate}
-          disabled={phase !== "idle" && phase !== "done" || activePapers.length === 0}
+          disabled={(phase !== "idle" && phase !== "done") || activePapers.length === 0}
           className="bg-teal text-teal-foreground hover:bg-teal/90"
         >
           生成研究想法
         </Button>
-        <StopButton show={phase !== "idle" && phase !== "done"} onClick={xAbort.abort} />
+        <StopButton show={phase === "loading-storm" || phase === "generating" || phase === "reviewing"} onClick={xAbort.abort} />
 
         {phase !== "idle" && (
           <div className="flex items-center gap-3 text-sm">
-            {(["loading-storm", "extracting", "generating", "done"] as Phase[]).map((p, i) => (
-              <div key={p} className="flex items-center gap-2">
-                <div
-                  className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                    ["loading-storm", "extracting", "generating", "done"].indexOf(phase) >= i
-                      ? "bg-teal text-teal-foreground"
-                      : "bg-border text-muted-foreground"
-                  }`}
-                >
-                  {i + 1}
+            {(["loading-storm", "generating", "reviewing", "done"] as Phase[]).map((p, i) => {
+              const phaseOrder = ["loading-storm", "generating", "reviewing", "done"];
+              const currentIdx = phaseOrder.indexOf(phase);
+              const active = currentIdx >= i;
+              return (
+                <div key={p} className="flex items-center gap-2">
+                  <div
+                    className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                      active ? "bg-teal text-teal-foreground" : "bg-border text-muted-foreground"
+                    }`}
+                  >
+                    {i + 1}
+                  </div>
+                  <span className={`hidden sm:inline ${phase === p ? "text-foreground" : "text-muted-foreground"}`}>
+                    {["引擎分析", "生成想法", "同行评审", "完成"][i]}
+                  </span>
+                  {i < 3 && <span className="text-border">—</span>}
                 </div>
-                <span className={`hidden sm:inline ${
-                  phase === p ? "text-foreground" : "text-muted-foreground"
-                }`}>
-                  {["引擎分析", "提取维度", "生成想法", "完成"][i]}
-                </span>
-                {i < 3 && <span className="text-border">—</span>}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -390,7 +436,7 @@ export default function IdeasGeneratePage() {
               {ideasSavedAt && <span className="text-[10px] text-muted-foreground">已保存 {new Date(ideasSavedAt).toLocaleString("zh-CN")}</span>}
             </h2>
             <span className="text-xs text-muted-foreground">
-              按综合评分排序 · 前3名含模拟评审
+              按综合评分排序 · 前2名含模拟评审{phase === "reviewing" && " · 评审生成中..."}
             </span>
           </div>
 
@@ -459,6 +505,14 @@ export default function IdeasGeneratePage() {
                         </div>
                       </div>
 
+                      {!idea.peerReview && rank < 2 && phase === "reviewing" && (
+                        <div className="bg-muted/20 rounded-lg px-4 py-3 flex items-center gap-2 text-xs text-muted-foreground">
+                          <span className="inline-block w-1.5 h-1.5 bg-teal rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                          <span className="inline-block w-1.5 h-1.5 bg-teal rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                          <span className="inline-block w-1.5 h-1.5 bg-teal rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                          <span className="ml-1">同行评审生成中...</span>
+                        </div>
+                      )}
                       {idea.peerReview && (
                         <div className="bg-muted/30 rounded-lg p-4 space-y-3">
                           <div className="flex items-center gap-2">
