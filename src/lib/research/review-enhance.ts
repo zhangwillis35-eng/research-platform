@@ -367,16 +367,27 @@ export async function* rewriteReviewStream(
     if (legacy) { /* use legacy below */ }
   }
 
-  // Format papers with author names front and center (for APA citations)
+  // Format papers — keep input compact for faster TTFT
+  // Only include fullText for papers referenced in the revision plan
+  const planPaperTitles = new Set(
+    [...(revisionPlan.improve ?? []), ...(revisionPlan.extend ?? []), ...(revisionPlan.sections ?? [])]
+      .flatMap(s => s.papersToAdd ?? [])
+  );
+
   const papersContext = [
-    ...libraryPapers.slice(0, 20).map((p) => {
+    ...libraryPapers.slice(0, 15).map((p) => {
       const authors = typeof p.authors === "string" ? p.authors : (p.authors ?? []).map(a => a.name).join(", ");
-      return `Authors: ${authors}\nYear: ${p.year ?? "?"}\nTitle: ${p.title}\nVenue: ${p.venue ?? ""}\n${p.fullText ? `Full text:\n${p.fullText.slice(0, 5000)}` : `Abstract: ${p.abstract ?? "N/A"}`}`;
+      const inPlan = planPaperTitles.has(p.title);
+      // Full text only for papers in the plan, abstract for others
+      const content = inPlan && p.fullText
+        ? `Full text:\n${p.fullText.slice(0, 3000)}`
+        : `Abstract: ${(p.abstract ?? "").slice(0, 300)}`;
+      return `Authors: ${authors}\nYear: ${p.year ?? "?"}\nTitle: ${p.title}\nVenue: ${p.venue ?? ""}\n${content}`;
     }),
-    ...searchPapers.slice(0, 15).map((p) =>
-      `Authors: ${p.authors}\nYear: ${p.year}\nTitle: ${p.title}\nVenue: ${p.venue}\nAbstract: ${p.abstract?.slice(0, 500) ?? "N/A"}`
+    ...searchPapers.slice(0, 10).map((p) =>
+      `Authors: ${p.authors}\nYear: ${p.year}\nTitle: ${p.title}\nVenue: ${p.venue}\nAbstract: ${p.abstract?.slice(0, 300) ?? "N/A"}`
     ),
-  ].join("\n\n" + "─".repeat(40) + "\n\n");
+  ].join("\n\n---\n\n");
 
   const stream = streamAI({
     provider,
@@ -387,6 +398,7 @@ export async function* rewriteReviewStream(
         content: `## Target Word Count: ${wordCount ? `${wordCount.min}-${wordCount.max}` : "8000-12000"}字\n\n## Overall Strategy:\n${revisionPlan.overallStrategy}\n\n## Revision Plan:\n${planContext}\n\n## Original Draft:\n${draftText.slice(0, 12000)}\n\n## Available Papers:\n${papersContext}`,
       },
     ],
+    noThinking: true,
     temperature: 0.4,
     maxTokens: wordCount ? Math.max(8192, Math.ceil(wordCount.max * 1.5)) : 8192,
   });
@@ -414,11 +426,12 @@ export async function* integratePapersStream(
 ): AsyncGenerator<string> {
   const papersContext = newPapers.map((p, i) => {
     const authors = typeof p.authors === "string" ? p.authors : (p.authors ?? []).map(a => a.name).join(", ");
-    return `[${i + 1}] ${p.title} (${p.year ?? "?"}) — ${authors}\n${p.fullText ? p.fullText.slice(0, 5000) : (p.abstract ?? "")}`;
+    return `[${i + 1}] ${p.title} (${p.year ?? "?"}) — ${authors}\n${p.fullText ? p.fullText.slice(0, 3000) : (p.abstract ?? "")}`;
   }).join("\n\n");
 
   const stream = streamAI({
     provider,
+    noThinking: true,
     messages: [
       { role: "system", content: INTEGRATE_PROMPT },
       {
