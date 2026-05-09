@@ -15,7 +15,7 @@ export async function searchOpenAlex(
     search: query,
     per_page: String(Math.min(limit, 200)), // OpenAlex supports up to 200
     filter: filters.join(","),
-    sort: "cited_by_count:desc", // Prioritize high-impact papers
+    sort: "relevance_score:desc", // Relevance first — cited_by_count:desc returns unrelated high-cited papers
     select:
       "id,doi,title,display_name,publication_year,cited_by_count,referenced_works_count,authorships,primary_location,abstract_inverted_index,open_access,topics",
   });
