@@ -34,7 +34,7 @@ export interface ScoredPaper extends UnifiedPaper {
   hasFullText?: boolean;
 }
 
-const SCORING_CONCURRENCY = 10;
+const SCORING_CONCURRENCY = 5; // Reduced from 10 to prevent memory pressure on 4GB container
 // Single mode: 1 paper per LLM call — ensures each paper gets careful evaluation
 // Batch mode produced lazy "all 5" scores with no differentiation
 const BATCH_SCORING_THRESHOLD = 999; // disabled — always single mode

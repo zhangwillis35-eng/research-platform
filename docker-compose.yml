@@ -29,6 +29,13 @@ services:
     environment:
       - NODE_ENV=production
       - GROBID_URL=http://grobid:8070
-    depends_on:
-      grobid:
-        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:'{\"action\":\"me\"}'}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
