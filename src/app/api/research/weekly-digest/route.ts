@@ -430,7 +430,7 @@ async function runDigest(projectId: string, daysBack: number = 30) {
   // Sort by citations and take top 80
   const allPapers = dedupByTitle(targetPapers)
     .sort((a, b) => b.citationCount - a.citationCount);
-  console.log(`[weekly-digest] After dedup + year filter (>=${minYear}): ${allPapers.length}`);
+  console.log(`[weekly-digest] After dedup + citation sort: ${allPapers.length}`);
 
   // Delete ALL previous weekly digest papers (not just current week's)
   // so re-running always gets fresh top-tier papers
