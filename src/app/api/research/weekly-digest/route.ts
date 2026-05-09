@@ -112,13 +112,13 @@ async function fetchFromOpenAlex(daysBack: number): Promise<UnifiedPaper[]> {
   await Promise.all(
     batches.map(async (batchIds) => {
       const sourceFilter = batchIds.join("|");
-      for (const keyword of AI_KEYWORDS.slice(0, 5)) {
+      for (const keyword of AI_KEYWORDS.slice(0, 8)) {
         try {
           const params = new URLSearchParams({
             search: keyword,
-            per_page: "25",
+            per_page: "50",
             filter: `from_publication_date:${sinceStr},type:article,primary_location.source.id:${sourceFilter}`,
-            sort: "publication_date:desc",
+            sort: "cited_by_count:desc",
             select: "id,doi,display_name,title,publication_year,cited_by_count,authorships,primary_location,abstract_inverted_index,open_access",
           });
           if (process.env.OPENALEX_EMAIL) params.set("mailto", process.env.OPENALEX_EMAIL);
@@ -426,11 +426,10 @@ async function runDigest(projectId: string, daysBack: number = 30) {
 
   console.log(`[weekly-digest] Found: ${targetPapers.length} papers from top journals`);
 
-  const currentYear = new Date().getFullYear();
-  const minYear = currentYear - 1;
-
+  // No year filter — daysBack already handles recency via OpenAlex date filter
+  // Sort by citations and take top 80
   const allPapers = dedupByTitle(targetPapers)
-    .filter((p) => !p.year || p.year >= minYear);
+    .sort((a, b) => b.citationCount - a.citationCount);
   console.log(`[weekly-digest] After dedup + year filter (>=${minYear}): ${allPapers.length}`);
 
   // Delete ALL previous weekly digest papers (not just current week's)
