@@ -138,26 +138,16 @@ function sortByQuality(papers: ScoredPaper[]): ScoredPaper[] {
     const scoreB = b.relevanceScore ?? 0;
     if (scoreB !== scoreA) return scoreB - scoreA;
 
-    // Secondary: priority tier
-    const aTier = getPriorityTier(a);
-    const bTier = getPriorityTier(b);
-    if (aTier !== bTier) return aTier - bTier;
+    // Secondary: citation count (same score → higher citations first)
+    if (b.citationCount !== a.citationCount) return b.citationCount - a.citationCount;
 
-    // Tertiary: journal grade (UTD24/FT50 > JCR Q1 > Q2)
+    // Tertiary: journal grade
     const jcrOrder: Record<string, number> = { Q1: 4, Q2: 3, Q3: 2, Q4: 1 };
     const aGrade = (a.journalRanking?.utd24 ? 10 : 0) + (a.journalRanking?.ft50 ? 10 : 0) +
       (jcrOrder[a.journalMeta?.jcrQuartile ?? ""] ?? 0);
     const bGrade = (b.journalRanking?.utd24 ? 10 : 0) + (b.journalRanking?.ft50 ? 10 : 0) +
       (jcrOrder[b.journalMeta?.jcrQuartile ?? ""] ?? 0);
-    if (bGrade !== aGrade) return bGrade - aGrade;
-
-    // Quaternary: impact factor
-    const aIF = a.journalMeta?.impactFactor ?? 0;
-    const bIF = b.journalMeta?.impactFactor ?? 0;
-    if (aIF !== bIF) return bIF - aIF;
-
-    // Last: citations
-    return b.citationCount - a.citationCount;
+    return bGrade - aGrade;
   });
 }
 
