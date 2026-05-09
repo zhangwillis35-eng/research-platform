@@ -35,9 +35,8 @@ export interface ScoredPaper extends UnifiedPaper {
 }
 
 const SCORING_CONCURRENCY = 10;
-// Batch mode with 5 papers/call — balances speed + differentiation
-// (10 papers/call produced lazy "all same score"; 1 paper/call too slow)
-const BATCH_SCORING_THRESHOLD = 5;
+// Single mode: 1 paper per LLM call — best score differentiation
+const BATCH_SCORING_THRESHOLD = 999; // disabled — always single mode
 const SCORING_DEFAULT_PROVIDER: AIProvider = "deepseek-fast";
 
 const SINGLE_SYSTEM = `You are a strict academic paper relevance scorer. Evaluate ONE paper against the user's query.
@@ -215,7 +214,8 @@ export async function scoreRelevance(
   userQuery: string,
   translatedQuery: string | undefined,
   provider: AIProvider = SCORING_DEFAULT_PROVIDER,
-  onProgress?: (scored: number, total: number) => void
+  onProgress?: (scored: number, total: number) => void,
+  onPaperScored?: (index: number, score: RelevanceScore) => void
 ): Promise<ScoredPaper[]> {
   if (papers.length === 0) return [];
 
@@ -338,9 +338,10 @@ export async function scoreRelevance(
         try {
           const parsed = JSON.parse(cleaned);
           const s = Array.isArray(parsed) ? parsed[0] : parsed;
-          allScores.set(idx, parseScore(s));
+          const score = parseScore(s);
+          allScores.set(idx, score);
+          onPaperScored?.(idx, score);
         } catch {
-          // JSON parse failed — skip this paper
           console.warn(`[relevance-scorer] Parse failed for paper ${idx}: ${cleaned.slice(0, 100)}`);
         }
       },

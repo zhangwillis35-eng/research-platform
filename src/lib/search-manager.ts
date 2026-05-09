@@ -181,6 +181,28 @@ class BackgroundSearchManager {
                 }
                 this.notify();
               }
+            } else if (evt.type === "paper_score") {
+              // Real-time score update for a single paper
+              if (this.state.result?.papers) {
+                const idx = evt.paperIndex;
+                if (idx >= 0 && idx < this.state.result.papers.length) {
+                  const p = this.state.result.papers[idx];
+                  p.relevanceScore = evt.score;
+                  p.relevanceReason = evt.reason;
+                  p.keyMatch = evt.keyMatch;
+                  p.contribution = evt.contribution;
+                  p.methodology = evt.methodology;
+                  p.innovation = evt.innovation;
+                }
+                // Re-sort: scored papers first (by score desc, then citations), unscored last
+                this.state.result.papers.sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
+                  const sa = (a.relevanceScore as number) ?? -1;
+                  const sb = (b.relevanceScore as number) ?? -1;
+                  if (sb !== sa) return sb - sa;
+                  return ((b.citationCount as number) ?? 0) - ((a.citationCount as number) ?? 0);
+                });
+                this.notify();
+              }
             } else if (evt.type === "papers_chunk") {
               // Accumulate paper chunks into result
               if (!this.state.result) {

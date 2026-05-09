@@ -79,7 +79,11 @@ export async function POST(request: Request) {
               console.log(`[smart-search] ${elapsed}s — ${phase}: ${detail}`);
               send({ type: "status", phase, message: detail });
             },
-            journalLang
+            journalLang,
+            // Stream individual paper scores as they complete
+            enableRelevanceScoring ? (paperIndex, score) => {
+              send({ type: "paper_score", paperIndex, ...score });
+            } : undefined
           );
 
           console.log(`[smart-search] Total: ${((Date.now() - searchStart) / 1000).toFixed(1)}s, papers: ${result.papers.length}`);

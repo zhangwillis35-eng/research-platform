@@ -452,7 +452,8 @@ export async function smartSearch(
   limit: number = 20,
   enableRelevanceScoring: boolean = true,
   onProgress?: (phase: string, detail: string) => void,
-  journalLang: JournalLang = "en"
+  journalLang: JournalLang = "en",
+  onPaperScored?: (paperIndex: number, score: { score: number; reason?: string; keyMatch?: string[]; contribution?: string; methodology?: string; innovation?: string }) => void
 ): Promise<SmartSearchResult> {
   const startTime = Date.now();
 
@@ -846,7 +847,8 @@ export async function smartSearch(
     try {
       // Always use deepseek-fast for scoring — fastest + cheapest for structured JSON
       scoredPapers = await scoreRelevance(papers, input, plan.translatedInput, "deepseek-fast",
-        (scored, total) => onProgress?.("score", `AI 摘要快速评分: ${scored}/${total} 篇...`)
+        (scored, total) => onProgress?.("score", `AI 摘要快速评分: ${scored}/${total} 篇...`),
+        onPaperScored
       );
       scoredPapers = filterByRelevance(scoredPapers, 3); // Lower threshold for first pass
       relevanceScored = true;
