@@ -1159,7 +1159,6 @@ ${fullTextContext}` : ""}`;
       }),
     }).then(r => r.json()).then(d => {
       if (d.record) {
-        // Dedup: only add if not already in the list (prevents duplicates from re-processing)
         setSearchHistory(prev => {
           if (prev.some(h => h.id === d.record.id)) return prev;
           return [d.record, ...prev];
