@@ -246,31 +246,39 @@ async function enrichAbstracts(needAbstract: UnifiedPaper[]): Promise<void> {
       })
     ),
 
-    // Pass 2: Semantic Scholar (DOI or title search) — with retry on 429
-    Promise.all(
-      needAbstract.slice(0, 30).map(async (paper) => {
-        try {
-          const endpoint = paper.doi
-            ? `https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURIComponent(paper.doi)}?fields=abstract,tldr`
-            : `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(paper.title.slice(0, 100))}&limit=1&fields=abstract,tldr,title`;
-          const headers: HeadersInit = {};
-          if (s2ApiKey) headers["x-api-key"] = s2ApiKey;
-          const res = await fetchWithRetry(endpoint, { headers }, { maxRetries: 2, baseDelayMs: 1500 });
-          if (!res.ok) return;
-          const data = await res.json();
-          let s2Abstract = data.abstract;
-          let s2Tldr = (data.tldr as { text?: string } | undefined)?.text;
-          if (!s2Abstract && data.data?.[0]) {
-            s2Abstract = data.data[0].abstract;
-            s2Tldr = data.data[0].tldr?.text;
-          }
+    // Pass 2: Semantic Scholar batch API (1 request per 500 papers, not 1 per paper)
+    (async () => {
+      const s2Papers = needAbstract.filter((p) => p.doi).slice(0, 40);
+      if (s2Papers.length === 0) return;
+      try {
+        const headers: HeadersInit = { "Content-Type": "application/json" };
+        if (s2ApiKey) headers["x-api-key"] = s2ApiKey;
+        const res = await fetchWithRetry(
+          "https://api.semanticscholar.org/graph/v1/paper/batch",
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              ids: s2Papers.map((p) => `DOI:${p.doi}`),
+              fields: "abstract,tldr",
+            }),
+          },
+          { maxRetries: 2, baseDelayMs: 2000 },
+        );
+        if (!res.ok) return;
+        const results: (Record<string, unknown> | null)[] = await res.json();
+        for (let i = 0; i < results.length; i++) {
+          const data = results[i];
+          if (!data) continue;
+          const s2Abstract = data.abstract as string | undefined;
+          const s2Tldr = (data.tldr as { text?: string } | undefined)?.text;
           const best = s2Abstract ?? s2Tldr;
-          if (best && best.length > (paper.abstract?.length ?? 0)) {
-            paper.abstract = best;
+          if (best && best.length > (s2Papers[i].abstract?.length ?? 0)) {
+            s2Papers[i].abstract = best;
           }
-        } catch { /* skip */ }
-      })
-    ),
+        }
+      } catch { /* skip */ }
+    })(),
 
     // Pass 3: OpenAlex (title search, inverted index)
     Promise.all(
