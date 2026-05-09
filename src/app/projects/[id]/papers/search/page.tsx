@@ -420,9 +420,22 @@ export default function PaperSearchPage() {
     provider?: string;
     createdAt: string;
   }>>(NS, "searchHistory", []);
-  const [chatMessages, setChatMessages] = usePersistedState<
-    Array<{ role: "user" | "assistant"; content: string; thinking?: string }>
-  >(NS, "chatMessages", []);
+  // Each search record gets its own chat — keyed by search ID
+  const [activeSearchId, setActiveSearchId] = usePersistedState<string>(NS, "activeSearchId", "default");
+  const [allChats, setAllChats] = usePersistedState<
+    Record<string, Array<{ role: "user" | "assistant"; content: string; thinking?: string }>>
+  >(NS, "allChats", {});
+  const chatMessages = allChats[activeSearchId] ?? [];
+  const setChatMessages = useCallback(
+    (v: Array<{ role: "user" | "assistant"; content: string; thinking?: string }> | ((prev: Array<{ role: "user" | "assistant"; content: string; thinking?: string }>) => Array<{ role: "user" | "assistant"; content: string; thinking?: string }>)) => {
+      setAllChats(prev => {
+        const old = prev[activeSearchId] ?? [];
+        const next = typeof v === "function" ? v(old) : v;
+        return { ...prev, [activeSearchId]: next };
+      });
+    },
+    [activeSearchId, setAllChats]
+  );
   const [chatOpen, setChatOpen] = usePersistedState<boolean>(NS, "chatOpen", false);
   const [historyCollapsed, setHistoryCollapsed] = usePersistedState<boolean>(NS, "historyCollapsed", false);
   const [planSections, setPlanSections] = usePersistedState(NS, "planSections", {
@@ -1141,7 +1154,15 @@ ${fullTextContext}` : ""}`;
         });
     }
 
-    // Save search history
+    // Save search history + assign unique chat ID
+    const newSearchId = `s-${Date.now()}`;
+    // Migrate current chat from temp ID to the new one
+    setAllChats(prev => {
+      const msgs = prev[activeSearchId] ?? [];
+      return { ...prev, [newSearchId]: msgs };
+    });
+    setActiveSearchId(newSearchId);
+
     fetch("/api/search-history", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1163,6 +1184,14 @@ ${fullTextContext}` : ""}`;
           if (prev.some(h => h.id === d.record.id)) return prev;
           return [d.record, ...prev];
         });
+        // Update active ID to the real DB ID
+        setAllChats(prev => {
+          const msgs = (prev as Record<string, unknown>)[newSearchId] as typeof chatMessages ?? [];
+          const updated: Record<string, typeof chatMessages> = { ...prev, [d.record.id]: msgs };
+          delete updated[newSearchId];
+          return updated;
+        });
+        setActiveSearchId(d.record.id);
       }
     }).catch(() => {});
   }
@@ -1479,7 +1508,7 @@ Note journal rankings (UTD24/FT50/ABS4*). Use Chinese academic writing style.`,
           {historyCollapsed ? (
             <button
               onClick={() => {
-                setChatMessages([]);
+                setActiveSearchId(`new-${Date.now()}`);
                 setPapers([]);
                 setMeta(null);
                 setSearchPlan(null);
@@ -1502,7 +1531,7 @@ Note journal rankings (UTD24/FT50/ABS4*). Use Chinese academic writing style.`,
           ) : (
             <button
               onClick={() => {
-                setChatMessages([]);
+                setActiveSearchId(`new-${Date.now()}`);
                 setPapers([]);
                 setMeta(null);
                 setSearchPlan(null);
@@ -1563,9 +1592,10 @@ Note journal rankings (UTD24/FT50/ABS4*). Use Chinese academic writing style.`,
                   searchHistory.map((h) => (
                     <div
                       key={h.id}
-                      className="group p-3 border-b border-border/30 hover:bg-muted/50 cursor-pointer transition-colors"
+                      className={`group p-3 border-b border-border/30 cursor-pointer transition-colors ${activeSearchId === h.id ? "bg-teal/10 border-l-2 border-l-teal" : "hover:bg-muted/50"}`}
                       onClick={async () => {
                         try {
+                          setActiveSearchId(h.id); // Switch to this search's chat
                           const res = await fetch(`/api/search-history?id=${h.id}`);
                           const data = await res.json();
                           const rec = data.record;
@@ -1623,12 +1653,13 @@ Note journal rankings (UTD24/FT50/ABS4*). Use Chinese academic writing style.`,
                                 fetch(`/api/search-history?id=${h.id}`, { method: "DELETE" }),
                                 fetch(`/api/chat-history?projectId=${projectId}&query=${encodeURIComponent(deletedQuery)}`, { method: "DELETE" }),
                               ]).catch(() => {});
-                              // 2. Remove from local search history list
+                              // 2. Remove from local search history + clean up its chat
                               setSearchHistory((prev) => prev.filter((x) => x.id !== h.id));
+                              setAllChats(prev => { const u = { ...prev }; delete u[h.id]; return u; });
                               // 3. If deleted query matches current active query, clear everything
                               if (query === deletedQuery || query === h.translatedQuery) {
+                                setActiveSearchId(`new-${Date.now()}`);
                                 setPapers([]);
-                                setChatMessages([]);
                                 setMeta(null);
                                 setSearchPlan(null);
                                 setSearchStats(null);
