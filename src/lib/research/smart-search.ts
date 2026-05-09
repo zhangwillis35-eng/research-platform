@@ -656,10 +656,12 @@ export async function smartSearch(
 
   if (enableRelevanceScoring && papers.length > 0) {
     // Phase 1: Quick abstract-based scoring (ALL papers)
-    onProgress?.("score", `AI 摘要快速评分: ${papers.length} 篇...`);
+    onProgress?.("score", `AI 摘要快速评分: 0/${papers.length} 篇...`);
     try {
       // Always use deepseek-fast for scoring — fastest + cheapest for structured JSON
-      scoredPapers = await scoreRelevance(papers, input, plan.translatedInput, "deepseek-fast");
+      scoredPapers = await scoreRelevance(papers, input, plan.translatedInput, "deepseek-fast",
+        (scored, total) => onProgress?.("score", `AI 摘要快速评分: ${scored}/${total} 篇...`)
+      );
       scoredPapers = filterByRelevance(scoredPapers, 3); // Lower threshold for first pass
       relevanceScored = true;
     } catch (err) {

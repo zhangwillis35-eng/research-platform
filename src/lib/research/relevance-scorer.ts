@@ -207,7 +207,8 @@ export async function scoreRelevance(
   papers: UnifiedPaper[],
   userQuery: string,
   translatedQuery: string | undefined,
-  provider: AIProvider = SCORING_DEFAULT_PROVIDER
+  provider: AIProvider = SCORING_DEFAULT_PROVIDER,
+  onProgress?: (scored: number, total: number) => void
 ): Promise<ScoredPaper[]> {
   if (papers.length === 0) return [];
 
@@ -296,6 +297,8 @@ export async function scoreRelevance(
       },
       SCORING_CONCURRENCY,
       (completed, total) => {
+        const scored = Math.min(completed * getBatchSize(papers.length), papers.length);
+        onProgress?.(scored, papers.length);
         if (completed % 5 === 0 || completed === total) {
           console.log(`[relevance-scorer] Batch progress: ${completed}/${total} batches`);
         }
@@ -331,6 +334,7 @@ export async function scoreRelevance(
       },
       SCORING_CONCURRENCY,
       (completed, total) => {
+        onProgress?.(completed, total);
         if (completed % 10 === 0 || completed === total) {
           console.log(`[relevance-scorer] Progress: ${completed}/${total}`);
         }
