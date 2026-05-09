@@ -129,6 +129,11 @@ export async function POST(request: Request) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+          const keepalive = setInterval(() => {
+            try { controller.enqueue(encoder.encode(`: keepalive
+
+`)); } catch { /* closed */ }
+          }, 10000);
       function send(data: Record<string, unknown>) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
       }
@@ -274,7 +279,8 @@ export async function POST(request: Request) {
       );
 
       send({ type: "done", analyzed, failed, total: papers.length, withFullText });
-      controller.close();
+      clearInterval(keepalive);
+        controller.close();
     },
   });
 

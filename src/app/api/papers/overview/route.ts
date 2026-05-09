@@ -90,16 +90,21 @@ Format requirements:
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
       async start(controller) {
+          const keepalive = setInterval(() => {
+            try { controller.enqueue(encoder.encode(`: keepalive
+
+`)); } catch { /* closed */ }
+          }, 10000);
         try {
           for await (const chunk of batchStream(stream, 30)) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: chunk })}\n\n`));
           }
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`));
-          controller.close();
         } catch (err) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: String(err) })}\n\n`));
-          controller.close();
         }
+        clearInterval(keepalive);
+        controller.close();
       },
     });
 

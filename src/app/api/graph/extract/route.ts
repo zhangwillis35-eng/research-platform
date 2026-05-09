@@ -366,6 +366,11 @@ async function handleParallel(papers: Paper[], provider: AIProvider, externalCon
 
   const stream = new ReadableStream({
     async start(controller) {
+          const keepalive = setInterval(() => {
+            try { controller.enqueue(encoder.encode(`: keepalive
+
+`)); } catch { /* closed */ }
+          }, 10000);
       function send(data: Record<string, unknown>) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
       }
@@ -429,6 +434,7 @@ async function handleParallel(papers: Paper[], provider: AIProvider, externalCon
 
       if (subGraphs.length === 0) {
         send({ type: "error", message: "所有子代理提取失败" });
+        clearInterval(keepalive);
         controller.close();
         return;
       }

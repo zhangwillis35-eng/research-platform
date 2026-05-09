@@ -42,6 +42,11 @@ export async function POST(request: Request) {
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
     async start(controller) {
+          const keepalive = setInterval(() => {
+            try { controller.enqueue(encoder.encode(`: keepalive
+
+`)); } catch { /* closed */ }
+          }, 10000);
       try {
         for await (const event of runIdeaPipelineStream(
           papers,
@@ -53,6 +58,7 @@ export async function POST(request: Request) {
             encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
           );
         }
+        clearInterval(keepalive);
         controller.close();
       } catch (err) {
         console.error("[ideas] Pipeline error:", err);

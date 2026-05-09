@@ -40,6 +40,11 @@ export async function POST(request: Request) {
   if (action === "translate") {
     const readable = new ReadableStream({
       async start(controller) {
+          const keepalive = setInterval(() => {
+            try { controller.enqueue(encoder.encode(`: keepalive
+
+`)); } catch { /* closed */ }
+          }, 10000);
         try {
           for await (const event of translatePaperStream(text, title, provider)) {
             controller.enqueue(
@@ -53,6 +58,7 @@ export async function POST(request: Request) {
             )
           );
         }
+        clearInterval(keepalive);
         controller.close();
       },
     });
