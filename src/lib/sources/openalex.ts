@@ -140,6 +140,121 @@ function mapOpenAlexWork(w: Record<string, unknown>): UnifiedPaper {
   };
 }
 
+// Known journal → OpenAlex source ID mapping (from weekly-digest)
+const JOURNAL_SOURCE_IDS: Record<string, string> = {
+  "nature": "S137773608",
+  "science": "S3880285",
+  "nature machine intelligence": "S2912241403",
+  "nature computational science": "S4210228084",
+  "nature human behaviour": "S2764866340",
+  "nature communications": "S64187185",
+  "nature electronics": "S4210239724",
+  "science advances": "S2737427234",
+  "science robotics": "S4210213233",
+  "pnas": "S125754415",
+  "proceedings of the national academy of sciences": "S125754415",
+  "management science": "S33323087",
+  "mis quarterly": "S57293258",
+  "information systems research": "S202812398",
+  "academy of management journal": "S117778295",
+  "academy of management review": "S24092667",
+  "organization science": "S206124708",
+  "strategic management journal": "S102949365",
+  "journal of marketing": "S142990027",
+  "journal of consumer research": "S15424610",
+  "marketing science": "S154084757",
+  "journal of marketing research": "S6029591",
+  "journal of management": "S91740795",
+  "journal of applied psychology": "S182017137",
+  "journal of business ethics": "S150700104",
+  "research policy": "S68862796",
+  "journal of management studies": "S56749031",
+  "journal of the academy of marketing science": "S2735964968",
+  "harvard business review": "S86510944",
+};
+
+/**
+ * Search OpenAlex for papers in SPECIFIC journals.
+ * Uses source ID filter (display_name.search doesn't work reliably).
+ */
+export async function searchOpenAlexByJournals(
+  query: string,
+  journalNames: string[],
+  options: { yearFrom?: number; yearTo?: number; limit?: number } = {}
+): Promise<UnifiedPaper[]> {
+  const { yearFrom, yearTo, limit = 50 } = options;
+
+  // Resolve journal names to source IDs
+  const sourceIds: string[] = [];
+  const unknownJournals: string[] = [];
+  for (const name of journalNames) {
+    const id = JOURNAL_SOURCE_IDS[name.toLowerCase()];
+    if (id) {
+      sourceIds.push(id);
+    } else {
+      unknownJournals.push(name);
+    }
+  }
+
+  // For unknown journals, look up source IDs via OpenAlex API
+  if (unknownJournals.length > 0) {
+    await Promise.all(
+      unknownJournals.map(async (name) => {
+        try {
+          const res = await fetch(
+            `${BASE_URL}/sources?search=${encodeURIComponent(name)}&per_page=1&select=id`,
+            { signal: AbortSignal.timeout(5000) }
+          );
+          if (!res.ok) return;
+          const data = await res.json();
+          const id = data.results?.[0]?.id?.replace("https://openalex.org/", "");
+          if (id) sourceIds.push(id);
+        } catch { /* skip */ }
+      })
+    );
+  }
+
+  if (sourceIds.length === 0) return [];
+
+  // Search with source ID filter (pipe = OR)
+  const allPapers: UnifiedPaper[] = [];
+  const BATCH = 10; // OpenAlex supports up to ~50 source IDs per pipe
+  for (let i = 0; i < sourceIds.length; i += BATCH) {
+    const batch = sourceIds.slice(i, i + BATCH);
+    try {
+      const filters = [
+        "type:article",
+        `primary_location.source.id:${batch.join("|")}`,
+      ];
+      if (yearFrom) filters.push(`from_publication_date:${yearFrom}-01-01`);
+      if (yearTo) filters.push(`to_publication_date:${yearTo}-12-31`);
+
+      const params = new URLSearchParams({
+        search: query,
+        per_page: String(Math.min(limit, 50)),
+        filter: filters.join(","),
+        sort: "relevance_score:desc",
+        select: "id,doi,title,display_name,publication_year,cited_by_count,referenced_works_count,authorships,primary_location,abstract_inverted_index,open_access,topics",
+      });
+
+      const email = (await import("@/lib/env")).getEnv("OPENALEX_EMAIL");
+      if (email) params.set("mailto", email);
+
+      const res = await fetch(`${BASE_URL}/works?${params}`, {
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!res.ok) continue;
+
+      const data = await res.json();
+      for (const w of data.results ?? []) {
+        allPapers.push(mapOpenAlexWork(w));
+      }
+    } catch { /* skip */ }
+  }
+
+  return allPapers;
+}
+
 function invertedIndexToText(
   index: Record<string, number[]> | null | undefined
 ): string | undefined {

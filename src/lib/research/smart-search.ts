@@ -10,6 +10,7 @@
 import { callAI } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
 import { searchAllSourcesRaw, enrichPapersBatch } from "@/lib/sources/aggregator";
+import { searchOpenAlexByJournals } from "@/lib/sources/openalex";
 import type { SearchResult } from "@/lib/sources/types";
 import type { UnifiedPaper } from "@/lib/sources/types";
 import { scoreRelevance, scoreRelevanceWithFullText, filterByRelevance, type ScoredPaper } from "./relevance-scorer";
@@ -32,6 +33,8 @@ export interface SearchFilters {
   yearTo?: number;
   requireUTD24?: boolean;
   requireFT50?: boolean;
+  /** Specific journal names user wants to search in (e.g. ["Nature", "Science"]) */
+  targetJournals?: string[];
 }
 
 export interface SmartSearchPlan {
@@ -306,6 +309,12 @@ Specific filter examples:
 - "UTD24期刊" → filters.requireUTD24 = true
 - "FT50" → filters.requireFT50 = true
 - "高质量期刊" / "好期刊" / "权威期刊" → filters.requireHighQuality = true
+- Specific journal names: "发表在Nature/Science的" → filters.targetJournals = ["Nature", "Science"]
+  When user mentions journal FAMILIES (e.g. "Nature及其子刊"), expand to ALL sub-journals:
+  - "Nature及其子刊/Nature family" → ["Nature", "Nature Machine Intelligence", "Nature Computational Science", "Nature Human Behaviour", "Nature Communications", "Nature Electronics"]
+  - "Science及其子刊/Science family" → ["Science", "Science Advances", "Science Robotics"]
+  - "管理学顶刊" / "UTD24" → filters.requireUTD24 = true (use filter, not targetJournals)
+  IMPORTANT: targetJournals uses EXACT English journal names. Always use official English names.
 
 Year/time filter examples (IMPORTANT — extract ALL time references):
 - "2020年以后" / "2020年之后" / "从2020年开始" → filters.yearFrom = 2020
@@ -329,7 +338,8 @@ Output STRICT JSON only:
   "broadQueries": ["\"AI washing\" OR \"AI greenwashing\" OR \"artificial intelligence washing\" OR \"AI hype\""],
   "filters": {
     "minABS": "3",
-    "requireSSCI": true
+    "requireSSCI": true,
+    "targetJournals": ["Nature", "Science"]
   }
 }
 
@@ -570,6 +580,26 @@ export async function smartSearch(
 
     allResults = [...(gsResults ?? []), ...(freeResults ?? []), ...(rawResults ? [rawResults] : [])];
   }
+
+  // ── Targeted journal search (when user specifies specific journals) ──
+  // Uses OpenAlex source name filter for precise journal-level results
+  const targetJournals = plan.filters.targetJournals;
+  if (targetJournals && targetJournals.length > 0) {
+    onProgress?.("journal-search", `定向检索指定期刊: ${targetJournals.join(", ")}...`);
+    const topicQuery = plan.translatedInput || input;
+    try {
+      const journalResults = await searchOpenAlexByJournals(
+        topicQuery, targetJournals, { yearFrom, yearTo, limit: 50 }
+      );
+      if (journalResults.length > 0) {
+        allResults.push({ papers: journalResults, results: [] as SearchResult[] });
+        console.log(`[smart-search] Targeted journal search found ${journalResults.length} papers`);
+      }
+    } catch (err) {
+      console.error("[smart-search] Targeted journal search failed:", err);
+    }
+  }
+
   const totalRaw = allResults.reduce((sum, r) => sum + r.papers.length, 0);
   onProgress?.("dedup", `检索到 ${totalRaw} 条结果，正在去重合并...`);
 
@@ -746,6 +776,13 @@ export async function smartSearch(
       // UTD24 / FT50
       if (f.requireUTD24 && !ranking?.utd24) return false;
       if (f.requireFT50 && !ranking?.ft50) return false;
+
+      // Target specific journals — fuzzy match on venue name
+      if (f.targetJournals && f.targetJournals.length > 0) {
+        const venue = (p.venue ?? "").toLowerCase();
+        const match = f.targetJournals.some(j => venue.includes(j.toLowerCase()));
+        if (!match) return false;
+      }
 
       // "高质量期刊" — OR logic: paper must match at least ONE quality indicator
       if (f.requireHighQuality) {
