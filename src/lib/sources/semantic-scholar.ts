@@ -56,7 +56,9 @@ export async function searchSemanticScholar(
     query,
     limit: String(Math.min(limit, 100)), // S2 supports up to 100
     fields: FIELDS,
-    sort: "citationCount:desc", // High-citation landmark papers first
+    // Use S2 default relevance ranking — sort=citationCount:desc returns
+    // ANY high-cited paper matching individual words (e.g. "intelligence"
+    // matches psychology papers), destroying search precision
   });
 
   if (yearFrom != null || yearTo != null) {
