@@ -272,7 +272,7 @@ export async function scoreRelevance(
           jsonMode: true,
           noThinking: true,
           temperature: 0.1,
-          maxTokens: batch.papers.length * 60,
+          maxTokens: batch.papers.length * 100,
         });
 
         const cleaned = response.content
