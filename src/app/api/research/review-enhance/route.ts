@@ -135,38 +135,23 @@ export async function POST(request: Request) {
     };
 
     return createSSEStream(async (send) => {
-      // Step 1: Multi-keyword parallel search (each keyword finds different papers)
-      const queryKeywords = keywords.slice(0, 8);
-      send({ type: "status", message: `正在用 ${queryKeywords.length} 个关键词并行检索...` });
+      // Step 1: Use full smartSearch pipeline (same as 文献检索)
+      // One call with combined keywords — includes LLM keyword expansion,
+      // multi-source search, dedup, enrichment, and AI relevance scoring
+      const searchQuery = keywords.slice(0, 5).join(", ");
+      send({ type: "status", message: `正在检索补充文献: ${searchQuery.slice(0, 60)}...` });
 
-      // Search each keyword independently + one combined query, all in parallel
-      const searches = [
-        // Combined broad query
-        smartSearch(queryKeywords.slice(0, 3).join(" AND "), pipelineProvider, 20, false, () => {}, journalLang),
-        // Individual keyword searches (narrower, more diverse results)
-        ...queryKeywords.slice(0, 5).map(kw =>
-          smartSearch(kw, pipelineProvider, 15, false, () => {}, journalLang)
-        ),
-      ];
+      const searchResult = await smartSearch(
+        searchQuery,
+        pipelineProvider,
+        50,
+        true, // enable AI relevance scoring (same quality as main search)
+        (phase, detail) => send({ type: "status", message: detail }),
+        journalLang,
+      );
 
-      const results = await Promise.all(searches.map(p => p.catch(() => ({ papers: [] }))));
-
-      // Merge & deduplicate by title
-      const seen = new Set<string>();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const allPapers: any[] = [];
-      for (const r of results) {
-        for (const p of (r as { papers: unknown[] }).papers ?? []) {
-          const title = (p as { title: string }).title?.toLowerCase().trim();
-          if (title && !seen.has(title)) {
-            seen.add(title);
-            allPapers.push(p);
-          }
-        }
-      }
-
-      const searchPapersRaw = allPapers.slice(0, 50);
-      send({ type: "status", message: `检索到 ${searchPapersRaw.length} 篇论文（去重后），正在批量分析...` });
+      const searchPapersRaw = searchResult.papers.slice(0, 50);
+      send({ type: "status", message: `检索到 ${searchPapersRaw.length} 篇高质量论文，正在批量分析...` });
 
       // Step 2: Batch AI analysis (1 call per 10 papers instead of 1 per paper)
       const { callAI: callAIBatch } = await import("@/lib/ai");
