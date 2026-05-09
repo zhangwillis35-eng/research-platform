@@ -34,25 +34,25 @@ export interface ScoredPaper extends UnifiedPaper {
   hasFullText?: boolean;
 }
 
-const SCORING_CONCURRENCY = 5;
-// Batch mode: 10 papers per LLM call, 5 concurrent = 50 papers per round
-const BATCH_SCORING_THRESHOLD = 5;
-
-/** Batch size — 10 papers per call (balanced speed vs JSON reliability) */
-function getBatchSize(_paperCount: number): number {
-  return 10;
-}
+const SCORING_CONCURRENCY = 10;
+// Single mode: 1 paper per LLM call — ensures each paper gets careful evaluation
+// Batch mode produced lazy "all 5" scores with no differentiation
+const BATCH_SCORING_THRESHOLD = 999; // disabled — always single mode
 const SCORING_DEFAULT_PROVIDER: AIProvider = "deepseek-fast";
 
-const SINGLE_SYSTEM = `You are a management research literature expert. Evaluate the paper's relevance to the user's query.
+const SINGLE_SYSTEM = `You are a strict academic paper relevance scorer. Evaluate ONE paper against the user's query.
 
-You are given the paper's title, abstract, and possibly CITATION CONTEXTS (sentences from OTHER papers that cite this paper — these reveal the paper's key contributions and findings even without the full text).
+SCORING RULES (follow EXACTLY):
+- 9-10: Paper is a COMPREHENSIVE review/survey of the EXACT query topic, OR a landmark foundational paper defining the field
+- 7-8: Paper directly studies the query topic as its PRIMARY focus
+- 5-6: Paper is related but the query topic is only a SECONDARY aspect
+- 3-4: Paper shares some keywords but studies a DIFFERENT topic
+- 0-2: Paper is about a completely unrelated field
 
-Scoring (0-10): 9-10 exact match, 7-8 highly relevant, 5-6 moderately relevant, 3-4 marginally relevant, 0-2 irrelevant.
-Rules: Base analysis strictly on actual content provided. Use citation contexts to understand the paper's impact and findings. Never fabricate.
+CRITICAL: Most papers should get 7-8 if they're on-topic. Reserve 9-10 ONLY for comprehensive reviews/surveys and highly-cited foundational works. Score 5-6 means the paper is NOT primarily about the query topic.
 
-Output a JSON object. Use Chinese for all text fields:
-{"score":8,"reason":"(1-2 sentences in Chinese)","keyMatch":["matched concepts"],"contribution":"(1-2 sentences in Chinese)","methodology":"(1 sentence in Chinese)","innovation":"(1 sentence in Chinese)","dataSource":"摘要+引用上下文"}`;
+Output JSON (Chinese text):
+{"score":8,"reason":"具体说明为什么给这个分数（2-3句话，引用论文标题中的关键词）","keyMatch":["匹配的概念"],"contribution":"该论文的核心贡献（1-2句）","methodology":"研究方法（1句）","innovation":"创新点（1句）","dataSource":"摘要"}`;
 
 const FULLTEXT_SYSTEM = `You are a management research literature expert. Evaluate the paper's relevance to the user's query based on its FULL TEXT content.
 
@@ -328,16 +328,21 @@ export async function scoreRelevance(
           jsonMode: true,
           noThinking: true,
           temperature: 0,
-          maxTokens: 400,
+          maxTokens: 500,
         });
 
         const cleaned = response.content
           .replace(/```json\s*/g, "")
           .replace(/```\s*/g, "")
           .trim();
-        const parsed = JSON.parse(cleaned);
-        const s = Array.isArray(parsed) ? parsed[0] : parsed;
-        allScores.set(idx, parseScore(s));
+        try {
+          const parsed = JSON.parse(cleaned);
+          const s = Array.isArray(parsed) ? parsed[0] : parsed;
+          allScores.set(idx, parseScore(s));
+        } catch {
+          // JSON parse failed — skip this paper
+          console.warn(`[relevance-scorer] Parse failed for paper ${idx}: ${cleaned.slice(0, 100)}`);
+        }
       },
       SCORING_CONCURRENCY,
       (completed, total) => {
