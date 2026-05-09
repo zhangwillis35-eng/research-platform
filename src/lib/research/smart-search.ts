@@ -426,14 +426,14 @@ export async function smartSearch(
       })),
     ]);
 
-    // 60s hard timeout — enough for S2/OpenAlex to return alongside GS
+    // 120s hard timeout — quality over speed, ensure all sources return
     const [gsResults, freeResults, rawResults] = await Promise.race([
       searchPromise,
       new Promise<[typeof gsResults, typeof freeResults, { papers: UnifiedPaper[]; results: SearchResult[] }]>((resolve) =>
         setTimeout(() => {
-          console.log("[smart-search] 60s search deadline hit, using partial results");
+          console.log("[smart-search] 120s search deadline hit, using partial results");
           resolve([[], [], { papers: [], results: [] }]);
-        }, 60000)
+        }, 120000)
       ),
     ]) as [Array<{ papers: UnifiedPaper[]; results: SearchResult[] }>, Array<{ papers: UnifiedPaper[]; results: SearchResult[] }>, { papers: UnifiedPaper[]; results: SearchResult[] }];
 
@@ -522,7 +522,7 @@ export async function smartSearch(
   try {
     enrichedPapers = await Promise.race([
       enrichPapersBatch(rawPapers),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("enrich_timeout")), 45000)),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("enrich_timeout")), 60000)),
     ]);
   } catch (err) {
     if ((err as Error).message === "enrich_timeout") {
