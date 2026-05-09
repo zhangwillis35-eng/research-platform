@@ -135,7 +135,7 @@ export default function ReviewGeneratePage() {
           action: "analyze", topic,
           papers: activePapers.map((p) => ({
             title: p.title, abstract: p.abstract, year: p.year, venue: p.venue,
-            fullText: p.fullText?.slice(0, 5000),
+            fullText: p.fullText,
           })),
         }, signal).then(data => {
           if (data.article) stormContextRef.current = data.article;
@@ -148,7 +148,7 @@ export default function ReviewGeneratePage() {
 
     const papersForReview = activePapers.map((p) => ({
       ...p,
-      fullText: p.fullText?.slice(0, 5000),
+      fullText: p.fullText,
     }));
     papersForReviewRef.current = papersForReview;
 
@@ -221,7 +221,7 @@ export default function ReviewGeneratePage() {
 
     const papersForReview = papersForReviewRef.current.length > 0
       ? papersForReviewRef.current
-      : activePapers.map((p) => ({ ...p, fullText: p.fullText?.slice(0, 5000) }));
+      : activePapers.map((p) => ({ ...p, fullText: p.fullText }));
 
     try {
       const reviewRes = await fetch("/api/research/review", {

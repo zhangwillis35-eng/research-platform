@@ -46,7 +46,7 @@ export async function generateOutline(
     .slice(0, 30)
     .map(
       (p, i) =>
-        `[${i + 1}] ${p.title} (${p.year ?? "N/A"}) — ${p.venue ?? "Unknown"}${p.journalRanking?.badges?.length ? ` [${p.journalRanking.badges.join("/")}]` : ""}\n摘要: ${p.abstract?.slice(0, 200) ?? "N/A"}`
+        `[${i + 1}] ${p.title} (${p.year ?? "N/A"}) — ${p.venue ?? "Unknown"}${p.journalRanking?.badges?.length ? ` [${p.journalRanking.badges.join("/")}]` : ""}\n摘要: ${p.abstract ?? "N/A"}`
     )
     .join("\n\n");
 
@@ -123,7 +123,7 @@ async function generateSectionText(
     .map((r) => {
       const p = papers[r - 1];
       const ft = (p as unknown as { fullText?: string }).fullText;
-      return `[${r}] ${p.authors?.[0]?.name ?? "Unknown"} et al. (${p.year ?? "N/A"}). ${p.title}. ${p.venue ?? ""}${p.journalRanking?.badges?.length ? ` [${p.journalRanking.badges.join("/")}]` : ""}\n摘要: ${p.abstract?.slice(0, 400) ?? "N/A"}${ft ? `\n全文节选: ${ft.slice(0, 3000)}` : ""}`;
+      return `[${r}] ${p.authors?.[0]?.name ?? "Unknown"} et al. (${p.year ?? "N/A"}). ${p.title}. ${p.venue ?? ""}${p.journalRanking?.badges?.length ? ` [${p.journalRanking.badges.join("/")}]` : ""}\n摘要: ${p.abstract ?? "N/A"}${ft ? `\n全文: ${ft}` : ""}`;
     })
     .join("\n\n");
 
@@ -188,12 +188,7 @@ export async function* generateReviewStream(
 
   const rawDraft = `# ${outline.title}\n\n${assembled}${gapsText}${futureText}\n\n## 参考文献\n\n${paperList}`;
 
-  // Coherence pass — stream the final polished version
-  // Trim draft if too long to avoid exceeding context window
-  const maxDraftLen = 30000;
-  const trimmedDraft = rawDraft.length > maxDraftLen
-    ? rawDraft.slice(0, maxDraftLen) + "\n\n[...部分内容已截断以适应模型上下文长度]"
-    : rawDraft;
+  // Coherence pass — stream the final polished version (no input truncation)
 
   try {
     const stream = streamAI({
@@ -201,7 +196,7 @@ export async function* generateReviewStream(
       system: COHERENCE_SYSTEM,
       messages: [{
         role: "user",
-        content: `以下是由多个章节并行生成后拼接的文献综述草稿。请润色为一篇连贯的完整综述。\n\n目标字数: ${totalTarget} 字（${wordCount ? `${wordCount.min}-${wordCount.max}` : "约6000"}字）\n\n${stormContext ? `[STORM 深度分析参考]\n${stormContext.slice(0, 8000)}\n\n` : ""}${trimmedDraft}`,
+        content: `以下是由多个章节并行生成后拼接的文献综述草稿。请润色为一篇连贯的完整综述。\n\n目标字数: ${totalTarget} 字（${wordCount ? `${wordCount.min}-${wordCount.max}` : "约6000"}字）\n\n${stormContext ? `[STORM 深度分析参考]\n${stormContext}\n\n` : ""}${rawDraft}`,
       }],
       noThinking: true,
 
@@ -216,6 +211,6 @@ export async function* generateReviewStream(
     // If coherence pass fails, yield the raw draft instead of nothing
     console.error("[storm-review] Coherence pass failed:", err);
     yield "\n\n[润色步骤失败，以下为原始拼接版本]\n\n";
-    yield trimmedDraft;
+    yield rawDraft;
   }
 }

@@ -123,35 +123,34 @@ export async function analyzeDraft(
   // Two parallel calls: (A) analyze draft structure, (B) match library papers
   // This halves wall-clock time vs one giant call
 
-  const draftSlice = draftText.slice(0, 12000);
+  // 3 parallel calls — NO input truncation, full draft text
 
-  // Call A: Analyze draft — split into 2 smaller calls for reliable JSON
-  // A1: Structure analysis (topic, themes, outline, weak sections)
+  // A1: Structure analysis
   const structurePromise = callAI({
     provider,
-    system: `Analyze this Chinese literature review draft. Output JSON:
+    system: `Analyze this literature review draft. Output JSON:
 {"topic":"主题(中文1-2句)","keyThemes":["主题1","主题2"],"structureOutline":[{"heading":"章节标题","summary":"概要","citationCount":0}],"weakSections":["薄弱环节"],"keywords":["English keyword 1","keyword 2","keyword 3","keyword 4","keyword 5"]}
 
 keywords must be 5-10 English academic search terms. Be concise.`,
-    messages: [{ role: "user", content: draftSlice.slice(0, 8000) }],
+    messages: [{ role: "user", content: draftText }],
     jsonMode: true,
     noThinking: true,
     temperature: 0.2,
-    maxTokens: 2000,
+    maxTokens: 3000,
   });
 
-  // A2: Extract cited references (separate call — this list can be long)
+  // A2: Extract cited references
   const refsPromise = callAI({
     provider,
-    system: `Extract cited papers from this review draft. Output JSON: {"citedReferences":["Author (Year)","Author (Year)"]}. List up to 15 most important ones.`,
-    messages: [{ role: "user", content: draftSlice.slice(0, 10000) }],
+    system: `Extract cited papers from this review draft. Output JSON: {"citedReferences":["Author (Year)","Author (Year)"]}. List up to 20 most important ones.`,
+    messages: [{ role: "user", content: draftText }],
     jsonMode: true,
     noThinking: true,
     temperature: 0,
-    maxTokens: 1500,
+    maxTokens: 2000,
   });
 
-  // Call B: Match library papers against draft (compact — titles only)
+  // A3: Match library papers
   const libraryTitles = libraryPapers.slice(0, 50).map((p, i) =>
     `[${i + 1}] ${p.title} (${p.year ?? "?"})`
   ).join("\n");
@@ -159,7 +158,7 @@ keywords must be 5-10 English academic search terms. Be concise.`,
   const matchPromise = callAI({
     provider,
     system: `Count how many of these library papers are cited or closely referenced in the draft. Return JSON: {"libraryMatchCount": N}`,
-    messages: [{ role: "user", content: `Draft (first 5000 chars):\n${draftSlice.slice(0, 5000)}\n\nLibrary papers:\n${libraryTitles}` }],
+    messages: [{ role: "user", content: `Draft:\n${draftText}\n\nLibrary papers:\n${libraryTitles}` }],
     jsonMode: true,
     noThinking: true,
     temperature: 0,
@@ -198,8 +197,8 @@ keywords must be 5-10 English academic search terms. Be concise.`,
   let keywords = structure.keywords as string[] ?? [];
   if (keywords.length === 0) {
     // Extract English terms from draft (look for parenthesized English terms)
-    const englishTerms = draftSlice.match(/\b[A-Z][a-z]+(?:\s[A-Z][a-z]+){1,3}\b/g) ?? [];
-    const unique = [...new Set(englishTerms)].slice(0, 8);
+    const englishTerms = draftText.match(/\b[A-Z][a-z]+(?:\s[A-Z][a-z]+){1,3}\b/g) ?? [];
+    const unique = [...new Set(englishTerms as string[])].slice(0, 8);
     keywords = unique.length > 0 ? unique : ["artificial intelligence", "machine learning"];
   }
 
@@ -453,7 +452,7 @@ export async function* rewriteReviewStream(
       const inPlan = planPaperTitles.has(p.title);
       // Full text only for papers in the plan, abstract for others
       const content = inPlan && p.fullText
-        ? `Full text:\n${p.fullText.slice(0, 3000)}`
+        ? `Full text:\n${p.fullText}`
         : `Abstract: ${(p.abstract ?? "").slice(0, 300)}`;
       return `Authors: ${authors}\nYear: ${p.year ?? "?"}\nTitle: ${p.title}\nVenue: ${p.venue ?? ""}\n${content}`;
     }),
@@ -468,7 +467,7 @@ export async function* rewriteReviewStream(
       { role: "system", content: REWRITE_PROMPT },
       {
         role: "user",
-        content: `## Target Word Count: ${wordCount ? `${wordCount.min}-${wordCount.max}` : "8000-12000"}字\n\n## Overall Strategy:\n${revisionPlan.overallStrategy}\n\n## Revision Plan:\n${planContext}\n\n## Original Draft:\n${draftText.slice(0, 12000)}\n\n## Available Papers:\n${papersContext}`,
+        content: `## Target Word Count: ${wordCount ? `${wordCount.min}-${wordCount.max}` : "8000-12000"}字\n\n## Overall Strategy:\n${revisionPlan.overallStrategy}\n\n## Revision Plan:\n${planContext}\n\n## Original Draft:\n${draftText}\n\n## Available Papers:\n${papersContext}`,
       },
     ],
     noThinking: true,
@@ -499,7 +498,7 @@ export async function* integratePapersStream(
 ): AsyncGenerator<string> {
   const papersContext = newPapers.map((p, i) => {
     const authors = typeof p.authors === "string" ? p.authors : (p.authors ?? []).map(a => a.name).join(", ");
-    return `[${i + 1}] ${p.title} (${p.year ?? "?"}) — ${authors}\n${p.fullText ? p.fullText.slice(0, 3000) : (p.abstract ?? "")}`;
+    return `[${i + 1}] ${p.title} (${p.year ?? "?"}) — ${authors}\n${p.fullText ? p.fullText : (p.abstract ?? "")}`;
   }).join("\n\n");
 
   const stream = streamAI({
@@ -509,7 +508,7 @@ export async function* integratePapersStream(
       { role: "system", content: INTEGRATE_PROMPT },
       {
         role: "user",
-        content: `## Current Review:\n${existingReview.slice(0, 12000)}\n\n## New Papers to Integrate (${newPapers.length}):\n${papersContext}`,
+        content: `## Current Review:\n${existingReview}\n\n## New Papers to Integrate (${newPapers.length}):\n${papersContext}`,
       },
     ],
     temperature: 0.4,

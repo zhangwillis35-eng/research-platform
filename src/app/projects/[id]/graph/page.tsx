@@ -243,7 +243,7 @@ export default function GraphPage() {
         abstract: p.abstract,
         year: p.year,
         venue: p.venue,
-        fullText: p.fullText?.slice(0, 5000),
+        fullText: p.fullText,
       }));
 
       const graphRes = await fetch("/api/graph/extract", {

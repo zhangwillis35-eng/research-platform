@@ -86,7 +86,7 @@ export default function ProposalPage() {
             action: "analyze", topic,
             papers: activePapers.map((p) => ({
               title: p.title, abstract: p.abstract, year: p.year, venue: p.venue,
-              fullText: p.fullText?.slice(0, 3000),
+              fullText: p.fullText,
             })),
           }, signal);
           if (stormData.article) externalContext = stormData.article;
@@ -104,7 +104,7 @@ export default function ProposalPage() {
         year: p.year,
         venue: p.venue,
         doi: p.doi,
-        fullText: p.fullText?.slice(0, 5000),
+        fullText: p.fullText,
       }));
 
       const res = await fetch("/api/research/proposal", {
