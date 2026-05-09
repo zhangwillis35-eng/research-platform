@@ -722,14 +722,13 @@ export async function smartSearch(
       const meta = p.journalMeta;
       const ranking = p.journalRanking;
 
-      // ABS filter
+      // ABS filter — only exclude papers that HAVE an ABS rating below the threshold
+      // Papers without ABS data are kept (ABS only covers business journals)
       if (f.minABS && meta?.absRating) {
         const absOrder = ["1", "2", "3", "4", "4*"];
         const paperLevel = absOrder.indexOf(meta.absRating);
         const minLevel = absOrder.indexOf(f.minABS);
         if (paperLevel < minLevel) return false;
-      } else if (f.minABS && !meta?.absRating) {
-        return false; // No ABS rating = excluded when ABS filter is set
       }
 
       // SSCI filter
@@ -747,34 +746,28 @@ export async function smartSearch(
       // FMS filter
       if (f.requireFMS && !meta?.fms) return false;
 
-      // CAS zone filter
+      // CAS zone filter — keep papers without CAS data
       if (f.minCASZone && meta?.casZone) {
         const zoneOrder = ["四区", "三区", "二区", "一区"];
         const paperZone = zoneOrder.indexOf(meta.casZone);
         const minZone = zoneOrder.indexOf(f.minCASZone);
         if (paperZone < minZone) return false;
-      } else if (f.minCASZone && !meta?.casZone) {
-        return false;
       }
 
-      // JCR quartile filter
+      // JCR quartile filter — keep papers without JCR data
       if (f.minJCR && meta?.jcrQuartile) {
         const jcrOrder = ["Q4", "Q3", "Q2", "Q1"];
         const paperJCR = jcrOrder.indexOf(meta.jcrQuartile);
         const minJCR = jcrOrder.indexOf(f.minJCR);
         if (paperJCR < minJCR) return false;
-      } else if (f.minJCR && !meta?.jcrQuartile) {
-        return false;
       }
 
-      // CCF rating filter
+      // CCF rating filter — keep papers without CCF data
       if (f.minCCF && meta?.ccfRating) {
         const ccfOrder = ["C", "B", "A"];
         const paperCCF = ccfOrder.indexOf(meta.ccfRating);
         const minCCF = ccfOrder.indexOf(f.minCCF);
         if (paperCCF < minCCF) return false;
-      } else if (f.minCCF && !meta?.ccfRating) {
-        return false;
       }
 
       // IF filter
