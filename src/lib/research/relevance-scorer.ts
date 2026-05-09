@@ -39,11 +39,9 @@ const SCORING_CONCURRENCY = 3;
 // Avoids DeepSeek rate limiting (80 concurrent single calls → 429 errors → lost scores)
 const BATCH_SCORING_THRESHOLD = 5;
 
-/** Batch size (only used if threshold is lowered) */
-function getBatchSize(paperCount: number): number {
-  if (paperCount >= 80) return 40;
-  if (paperCount >= 40) return 25;
-  return 15;
+/** Batch size — 5 papers per LLM call for reliable JSON parsing */
+function getBatchSize(_paperCount: number): number {
+  return 5;
 }
 const SCORING_DEFAULT_PROVIDER: AIProvider = "deepseek-fast";
 
