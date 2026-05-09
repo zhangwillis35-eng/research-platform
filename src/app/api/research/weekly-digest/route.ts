@@ -421,10 +421,19 @@ async function runDigest(projectId: string, daysBack: number = 30) {
 
   // Fetch ONLY from top journals: Nature/Science/PNAS family + FT50 (via OpenAlex targeted search)
   // User requirement: no broad/arXiv/GS — only the highest quality journals
+  // First try: last daysBack days
   console.log(`[weekly-digest] Fetching AI papers from Nature/Science/PNAS/FT50, last ${daysBack} days...`);
-  const targetPapers = await fetchFromOpenAlex(daysBack);
+  let targetPapers = await fetchFromOpenAlex(daysBack);
+  console.log(`[weekly-digest] Found: ${targetPapers.length} papers (last ${daysBack} days)`);
 
-  console.log(`[weekly-digest] Found: ${targetPapers.length} papers from top journals`);
+  // Fallback: if too few results, expand to full current year
+  if (targetPapers.length < 10) {
+    const currentYear = new Date().getFullYear();
+    const yearStart = Math.round((new Date(`${currentYear}-01-01`).getTime() - Date.now()) / (-86400000));
+    console.log(`[weekly-digest] Too few results, expanding to full ${currentYear} (${yearStart} days back)...`);
+    targetPapers = await fetchFromOpenAlex(yearStart);
+    console.log(`[weekly-digest] Expanded: ${targetPapers.length} papers (full ${currentYear})`);
+  }
 
   // No year filter — daysBack already handles recency via OpenAlex date filter
   // Sort by citations and take top 80
