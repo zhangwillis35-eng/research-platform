@@ -34,10 +34,10 @@ export interface ScoredPaper extends UnifiedPaper {
   hasFullText?: boolean;
 }
 
-const SCORING_CONCURRENCY = 80;
-// Always use single-paper mode — each paper gets its own LLM call
-// This is FASTER than batch: 80 parallel 1s calls < 2 serial 20s batch calls
-const BATCH_SCORING_THRESHOLD = 999; // effectively disabled — always single mode
+const SCORING_CONCURRENCY = 3;
+// Batch mode: 10 papers per LLM call, 3 concurrent = max 30 papers per round
+// Avoids DeepSeek rate limiting (80 concurrent single calls → 429 errors → lost scores)
+const BATCH_SCORING_THRESHOLD = 5;
 
 /** Batch size (only used if threshold is lowered) */
 function getBatchSize(paperCount: number): number {

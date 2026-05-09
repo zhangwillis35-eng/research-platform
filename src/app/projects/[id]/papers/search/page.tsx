@@ -409,7 +409,7 @@ export default function PaperSearchPage() {
   const [paperBatchMap, setPaperBatchMap] = usePersistedState<Map<number, string>>(NS, "paperBatchMap", new Map());
   const [savedPaperKeys, setSavedPaperKeys] = usePersistedState<Set<string>>(NS, "savedPaperKeys", new Set());
   const [enableRelevance, setEnableRelevance] = usePersistedState<boolean>(NS, "enableRelevance", true);
-  const [searchLimit, setSearchLimit] = usePersistedState<number>(NS, "searchLimit", 20);
+  const [searchLimit, setSearchLimit] = usePersistedState<number>(NS, "searchLimit", 50);
   const [searchOverview, setSearchOverview] = usePersistedState<string | null>(NS, "searchOverview", null);
   const [searchHistory, setSearchHistory] = usePersistedState<Array<{
     id: string;
