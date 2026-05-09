@@ -119,16 +119,15 @@ export default function ReviewGeneratePage() {
     setOutlineModInput("");
     setOutlineModError(null);
 
-    // Optional: STORM pre-analysis
+    // Optional: STORM pre-analysis (reduced input for speed)
     if (analysisEngine === "storm") {
       setPhase("outlining");
       try {
         const { callStormAPI } = await import("@/lib/storm-client");
         await callStormAPI({
           action: "analyze", topic,
-          papers: activePapers.slice(0, 25).map((p) => ({
-            title: p.title, abstract: p.abstract, year: p.year, venue: p.venue,
-            fullText: p.fullText?.slice(0, 5000),
+          papers: activePapers.slice(0, 15).map((p) => ({
+            title: p.title, abstract: p.abstract?.slice(0, 300), year: p.year, venue: p.venue,
           })),
         }, signal);
       } catch { /* continue */ }
@@ -491,62 +490,85 @@ Return the modified outline as JSON only.`;
       {/* Outline Review Phase */}
       {phase === "outline-review" && outline && (
         <div className="space-y-4">
-          <div className="grid lg:grid-cols-2 gap-4">
-            {/* Outline sections */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm">综述大纲 — {outline.title}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                {outline.sections.map((s, i) => (
-                  <div key={i} className="flex gap-2">
-                    <span className="text-teal font-bold shrink-0">{i + 1}.</span>
-                    <div>
-                      <p className="font-medium leading-snug">{s.heading}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {s.perspective} · {s.paperRefs.length} 篇引用
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-
-            <div className="space-y-4">
-              {outline.gaps.length > 0 && (
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm text-amber-600">研究空白</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {outline.gaps.map((gap, i) => (
-                      <p key={i} className="text-xs text-muted-foreground">• {gap}</p>
-                    ))}
-                  </CardContent>
-                </Card>
-              )}
-
-              {outline.futureDirections.length > 0 && (
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm text-teal">未来方向</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {outline.futureDirections.map((dir, i) => (
-                      <p key={i} className="text-xs text-muted-foreground">• {dir}</p>
-                    ))}
-                  </CardContent>
-                </Card>
-              )}
-
+          {/* Outline title + perspectives */}
+          <Card className="border-teal/30 bg-teal/[0.02]">
+            <CardContent className="p-5">
+              <h2 className="text-lg font-bold text-foreground mb-2">{outline.title}</h2>
               {outline.perspectives.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-wrap gap-2">
                   {outline.perspectives.map((p) => (
-                    <Badge key={p} variant="secondary" className="text-[10px]">{p}</Badge>
+                    <Badge key={p} variant="secondary" className="text-xs px-2.5 py-0.5">{p}</Badge>
                   ))}
                 </div>
               )}
-            </div>
+            </CardContent>
+          </Card>
+
+          {/* Outline sections — full width, detailed */}
+          <div className="space-y-3">
+            {outline.sections.map((s, i) => (
+              <Card key={i} className="border-l-4 border-l-teal/60">
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex gap-3 flex-1">
+                      <span className="text-teal font-bold text-lg shrink-0 mt-0.5">{i + 1}</span>
+                      <div className="flex-1">
+                        <p className="font-semibold text-base leading-snug">{s.heading}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge variant="outline" className="text-[10px] px-1.5">{s.perspective}</Badge>
+                          <span className="text-xs text-muted-foreground">{s.paperRefs.length} 篇引用</span>
+                        </div>
+                        {s.keyFindings?.length > 0 && (
+                          <ul className="mt-2 space-y-1">
+                            {s.keyFindings.map((f, j) => (
+                              <li key={j} className="text-sm text-muted-foreground flex gap-1.5">
+                                <span className="text-teal/60 shrink-0">•</span>
+                                <span>{f}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Gaps + Future directions side by side */}
+          <div className="grid md:grid-cols-2 gap-4">
+            {outline.gaps.length > 0 && (
+              <Card className="border-amber-200/50">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold text-amber-600">研究空白</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {outline.gaps.map((gap, i) => (
+                    <p key={i} className="text-sm text-muted-foreground flex gap-1.5">
+                      <span className="text-amber-400 shrink-0">▸</span>
+                      <span>{gap}</span>
+                    </p>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
+            {outline.futureDirections.length > 0 && (
+              <Card className="border-teal/30">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold text-teal">未来方向</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {outline.futureDirections.map((dir, i) => (
+                    <p key={i} className="text-sm text-muted-foreground flex gap-1.5">
+                      <span className="text-teal/60 shrink-0">▸</span>
+                      <span>{dir}</span>
+                    </p>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           {/* Outline modification chat */}
