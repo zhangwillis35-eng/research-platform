@@ -56,6 +56,10 @@ export async function POST(request: Request) {
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
       async start(controller) {
+        const keepalive = setInterval(() => {
+          try { controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "ping" })}\n\n`)); } catch { /* closed */ }
+        }, 8000);
+
         try {
           controller.enqueue(encoder.encode(
             `data: ${JSON.stringify({ type: "status", message: `正在使用 ${engine === "builtin" ? "AI" : engine.toUpperCase()} 分析文献假设...` })}\n\n`
@@ -82,6 +86,7 @@ export async function POST(request: Request) {
             `data: ${JSON.stringify({ type: "error", error: String(err) })}\n\n`
           ));
         }
+        clearInterval(keepalive);
         controller.close();
       },
     });
@@ -98,3 +103,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
+
+export const maxDuration = 300;

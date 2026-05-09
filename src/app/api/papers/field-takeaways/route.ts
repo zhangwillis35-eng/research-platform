@@ -54,10 +54,15 @@ export async function POST(request: Request) {
 
     const notebookUrl: string | null = null;
 
-    // Stream response
+    // Stream response with keepalive for long STORM operations
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
       async start(controller) {
+        // Keepalive: STORM subprocess can take 30-60s with no output
+        const keepalive = setInterval(() => {
+          try { controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "ping" })}\n\n`)); } catch { /* closed */ }
+        }, 8000);
+
         try {
           controller.enqueue(encoder.encode(
             `data: ${JSON.stringify({ type: "status", message: `正在使用 ${engine === "builtin" ? "AI" : engine.toUpperCase()} 生成领域要点...` })}\n\n`
@@ -84,6 +89,7 @@ export async function POST(request: Request) {
             `data: ${JSON.stringify({ type: "error", error: String(err) })}\n\n`
           ));
         }
+        clearInterval(keepalive);
         controller.close();
       },
     });
@@ -100,3 +106,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
+
+export const maxDuration = 300;

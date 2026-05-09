@@ -146,3 +146,5 @@ Format requirements:
     );
   }
 }
+
+export const maxDuration = 300;
