@@ -417,17 +417,21 @@ async function runDigest(projectId: string, daysBack: number = 30) {
   const weekLabel = getWeekLabel();
   const folderName = `AI 前沿周刊 ${weekLabel}`;
 
-  // Fetch ONLY from UTD24 + FT50 + Nature/Science (via OpenAlex targeted search)
-  console.log(`[weekly-digest] Fetching AI papers from UTD24/FT50/Nature/Science, last ${daysBack} days...`);
-  const targetPapers = await fetchFromOpenAlex(daysBack);
+  // Fetch from ALL sources in parallel — always gets fresh results
+  console.log(`[weekly-digest] Fetching AI papers from all sources, last ${daysBack} days...`);
+  const [targetPapers, broadPapers, arxivPapers, gsPapers] = await Promise.all([
+    fetchFromOpenAlex(daysBack),
+    fetchBroadAI(daysBack),
+    fetchArxivAI(daysBack),
+    fetchGoogleScholarAI(),
+  ]);
 
-  console.log(`[weekly-digest] Found: ${targetPapers.length} papers from top journals`);
+  console.log(`[weekly-digest] Found: target=${targetPapers.length}, broad=${broadPapers.length}, arxiv=${arxivPapers.length}, gs=${gsPapers.length}`);
 
-  // Strict year filter
   const currentYear = new Date().getFullYear();
   const minYear = currentYear - 1;
 
-  const allPapers = dedupByTitle(targetPapers)
+  const allPapers = dedupByTitle([...targetPapers, ...broadPapers, ...arxivPapers, ...gsPapers])
     .filter((p) => !p.year || p.year >= minYear);
   console.log(`[weekly-digest] After dedup + year filter (>=${minYear}): ${allPapers.length}`);
 
