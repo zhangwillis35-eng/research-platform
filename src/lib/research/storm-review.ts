@@ -148,6 +148,7 @@ export async function* generateReviewStream(
   papers: UnifiedPaper[],
   provider: AIProvider = "deepseek-fast",
   wordCount?: { min: number; max: number },
+  stormContext?: string,
 ): AsyncGenerator<string> {
   const totalTarget = wordCount ? Math.round((wordCount.min + wordCount.max) / 2) : 6000;
   const sectionCount = outline.sections.length || 1;
@@ -200,7 +201,7 @@ export async function* generateReviewStream(
       system: COHERENCE_SYSTEM,
       messages: [{
         role: "user",
-        content: `以下是由多个章节并行生成后拼接的文献综述草稿。请润色为一篇连贯的完整综述。\n\n目标字数: ${totalTarget} 字（${wordCount ? `${wordCount.min}-${wordCount.max}` : "约6000"}字）\n\n${trimmedDraft}`,
+        content: `以下是由多个章节并行生成后拼接的文献综述草稿。请润色为一篇连贯的完整综述。\n\n目标字数: ${totalTarget} 字（${wordCount ? `${wordCount.min}-${wordCount.max}` : "约6000"}字）\n\n${stormContext ? `[STORM 深度分析参考]\n${stormContext.slice(0, 8000)}\n\n` : ""}${trimmedDraft}`,
       }],
       noThinking: true,
 

@@ -23,6 +23,7 @@ export async function POST(request: Request) {
       wordCount,
       outlineOnly = false,
       outline: providedOutline,
+      stormContext,
     } = body as {
       topic: string;
       papers: UnifiedPaper[];
@@ -31,6 +32,7 @@ export async function POST(request: Request) {
       wordCount?: { min: number; max: number };
       outlineOnly?: boolean;
       outline?: ReviewOutline;
+      stormContext?: string;
     };
 
     if (!topic || !papers?.length) {
@@ -88,7 +90,7 @@ export async function POST(request: Request) {
             )
           );
 
-          const stream = generateReviewStream(outline, papers, provider, wordCount);
+          const stream = generateReviewStream(outline, papers, provider, wordCount, stormContext);
           for await (const chunk of stream) {
             controller.enqueue(
               encoder.encode(

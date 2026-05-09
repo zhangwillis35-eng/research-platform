@@ -108,6 +108,8 @@ export default function ReviewGeneratePage() {
 
   const activePapers = papers;
 
+  const stormContextRef = useRef<string>("");
+
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
     if (!topic.trim() || activePapers.length === 0) return;
@@ -118,19 +120,22 @@ export default function ReviewGeneratePage() {
     setReviewText("");
     setOutlineModInput("");
     setOutlineModError(null);
+    stormContextRef.current = "";
 
-    // Optional: STORM pre-analysis (reduced input for speed)
+    // STORM runs in BACKGROUND while outline generates in foreground
+    // STORM reads full text — its result is used in the writing phase
     if (analysisEngine === "storm") {
-      setPhase("outlining");
-      try {
-        const { callStormAPI } = await import("@/lib/storm-client");
-        await callStormAPI({
+      import("@/lib/storm-client").then(({ callStormAPI }) => {
+        callStormAPI({
           action: "analyze", topic,
-          papers: activePapers.slice(0, 15).map((p) => ({
-            title: p.title, abstract: p.abstract?.slice(0, 300), year: p.year, venue: p.venue,
+          papers: activePapers.slice(0, 25).map((p) => ({
+            title: p.title, abstract: p.abstract, year: p.year, venue: p.venue,
+            fullText: p.fullText?.slice(0, 5000),
           })),
-        }, signal);
-      } catch { /* continue */ }
+        }, signal).then(data => {
+          if (data.article) stormContextRef.current = data.article;
+        }).catch(() => {});
+      });
     }
 
     setPhase("outlining");
@@ -217,6 +222,7 @@ export default function ReviewGeneratePage() {
           provider,
           wordCount: { min: wordCountMin, max: wordCountMax },
           outline,
+          stormContext: stormContextRef.current || undefined,
         }),
         signal,
       });
