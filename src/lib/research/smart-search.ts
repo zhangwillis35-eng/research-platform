@@ -133,7 +133,7 @@ function isQualitySource(p: UnifiedPaper): boolean {
   return false;
 }
 
-/** Sort: relevance → priority tier → journal grade → IF → citations */
+/** Sort: relevance → citations → journal grade */
 function sortByQuality(papers: ScoredPaper[]): ScoredPaper[] {
   return papers.sort((a, b) => {
     // Primary: relevance score
@@ -141,10 +141,8 @@ function sortByQuality(papers: ScoredPaper[]): ScoredPaper[] {
     const scoreB = b.relevanceScore ?? 0;
     if (scoreB !== scoreA) return scoreB - scoreA;
 
-    // Secondary: priority tier
-    const aTier = getPriorityTier(a);
-    const bTier = getPriorityTier(b);
-    if (aTier !== bTier) return aTier - bTier;
+    // Secondary: citation count (same score → higher citations = more authoritative)
+    if (b.citationCount !== a.citationCount) return b.citationCount - a.citationCount;
 
     // Tertiary: journal grade (UTD24/FT50 > JCR Q1 > Q2)
     const jcrOrder: Record<string, number> = { Q1: 4, Q2: 3, Q3: 2, Q4: 1 };

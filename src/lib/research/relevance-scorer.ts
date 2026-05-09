@@ -34,10 +34,10 @@ export interface ScoredPaper extends UnifiedPaper {
   hasFullText?: boolean;
 }
 
-const SCORING_CONCURRENCY = 5; // Reduced from 10 to prevent memory pressure on 4GB container
-// Single mode: 1 paper per LLM call — ensures each paper gets careful evaluation
-// Batch mode produced lazy "all 5" scores with no differentiation
-const BATCH_SCORING_THRESHOLD = 999; // disabled — always single mode
+const SCORING_CONCURRENCY = 10;
+// Batch mode with 5 papers/call — balances speed + differentiation
+// (10 papers/call produced lazy "all same score"; 1 paper/call too slow)
+const BATCH_SCORING_THRESHOLD = 5;
 const SCORING_DEFAULT_PROVIDER: AIProvider = "deepseek-fast";
 
 const SINGLE_SYSTEM = `You are a strict academic paper relevance scorer. Evaluate ONE paper against the user's query.
@@ -82,20 +82,20 @@ Output a JSON array, one element per paper. Use Chinese for all text fields:
 
 const BATCH_SYSTEM = `You are an academic literature relevance scorer. Your ONLY job is to evaluate how well each paper matches the user's SPECIFIC search query.
 
-CRITICAL: Score STRICTLY based on topical relevance to the user's query. The query text is provided at the top of each request — read it carefully.
-- A paper about "AI sycophancy" is NOT relevant to a query about "XAI" (explainable AI)
-- A paper about "memory capacity" is NOT relevant to a query about "artificial intelligence"
-- High citation count does NOT mean high relevance — only topic match matters
+CRITICAL RULES:
+1. Score STRICTLY based on topical relevance to the user's query.
+2. You MUST differentiate scores — NOT all papers should get the same score.
+3. First mentally RANK papers from most to least relevant, THEN assign scores.
 
 Scoring (0-10):
-- 9-10: Paper directly addresses the EXACT topic in the query
-- 7-8: Paper is closely related to the query topic
-- 5-6: Paper is tangentially related (shares some concepts but different focus)
-- 3-4: Paper is marginally related (only shares broad field)
-- 0-2: Paper is about a different topic entirely
+- 9-10: ONLY for comprehensive reviews/surveys of the EXACT query topic
+- 7-8: Paper's PRIMARY focus matches the query topic
+- 5-6: Query topic is a SECONDARY aspect of the paper
+- 3-4: Shares keywords but studies a DIFFERENT topic
+- 0-2: Completely unrelated field
 
 Output a JSON array. Use Chinese for text fields:
-[{"index":0,"score":8,"reason":"(1-2 sentences explaining WHY this score, referencing the query)","keyMatch":["matched concepts"],"contribution":"(1-2 sentences)","methodology":"(1 sentence)","innovation":"(1 sentence)","dataSource":"摘要"}]`;
+[{"index":0,"score":8,"reason":"具体说明为什么给这个分数","keyMatch":["matched concepts"],"contribution":"核心贡献（1-2句）","methodology":"方法（1句）","innovation":"创新点（1句）","dataSource":"摘要"}]`;
 
 function buildSinglePrompt(
   paper: UnifiedPaper,
