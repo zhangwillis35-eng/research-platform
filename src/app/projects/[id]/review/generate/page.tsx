@@ -109,6 +109,8 @@ export default function ReviewGeneratePage() {
   const activePapers = papers;
 
   const stormContextRef = useRef<string>("");
+  const stormPromiseRef = useRef<Promise<void> | null>(null);
+  const [stormReady, setStormReady] = useState(false);
 
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
@@ -121,11 +123,14 @@ export default function ReviewGeneratePage() {
     setOutlineModInput("");
     setOutlineModError(null);
     stormContextRef.current = "";
+    setStormReady(false);
+    stormPromiseRef.current = null;
 
     // STORM runs in BACKGROUND while outline generates in foreground
-    // STORM reads full text — its result is used in the writing phase
+    // Result is paper-level analysis (independent of outline structure),
+    // so it remains valid even if user modifies the outline.
     if (analysisEngine === "storm") {
-      import("@/lib/storm-client").then(({ callStormAPI }) => {
+      stormPromiseRef.current = import("@/lib/storm-client").then(({ callStormAPI }) =>
         callStormAPI({
           action: "analyze", topic,
           papers: activePapers.slice(0, 25).map((p) => ({
@@ -134,8 +139,9 @@ export default function ReviewGeneratePage() {
           })),
         }, signal).then(data => {
           if (data.article) stormContextRef.current = data.article;
-        }).catch(() => {});
-      });
+          setStormReady(true);
+        }).catch(() => { setStormReady(true); })
+      );
     }
 
     setPhase("outlining");
@@ -207,6 +213,11 @@ export default function ReviewGeneratePage() {
     setError(null);
     setReviewText("");
     setPhase("writing");
+
+    // Wait for STORM if it's still running (typically finishes during outline review)
+    if (stormPromiseRef.current && !stormReady) {
+      try { await stormPromiseRef.current; } catch { /* continue */ }
+    }
 
     const papersForReview = papersForReviewRef.current.length > 0
       ? papersForReviewRef.current
@@ -609,13 +620,30 @@ Return the modified outline as JSON only.`;
             </CardContent>
           </Card>
 
+          {/* STORM status indicator */}
+          {analysisEngine === "storm" && (
+            <div className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-md ${stormReady ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"}`}>
+              {stormReady ? (
+                <>
+                  <span>✓</span>
+                  <span>STORM 深度分析完成（{stormContextRef.current ? `${Math.round(stormContextRef.current.length / 1000)}k 字符` : "无结果"}），将注入综述写作</span>
+                </>
+              ) : (
+                <>
+                  <span className="animate-pulse">●</span>
+                  <span>STORM 正在后台分析全文... 您可以同时修改大纲，STORM 结果将在写作阶段自动注入</span>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Action buttons */}
           <div className="flex items-center gap-3">
             <Button
               onClick={handleConfirmAndWrite}
               className="bg-green-600 text-white hover:bg-green-700"
             >
-              确认大纲，开始撰写完整综述
+              {analysisEngine === "storm" && !stormReady ? "确认大纲（等待 STORM 完成后开始）" : "确认大纲，开始撰写完整综述"}
             </Button>
             <Button
               variant="outline"
