@@ -202,11 +202,13 @@ KEY TERMS (3-5 complete academic phrases):
 - Use the FORMAL academic term top journals use, not literal translation (e.g. "AI谄媚" → "sycophancy")
 - For broad concepts (e.g. "碳排放"): include the full semantic family (carbon emissions, CO2, net-zero, decarbonization, greenhouse gas)
 
-SYNONYMS (6-8 per key term, ALL English): cover — direct synonyms, broader/narrower terms, adjacent research streams, formal academic terms, mechanism/measurement terms.
+SYNONYMS (6-8 per key term, ALL English): MUST cover — the FULL expanded form of abbreviations (XAI→Explainable Artificial Intelligence), direct synonyms, broader/narrower terms, adjacent research streams, formal academic terms, mechanism/measurement terms.
 
 QUERIES:
-- precisionQueries (4-6): exact-phrase searches using key terms + top synonyms
-- broadQueries (2-3): OR-connected synonym groups; for RELATIONAL include both directions in one broad query
+- precisionQueries (4-6): Mix of exact-phrase AND unquoted searches.
+  MUST include: 1) the FULL expanded form of any abbreviation without quotes (e.g. "XAI" → explainable artificial intelligence), 2) the abbreviation with a descriptor (e.g. XAI survey, XAI review), 3) key synonyms as phrases.
+  Do NOT put quotes on every query — only use quotes for multi-word terms that MUST appear together (e.g. "AI washing"). Single concepts like explainable artificial intelligence work BETTER without quotes.
+- broadQueries (2-3): OR-connected synonym groups covering the full semantic field; for RELATIONAL include both directions in one broad query
 
 FILTERS (only extract if user explicitly mentioned):
 - Journal: "SSCI"→requireSSCI, "SCI"→requireSCI, "ABS3星+"→minABS="3", "JCR Q1"→minJCR="Q1", "CCF A"→minCCF="A", "CSSCI/C刊"→requireCSSCI, "北大核心"→requirePKUCore, "UTD24"→requireUTD24, "FT50"→requireFT50, "FMS"→requireFMS, "高质量/好期刊/权威期刊"→requireHighQuality, "影响因子N+"→minIF, "引用N+"→minCitations
@@ -385,10 +387,12 @@ export async function smartSearch(
     const gsPrecisionQuery = precisionQueries.join(" OR ");
     const gsBroadQuery = broadQueries.join(" OR ");
     const gsQueries = [gsPrecisionQuery, gsBroadQuery].filter(Boolean);
-    // Free source queries: 3 precision + 2 broad (exact-phrase focused)
-    const freeQueries = [...precisionQueries.slice(0, 3), ...broadQueries.slice(0, 2)];
+    // Free source queries: precision + broad + key terms unquoted
+    // Strip quotes from some precision queries to catch partial matches
+    const unquotedPrecision = precisionQueries.slice(0, 2).map(q => q.replace(/"/g, ""));
+    const freeQueries = [...new Set([...unquotedPrecision, ...precisionQueries.slice(0, 2), ...broadQueries.slice(0, 2)])];
     const freeLimit = Math.max(20, Math.ceil((limit * 3) / (freeQueries.length || 1)));
-    // Raw semantic query (no quotes, small limit) — supplementary, catches diverse terminology
+    // Raw semantic query (no quotes) — catches papers with diverse terminology
     const rawSemanticQuery = plan.translatedInput || input;
 
     const totalQueries = gsQueries.length + freeQueries.length + 1;
