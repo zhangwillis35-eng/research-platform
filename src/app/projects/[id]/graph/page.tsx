@@ -224,27 +224,16 @@ export default function GraphPage() {
       if (analysisEngine === "storm") {
         setLoadingPhase("STORM 文献深度分析...");
         try {
-          const stormRes = await fetch("/api/integrations/storm", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "analyze",
-              mode: "variables",
-              topic: activePapers[0]?.title?.slice(0, 50) ?? "research topic",
-              papers: activePapers.slice(0, 25).map((p) => ({
-                title: p.title,
-                abstract: p.abstract,
-                year: p.year,
-                venue: p.venue,
-              })),
-            }),
-            signal,
-          });
-          if (stormRes.ok) {
-            const stormData = await stormRes.json();
-            if (stormData.article) externalContext = stormData.article;
-          }
-        } catch { /* continue */ }
+          const { callStormAPI } = await import("@/lib/storm-client");
+          const stormData = await callStormAPI({
+            action: "analyze", mode: "variables",
+            topic: activePapers[0]?.title?.slice(0, 50) ?? "research topic",
+            papers: activePapers.slice(0, 25).map((p) => ({
+              title: p.title, abstract: p.abstract, year: p.year, venue: p.venue,
+            })),
+          }, signal);
+          if (stormData.article) externalContext = stormData.article;
+        } catch { /* continue without STORM */ }
       }
 
       setLoadingPhase("AI 元分析编码 + 领域全景生成...");

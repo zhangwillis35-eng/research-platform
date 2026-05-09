@@ -137,20 +137,12 @@ export default function TheoriesIntegratePage() {
       if (analysisEngine === "storm") {
         setStormStatus("正在通过 STORM 进行理论框架深度分析...");
         try {
-          const stormRes = await fetch("/api/integrations/storm", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "analyze",
-              topic: topic || "理论框架分析",
-              papers: activePapers.map((p) => ({ title: p.title, abstract: p.abstract })),
-            }),
-            signal,
-          });
-          if (stormRes.ok) {
-            const stormData = await stormRes.json();
-            if (stormData.combined) stormContext = stormData.combined;
-          }
+          const { callStormAPI } = await import("@/lib/storm-client");
+          const stormData = await callStormAPI({
+            action: "analyze", topic: topic || "理论框架分析",
+            papers: activePapers.map((p) => ({ title: p.title, abstract: p.abstract })),
+          }, signal);
+          if (stormData.combined) stormContext = stormData.combined;
         } catch (err) {
           if (err instanceof Error && err.name === "AbortError") throw err;
           /* continue without STORM */

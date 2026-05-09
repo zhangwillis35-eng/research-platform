@@ -128,21 +128,21 @@ export async function analyzeDraft(
   // Call A: Analyze draft (no library context needed — faster)
   const draftPromise = callAI({
     provider,
-    system: `You are an academic literature review analysis expert. Analyze the draft review and extract:
+    system: `You are an academic literature review analysis expert. Analyze the draft and extract:
 1. topic: Main research topic (1-2 sentences, Chinese)
 2. keyThemes: 3-8 major themes (Chinese)
-3. citedReferences: All cited papers from the text, format "Author (Year). Title"
-4. structureOutline: Section headings with summary and citation count
+3. citedReferences: Up to 20 most important cited papers, format "Author (Year)"
+4. structureOutline: Section headings with brief summary and citation count
 5. keywords: 5-10 English search keywords for international databases
 6. weakSections: Thin sections lacking citations or arguments (Chinese)
 
-Output JSON:
-{"topic":"...","keyThemes":["..."],"citedReferences":["..."],"structureOutline":[{"heading":"...","summary":"...","citationCount":0}],"keywords":["..."],"weakSections":["..."]}`,
+Output compact JSON:
+{"topic":"...","keyThemes":["..."],"citedReferences":["Author (Year)"],"structureOutline":[{"heading":"...","summary":"...","citationCount":0}],"keywords":["..."],"weakSections":["..."]}`,
     messages: [{ role: "user", content: draftSlice }],
     jsonMode: true,
     noThinking: true,
     temperature: 0.2,
-    maxTokens: 3000,
+    maxTokens: 4096,
   });
 
   // Call B: Match library papers against draft (compact — titles only)
@@ -162,11 +162,40 @@ Output JSON:
 
   const [draftRes, matchRes] = await Promise.all([draftPromise, matchPromise]);
 
-  const draft = JSON.parse(draftRes.content);
+  let draft: Record<string, unknown>;
+  try {
+    const jsonStr = draftRes.content.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
+    console.log("[analyze-draft] LLM response length:", draftRes.content.length, "chars, first 200:", draftRes.content.slice(0, 200));
+    draft = JSON.parse(jsonStr);
+  } catch (parseErr) {
+    console.error("[analyze-draft] JSON parse failed:", (parseErr as Error).message, "content length:", draftRes.content.length, "first 100:", draftRes.content.slice(0, 100), "last 100:", draftRes.content.slice(-100));
+    // If JSON is truncated, try to repair by closing brackets
+    let repaired = draftRes.content.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
+    // Close unclosed arrays/objects
+    const opens = (repaired.match(/[{[]/g) || []).length;
+    const closes = (repaired.match(/[}\]]/g) || []).length;
+    for (let i = 0; i < opens - closes; i++) {
+      repaired += repaired.lastIndexOf("[") > repaired.lastIndexOf("{") ? "]" : "}";
+    }
+    try {
+      draft = JSON.parse(repaired);
+    } catch {
+      // Fallback: return minimal structure
+      draft = {
+        topic: "分析失败，请重试",
+        keyThemes: [],
+        citedReferences: [],
+        structureOutline: [],
+        keywords: ["XAI"],
+        weakSections: [],
+      };
+    }
+  }
+
   let matchCount = 0;
   try { matchCount = JSON.parse(matchRes.content).libraryMatchCount ?? 0; } catch { /* skip */ }
 
-  return { ...draft, libraryMatchCount: matchCount };
+  return { ...draft, libraryMatchCount: matchCount } as DraftAnalysis;
 }
 
 // ─── Phase 2: Gap Analysis ───────────────────────

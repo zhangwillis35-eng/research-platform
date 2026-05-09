@@ -200,20 +200,12 @@ export default function ConceptualModelPage() {
       let engineInsights = "";
       if (analysisEngine === "storm") {
         try {
-          const stormRes = await fetch("/api/integrations/storm", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "analyze",
-              topic: "概念模型变量关系",
-              papers: papers.map((p) => ({ title: p.title, abstract: p.abstract })),
-            }),
-            signal,
-          });
-          if (stormRes.ok) {
-            const stormData = await stormRes.json();
-            if (stormData.combined) engineInsights = "\n\n[STORM 分析结果]\n" + stormData.combined;
-          }
+          const { callStormAPI } = await import("@/lib/storm-client");
+          const stormData = await callStormAPI({
+            action: "analyze", topic: "概念模型变量关系",
+            papers: papers.map((p) => ({ title: p.title, abstract: p.abstract })),
+          }, signal);
+          if (stormData.combined) engineInsights = "\n\n[STORM 分析结果]\n" + stormData.combined;
         } catch (err) {
           if (err instanceof Error && err.name === "AbortError") throw err;
           /* continue without STORM */

@@ -157,20 +157,12 @@ export default function IdeasGeneratePage() {
     if (analysisEngine === "storm") {
       setPhase("loading-storm");
       try {
-        const stormRes = await fetch("/api/integrations/storm", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "analyze",
-            topic: "研究想法生成",
-            papers: activePapers.map((p) => ({ title: p.title, abstract: p.abstract })),
-          }),
-          signal,
-        });
-        if (stormRes.ok) {
-          const stormData = await stormRes.json();
-          if (stormData.combined) engineContext = stormData.combined;
-        }
+        const { callStormAPI } = await import("@/lib/storm-client");
+        const stormData = await callStormAPI({
+          action: "analyze", topic: "研究想法生成",
+          papers: activePapers.map((p) => ({ title: p.title, abstract: p.abstract })),
+        }, signal);
+        if (stormData.combined) engineContext = stormData.combined;
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") { setPhase("idle"); return; }
         /* continue without STORM */

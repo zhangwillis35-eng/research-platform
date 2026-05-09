@@ -81,23 +81,15 @@ export default function ProposalPage() {
       if (analysisEngine === "storm") {
         setLoadingPhase("STORM 文献深度分析...");
         try {
-          const stormRes = await fetch("/api/integrations/storm", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "analyze",
-              topic,
-              papers: activePapers.slice(0, 25).map((p) => ({
-                title: p.title, abstract: p.abstract, year: p.year, venue: p.venue,
-                fullText: p.fullText?.slice(0, 3000),
-              })),
-            }),
-            signal,
-          });
-          if (stormRes.ok) {
-            const data = await stormRes.json();
-            if (data.article) externalContext = data.article;
-          }
+          const { callStormAPI } = await import("@/lib/storm-client");
+          const stormData = await callStormAPI({
+            action: "analyze", topic,
+            papers: activePapers.slice(0, 25).map((p) => ({
+              title: p.title, abstract: p.abstract, year: p.year, venue: p.venue,
+              fullText: p.fullText?.slice(0, 3000),
+            })),
+          }, signal);
+          if (stormData.article) externalContext = stormData.article;
         } catch { /* continue */ }
       }
 

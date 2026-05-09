@@ -123,22 +123,14 @@ export default function ReviewGeneratePage() {
     if (analysisEngine === "storm") {
       setPhase("outlining");
       try {
-        const stormRes = await fetch("/api/integrations/storm", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "analyze",
-            topic,
-            papers: activePapers.slice(0, 25).map((p) => ({
-              title: p.title, abstract: p.abstract, year: p.year, venue: p.venue,
-              fullText: p.fullText?.slice(0, 5000),
-            })),
-          }),
-          signal,
-        });
-        if (stormRes.ok) {
-          await stormRes.json();
-        }
+        const { callStormAPI } = await import("@/lib/storm-client");
+        await callStormAPI({
+          action: "analyze", topic,
+          papers: activePapers.slice(0, 25).map((p) => ({
+            title: p.title, abstract: p.abstract, year: p.year, venue: p.venue,
+            fullText: p.fullText?.slice(0, 5000),
+          })),
+        }, signal);
       } catch { /* continue */ }
     }
 
