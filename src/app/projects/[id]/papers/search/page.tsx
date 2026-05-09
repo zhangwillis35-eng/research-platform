@@ -1595,9 +1595,14 @@ Note journal rankings (UTD24/FT50/ABS4*). Use Chinese academic writing style.`,
                       className={`group p-3 border-b border-border/30 cursor-pointer transition-colors ${activeSearchId === h.id ? "bg-teal/10 border-l-2 border-l-teal" : "hover:bg-muted/50"}`}
                       onClick={async () => {
                         try {
-                          setActiveSearchId(h.id); // Switch to this search's chat
-                          const res = await fetch(`/api/search-history?id=${h.id}`);
-                          const data = await res.json();
+                          setActiveSearchId(h.id);
+
+                          // Load search record + chat history in parallel
+                          const [searchRes, chatRes] = await Promise.all([
+                            fetch(`/api/search-history?id=${h.id}`),
+                            fetch(`/api/chat-history?projectId=${projectId}&query=${encodeURIComponent(h.query)}`),
+                          ]);
+                          const data = await searchRes.json();
                           const rec = data.record;
                           if (!rec) return;
 
@@ -1622,6 +1627,12 @@ Note journal rankings (UTD24/FT50/ABS4*). Use Chinese academic writing style.`,
                             total: rec.paperCount ?? 0,
                             sources: [],
                           });
+
+                          // Restore chat history from DB
+                          const chatData = await chatRes.json().catch(() => ({ messages: [] }));
+                          if (chatData.messages?.length > 0) {
+                            setAllChats(prev => ({ ...prev, [h.id]: chatData.messages }));
+                          }
                         } catch {
                           setQuery(h.query);
                         }
