@@ -228,7 +228,7 @@ export default function GraphPage() {
           const stormData = await callStormAPI({
             action: "analyze", mode: "variables",
             topic: activePapers[0]?.title?.slice(0, 50) ?? "research topic",
-            papers: activePapers.slice(0, 25).map((p) => ({
+            papers: activePapers.map((p) => ({
               title: p.title, abstract: p.abstract, year: p.year, venue: p.venue,
             })),
           }, signal);

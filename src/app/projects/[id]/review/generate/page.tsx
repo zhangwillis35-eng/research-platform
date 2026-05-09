@@ -133,7 +133,7 @@ export default function ReviewGeneratePage() {
       stormPromiseRef.current = import("@/lib/storm-client").then(({ callStormAPI }) =>
         callStormAPI({
           action: "analyze", topic,
-          papers: activePapers.slice(0, 25).map((p) => ({
+          papers: activePapers.map((p) => ({
             title: p.title, abstract: p.abstract, year: p.year, venue: p.venue,
             fullText: p.fullText?.slice(0, 5000),
           })),

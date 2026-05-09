@@ -125,24 +125,30 @@ export async function analyzeDraft(
 
   const draftSlice = draftText.slice(0, 12000);
 
-  // Call A: Analyze draft (no library context needed — faster)
-  const draftPromise = callAI({
+  // Call A: Analyze draft — split into 2 smaller calls for reliable JSON
+  // A1: Structure analysis (topic, themes, outline, weak sections)
+  const structurePromise = callAI({
     provider,
-    system: `You are an academic literature review analysis expert. Analyze the draft and extract:
-1. topic: Main research topic (1-2 sentences, Chinese)
-2. keyThemes: 3-8 major themes (Chinese)
-3. citedReferences: Up to 20 most important cited papers, format "Author (Year)"
-4. structureOutline: Section headings with brief summary and citation count
-5. keywords: 5-10 English search keywords for international databases
-6. weakSections: Thin sections lacking citations or arguments (Chinese)
+    system: `Analyze this Chinese literature review draft. Output JSON:
+{"topic":"主题(中文1-2句)","keyThemes":["主题1","主题2"],"structureOutline":[{"heading":"章节标题","summary":"概要","citationCount":0}],"weakSections":["薄弱环节"],"keywords":["English keyword 1","keyword 2","keyword 3","keyword 4","keyword 5"]}
 
-Output compact JSON:
-{"topic":"...","keyThemes":["..."],"citedReferences":["Author (Year)"],"structureOutline":[{"heading":"...","summary":"...","citationCount":0}],"keywords":["..."],"weakSections":["..."]}`,
-    messages: [{ role: "user", content: draftSlice }],
+keywords must be 5-10 English academic search terms. Be concise.`,
+    messages: [{ role: "user", content: draftSlice.slice(0, 8000) }],
     jsonMode: true,
     noThinking: true,
     temperature: 0.2,
-    maxTokens: 4096,
+    maxTokens: 2000,
+  });
+
+  // A2: Extract cited references (separate call — this list can be long)
+  const refsPromise = callAI({
+    provider,
+    system: `Extract cited papers from this review draft. Output JSON: {"citedReferences":["Author (Year)","Author (Year)"]}. List up to 15 most important ones.`,
+    messages: [{ role: "user", content: draftSlice.slice(0, 10000) }],
+    jsonMode: true,
+    noThinking: true,
+    temperature: 0,
+    maxTokens: 1500,
   });
 
   // Call B: Match library papers against draft (compact — titles only)
@@ -160,42 +166,52 @@ Output compact JSON:
     maxTokens: 100,
   });
 
-  const [draftRes, matchRes] = await Promise.all([draftPromise, matchPromise]);
+  const [structureRes, refsRes, matchRes] = await Promise.all([structurePromise, refsPromise, matchPromise]);
 
-  let draft: Record<string, unknown>;
-  try {
-    const jsonStr = draftRes.content.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
-    console.log("[analyze-draft] LLM response length:", draftRes.content.length, "chars, first 200:", draftRes.content.slice(0, 200));
-    draft = JSON.parse(jsonStr);
-  } catch (parseErr) {
-    console.error("[analyze-draft] JSON parse failed:", (parseErr as Error).message, "content length:", draftRes.content.length, "first 100:", draftRes.content.slice(0, 100), "last 100:", draftRes.content.slice(-100));
-    // If JSON is truncated, try to repair by closing brackets
-    let repaired = draftRes.content.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
-    // Close unclosed arrays/objects
-    const opens = (repaired.match(/[{[]/g) || []).length;
-    const closes = (repaired.match(/[}\]]/g) || []).length;
-    for (let i = 0; i < opens - closes; i++) {
-      repaired += repaired.lastIndexOf("[") > repaired.lastIndexOf("{") ? "]" : "}";
-    }
+  function safeParseJSON(content: string, fallback: Record<string, unknown>): Record<string, unknown> {
     try {
-      draft = JSON.parse(repaired);
+      const jsonStr = content.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
+      return JSON.parse(jsonStr);
     } catch {
-      // Fallback: return minimal structure
-      draft = {
-        topic: "分析失败，请重试",
-        keyThemes: [],
-        citedReferences: [],
-        structureOutline: [],
-        keywords: ["XAI"],
-        weakSections: [],
-      };
+      // Try to repair truncated JSON
+      let repaired = content.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
+      const opens = (repaired.match(/[{[]/g) || []).length;
+      const closes = (repaired.match(/[}\]]/g) || []).length;
+      for (let i = 0; i < opens - closes; i++) {
+        repaired += repaired.lastIndexOf("[") > repaired.lastIndexOf("{") ? "]" : "}";
+      }
+      try { return JSON.parse(repaired); } catch { return fallback; }
     }
+  }
+
+  const structure = safeParseJSON(structureRes.content, {
+    topic: "分析超时，请重试",
+    keyThemes: [],
+    structureOutline: [],
+    weakSections: [],
+    keywords: [],
+  });
+
+  const refs = safeParseJSON(refsRes.content, { citedReferences: [] });
+
+  // If keywords extraction failed, extract from draft text directly
+  let keywords = structure.keywords as string[] ?? [];
+  if (keywords.length === 0) {
+    // Extract English terms from draft (look for parenthesized English terms)
+    const englishTerms = draftSlice.match(/\b[A-Z][a-z]+(?:\s[A-Z][a-z]+){1,3}\b/g) ?? [];
+    const unique = [...new Set(englishTerms)].slice(0, 8);
+    keywords = unique.length > 0 ? unique : ["artificial intelligence", "machine learning"];
   }
 
   let matchCount = 0;
   try { matchCount = JSON.parse(matchRes.content).libraryMatchCount ?? 0; } catch { /* skip */ }
 
-  return { ...draft, libraryMatchCount: matchCount } as DraftAnalysis;
+  return {
+    ...structure,
+    keywords,
+    citedReferences: (refs.citedReferences as string[]) ?? [],
+    libraryMatchCount: matchCount,
+  } as DraftAnalysis;
 }
 
 // ─── Phase 2: Gap Analysis ───────────────────────

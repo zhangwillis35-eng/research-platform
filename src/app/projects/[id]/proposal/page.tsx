@@ -84,7 +84,7 @@ export default function ProposalPage() {
           const { callStormAPI } = await import("@/lib/storm-client");
           const stormData = await callStormAPI({
             action: "analyze", topic,
-            papers: activePapers.slice(0, 25).map((p) => ({
+            papers: activePapers.map((p) => ({
               title: p.title, abstract: p.abstract, year: p.year, venue: p.venue,
               fullText: p.fullText?.slice(0, 3000),
             })),
