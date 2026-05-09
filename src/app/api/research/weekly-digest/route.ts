@@ -28,6 +28,8 @@ const TARGET_SOURCES = {
   "S4210239724": "Nature Electronics",
   "S2737427234": "Science Advances",
   "S4210213233": "Science Robotics",
+  // ─── PNAS ───
+  "S125754415": "Proceedings of the National Academy of Sciences",
   // ─── UTD24 ───
   "S33323087": "Management Science",
   "S57293258": "MIS Quarterly",
@@ -417,16 +419,12 @@ async function runDigest(projectId: string, daysBack: number = 30) {
   const weekLabel = getWeekLabel();
   const folderName = `AI 前沿周刊 ${weekLabel}`;
 
-  // Fetch from ALL sources in parallel — always gets fresh results
-  console.log(`[weekly-digest] Fetching AI papers from all sources, last ${daysBack} days...`);
-  const [targetPapers, broadPapers, arxivPapers, gsPapers] = await Promise.all([
-    fetchFromOpenAlex(daysBack),
-    fetchBroadAI(daysBack),
-    fetchArxivAI(daysBack),
-    fetchGoogleScholarAI(),
-  ]);
+  // Fetch ONLY from top journals: Nature/Science/PNAS family + FT50 (via OpenAlex targeted search)
+  // User requirement: no broad/arXiv/GS — only the highest quality journals
+  console.log(`[weekly-digest] Fetching AI papers from Nature/Science/PNAS/FT50, last ${daysBack} days...`);
+  const targetPapers = await fetchFromOpenAlex(daysBack);
 
-  console.log(`[weekly-digest] Found: target=${targetPapers.length}, broad=${broadPapers.length}, arxiv=${arxivPapers.length}, gs=${gsPapers.length}`);
+  console.log(`[weekly-digest] Found: ${targetPapers.length} papers from top journals`);
 
   const currentYear = new Date().getFullYear();
   const minYear = currentYear - 1;
