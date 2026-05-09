@@ -150,10 +150,21 @@ class BackgroundSearchManager {
           try {
             const evt = JSON.parse(line.slice(6));
             if (evt.type === "status") {
-              this.state.progress = [
-                ...this.state.progress.map((s) => ({ ...s, done: true })),
-                { phase: evt.phase ?? "", message: evt.message, done: false },
-              ];
+              const phase = evt.phase ?? "";
+              const last = this.state.progress[this.state.progress.length - 1];
+              if (last && !last.done && last.phase === phase) {
+                // Same phase — update in place (e.g. scoring progress 10/100 → 20/100)
+                this.state.progress = [
+                  ...this.state.progress.slice(0, -1),
+                  { phase, message: evt.message, done: false },
+                ];
+              } else {
+                // New phase — mark previous as done, add new entry
+                this.state.progress = [
+                  ...this.state.progress.map((s) => ({ ...s, done: true })),
+                  { phase, message: evt.message, done: false },
+                ];
+              }
               this.notify();
               this.saveState();
             } else if (evt.type === "fulltext_update") {
