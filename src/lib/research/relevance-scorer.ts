@@ -286,7 +286,7 @@ export async function scoreRelevance(
           ],
           jsonMode: true,
           noThinking: true,
-          temperature: 0.1,
+          temperature: 0,
           maxTokens: batch.papers.length * 150,
         });
 
@@ -327,7 +327,7 @@ export async function scoreRelevance(
           ],
           jsonMode: true,
           noThinking: true,
-          temperature: 0.1,
+          temperature: 0,
           maxTokens: 400,
         });
 
@@ -412,7 +412,7 @@ export async function scoreRelevanceWithFullText(
         messages: [{ role: "user", content: prompt }],
         jsonMode: true,
         noThinking: true,
-        temperature: 0.1,
+        temperature: 0,
         maxTokens: batch.papers.length * 300, // More tokens for detailed full-text analysis
       });
 
