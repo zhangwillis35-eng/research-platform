@@ -387,10 +387,11 @@ export async function smartSearch(
     const gsPrecisionQuery = precisionQueries.join(" OR ");
     const gsBroadQuery = broadQueries.join(" OR ");
     const gsQueries = [gsPrecisionQuery, gsBroadQuery].filter(Boolean);
-    // Free source queries: precision + broad + key terms unquoted
-    // Strip quotes from some precision queries to catch partial matches
+    // Free source queries: key terms (unquoted) + precision + broad
+    // Key terms unquoted are the MOST important — they match landmark papers
+    const keyTermQueries = plan.keyTerms.slice(0, 3).map(t => t.replace(/"/g, ""));
     const unquotedPrecision = precisionQueries.slice(0, 2).map(q => q.replace(/"/g, ""));
-    const freeQueries = [...new Set([...unquotedPrecision, ...precisionQueries.slice(0, 2), ...broadQueries.slice(0, 2)])];
+    const freeQueries = [...new Set([...keyTermQueries, ...unquotedPrecision, ...broadQueries.slice(0, 2)])];
     const freeLimit = Math.max(20, Math.ceil((limit * 3) / (freeQueries.length || 1)));
     // Raw semantic query (no quotes) — catches papers with diverse terminology
     const rawSemanticQuery = plan.translatedInput || input;
@@ -425,14 +426,14 @@ export async function smartSearch(
       })),
     ]);
 
-    // 30s hard timeout — use whatever results we have
+    // 60s hard timeout — enough for S2/OpenAlex to return alongside GS
     const [gsResults, freeResults, rawResults] = await Promise.race([
       searchPromise,
       new Promise<[typeof gsResults, typeof freeResults, { papers: UnifiedPaper[]; results: SearchResult[] }]>((resolve) =>
         setTimeout(() => {
-          console.log("[smart-search] 30s search deadline hit, using partial results");
+          console.log("[smart-search] 60s search deadline hit, using partial results");
           resolve([[], [], { papers: [], results: [] }]);
-        }, 30000)
+        }, 60000)
       ),
     ]) as [Array<{ papers: UnifiedPaper[]; results: SearchResult[] }>, Array<{ papers: UnifiedPaper[]; results: SearchResult[] }>, { papers: UnifiedPaper[]; results: SearchResult[] }];
 
@@ -521,7 +522,7 @@ export async function smartSearch(
   try {
     enrichedPapers = await Promise.race([
       enrichPapersBatch(rawPapers),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("enrich_timeout")), 30000)),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("enrich_timeout")), 45000)),
     ]);
   } catch (err) {
     if ((err as Error).message === "enrich_timeout") {
