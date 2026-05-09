@@ -80,15 +80,22 @@ Rules: Base analysis strictly on actual content provided. Never fabricate. For f
 Output a JSON array, one element per paper. Use Chinese for all text fields:
 [{"index":0,"score":8,"reason":"(detailed in Chinese)","keyMatch":["concepts"],"contribution":"(specific in Chinese)","methodology":"(specific in Chinese)","innovation":"(Chinese)","dataSource":"全文 or 摘要"}]`;
 
-const BATCH_SYSTEM = `You are a management research literature expert. Evaluate multiple papers' relevance to the user's query.
+const BATCH_SYSTEM = `You are an academic literature relevance scorer. Your ONLY job is to evaluate how well each paper matches the user's SPECIFIC search query.
 
-Each paper includes title, abstract, and possibly CITATION CONTEXTS (sentences from other papers citing this paper — these reveal contributions and findings even without full text).
+CRITICAL: Score STRICTLY based on topical relevance to the user's query. The query text is provided at the top of each request — read it carefully.
+- A paper about "AI sycophancy" is NOT relevant to a query about "XAI" (explainable AI)
+- A paper about "memory capacity" is NOT relevant to a query about "artificial intelligence"
+- High citation count does NOT mean high relevance — only topic match matters
 
-Scoring (0-10): 9-10 exact match, 7-8 highly relevant, 5-6 moderately relevant, 3-4 marginally relevant, 0-2 irrelevant.
-Rules: Base analysis on ALL provided content (abstract + citation contexts). Never fabricate.
+Scoring (0-10):
+- 9-10: Paper directly addresses the EXACT topic in the query
+- 7-8: Paper is closely related to the query topic
+- 5-6: Paper is tangentially related (shares some concepts but different focus)
+- 3-4: Paper is marginally related (only shares broad field)
+- 0-2: Paper is about a different topic entirely
 
-Output a JSON array, one element per paper. Use Chinese for all text fields:
-[{"index":0,"score":8,"reason":"(1-2 sentences in Chinese)","keyMatch":["concepts"],"contribution":"(1-2 sentences in Chinese)","methodology":"(1 sentence in Chinese)","innovation":"(1 sentence in Chinese)","dataSource":"摘要+引用上下文"}]`;
+Output a JSON array. Use Chinese for text fields:
+[{"index":0,"score":8,"reason":"(1-2 sentences explaining WHY this score, referencing the query)","keyMatch":["matched concepts"],"contribution":"(1-2 sentences)","methodology":"(1 sentence)","innovation":"(1 sentence)","dataSource":"摘要"}]`;
 
 function buildSinglePrompt(
   paper: UnifiedPaper,
@@ -137,9 +144,9 @@ function buildBatchPrompt(
   userQuery: string,
   translatedQuery: string | undefined
 ): string {
-  const queryDesc = translatedQuery
-    ? `查询: "${userQuery}" (${translatedQuery})`
-    : `查询: "${userQuery}"`;
+  const queryLine = translatedQuery
+    ? `>>> USER QUERY: "${userQuery}" (English: ${translatedQuery}) <<<`
+    : `>>> USER QUERY: "${userQuery}" <<<`;
 
   const papersText = papers
     .map((p, i) => {
@@ -147,16 +154,16 @@ function buildBatchPrompt(
       const ext = p as any;
       const ctxs = ext._citationContexts as string[] | undefined;
       const tldr = ext._tldr as string | undefined;
-      let text = `[${idx}] Title: ${p.title}\nVenue: ${p.venue ?? "Unknown"}\nAbstract: ${p.abstract ?? "N/A"}`;
+      let text = `[${idx}] Title: ${p.title}\nVenue: ${p.venue ?? "Unknown"}\nAbstract: ${(p.abstract ?? "N/A").slice(0, 400)}`;
       if (tldr) text += `\nTL;DR: ${tldr}`;
       if (ctxs && ctxs.length > 0) {
-        text += `\nCitation Contexts (what other papers say about this paper):\n${ctxs.slice(0, 5).map(c => `- "${c}"`).join("\n")}`;
+        text += `\nCitations:\n${ctxs.slice(0, 3).map(c => `- "${c.slice(0, 150)}"`).join("\n")}`;
       }
       return text;
     })
     .join("\n\n---\n\n");
 
-  return `${queryDesc}\n\nEvaluate the following ${papers.length} papers:\n\n${papersText}`;
+  return `${queryLine}\n\nScore each paper's relevance to the ABOVE query:\n\n${papersText}`;
 }
 
 function buildFullTextBatchPrompt(
