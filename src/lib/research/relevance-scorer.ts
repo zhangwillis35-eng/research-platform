@@ -80,8 +80,15 @@ Rules: Base analysis strictly on actual content provided. Never fabricate. For f
 Output a JSON array, one element per paper. Use Chinese for all text fields:
 [{"index":0,"score":8,"reason":"(detailed in Chinese)","keyMatch":["concepts"],"contribution":"(specific in Chinese)","methodology":"(specific in Chinese)","innovation":"(Chinese)","dataSource":"全文 or 摘要"}]`;
 
-const BATCH_SYSTEM = `Score papers' relevance to the query. Scoring: 9-10 exact match, 7-8 highly relevant, 5-6 moderate, 3-4 marginal, 0-2 irrelevant.
-Output JSON array (Chinese): [{"index":0,"score":8,"reason":"一句话理由","keyMatch":["概念"]}]`;
+const BATCH_SYSTEM = `You are a management research literature expert. Evaluate multiple papers' relevance to the user's query.
+
+Each paper includes title, abstract, and possibly CITATION CONTEXTS (sentences from other papers citing this paper — these reveal contributions and findings even without full text).
+
+Scoring (0-10): 9-10 exact match, 7-8 highly relevant, 5-6 moderately relevant, 3-4 marginally relevant, 0-2 irrelevant.
+Rules: Base analysis on ALL provided content (abstract + citation contexts). Never fabricate.
+
+Output a JSON array, one element per paper. Use Chinese for all text fields:
+[{"index":0,"score":8,"reason":"(1-2 sentences in Chinese)","keyMatch":["concepts"],"contribution":"(1-2 sentences in Chinese)","methodology":"(1 sentence in Chinese)","innovation":"(1 sentence in Chinese)","dataSource":"摘要+引用上下文"}]`;
 
 function buildSinglePrompt(
   paper: UnifiedPaper,
@@ -272,7 +279,7 @@ export async function scoreRelevance(
           jsonMode: true,
           noThinking: true,
           temperature: 0.1,
-          maxTokens: batch.papers.length * 100,
+          maxTokens: batch.papers.length * 150,
         });
 
         const cleaned = response.content
