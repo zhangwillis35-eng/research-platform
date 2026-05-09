@@ -429,7 +429,7 @@ async function runDigest(projectId: string, daysBack: number = 30) {
   const currentYear = new Date().getFullYear();
   const minYear = currentYear - 1;
 
-  const allPapers = dedupByTitle([...targetPapers, ...broadPapers, ...arxivPapers, ...gsPapers])
+  const allPapers = dedupByTitle(targetPapers)
     .filter((p) => !p.year || p.year >= minYear);
   console.log(`[weekly-digest] After dedup + year filter (>=${minYear}): ${allPapers.length}`);
 
