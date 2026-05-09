@@ -582,19 +582,34 @@ export async function smartSearch(
   }
 
   // ── Targeted journal search (when user specifies specific journals) ──
-  // Uses OpenAlex source name filter for precise journal-level results
+  // Dual strategy: OpenAlex source ID filter + Google Scholar source: operator
   const targetJournals = plan.filters.targetJournals;
   if (targetJournals && targetJournals.length > 0) {
     onProgress?.("journal-search", `定向检索指定期刊: ${targetJournals.join(", ")}...`);
     const topicQuery = plan.translatedInput || input;
     try {
-      const journalResults = await searchOpenAlexByJournals(
-        topicQuery, targetJournals, { yearFrom, yearTo, limit: 50 }
+      // Strategy 1: OpenAlex source ID filter (most precise)
+      // Strategy 2: Google Scholar source:"journal" operator (catches papers OpenAlex may miss)
+      const gsJournalQueries = targetJournals.slice(0, 3).map(j =>
+        `source:"${j}" ${topicQuery}`
       );
-      if (journalResults.length > 0) {
-        allResults.push({ papers: journalResults, results: [] as SearchResult[] });
-        console.log(`[smart-search] Targeted journal search found ${journalResults.length} papers`);
+      const [oaResults, ...gsJournalResults] = await Promise.all([
+        searchOpenAlexByJournals(topicQuery, targetJournals, { yearFrom, yearTo, limit: 50 }),
+        ...gsJournalQueries.map(q =>
+          searchAllSourcesRaw({
+            query: q, limit: 20, yearFrom, yearTo,
+            sources: ["google_scholar"],
+          }).catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
+        ),
+      ]);
+      if (oaResults.length > 0) {
+        allResults.push({ papers: oaResults, results: [] as SearchResult[] });
       }
+      for (const r of gsJournalResults) {
+        if (r.papers.length > 0) allResults.push(r);
+      }
+      const totalJournal = oaResults.length + gsJournalResults.reduce((s, r) => s + r.papers.length, 0);
+      console.log(`[smart-search] Targeted journal search found ${totalJournal} papers (OA: ${oaResults.length}, GS: ${totalJournal - oaResults.length})`);
     } catch (err) {
       console.error("[smart-search] Targeted journal search failed:", err);
     }
