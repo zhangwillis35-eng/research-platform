@@ -953,7 +953,7 @@ export default function PapersPage() {
             onClick={generateOverview}
             disabled={overviewLoading}
           >
-            {overviewLoading ? "分析中..." : "AI 综合分析"}
+            {overviewLoading ? "分析中..." : "AI 综合分析 ~70s"}
           </Button>
           <StopButton show={overviewLoading} onClick={overviewAbort.abort} />
           {overview && (
@@ -1006,6 +1006,7 @@ export default function PapersPage() {
             >
               {fieldTakeawaysLoading ? "生成中..." : "领域要点提炼"}
             </Button>
+            <span className="text-[10px] text-muted-foreground">~60s</span>
             <StopButton show={fieldTakeawaysLoading} onClick={fieldAbort.abort} />
             <Button
               variant="outline"
@@ -1014,7 +1015,7 @@ export default function PapersPage() {
               onClick={generateAssumptions}
               disabled={assumptionsLoading || fullTextPapers.length === 0}
             >
-              {assumptionsLoading ? "分析中..." : "假设对比分析"}
+              {assumptionsLoading ? "分析中..." : "假设对比分析 ~40s"}
             </Button>
             <StopButton show={assumptionsLoading} onClick={assumptionsAbort.abort} />
             {fieldTakeaways && (

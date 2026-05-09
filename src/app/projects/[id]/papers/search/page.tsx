@@ -2074,7 +2074,7 @@ Note journal rankings (UTD24/FT50/ABS4*). Use Chinese academic writing style.`,
               onClick={handleUnifiedSend}
               className="bg-teal text-teal-foreground hover:bg-teal/90 h-[38px] px-4 shrink-0"
             >
-              {searchMode ? "检索" : "发送"}
+              {searchMode ? "检索 ~120s" : "发送"}
             </Button>
           )}
         </div>

@@ -467,7 +467,7 @@ export default function TranslatePage() {
           size="sm"
         >
           {phase === "idle" || phase === "uploading"
-            ? "开始翻译"
+            ? "开始翻译 ~10s/段"
             : phase === "done"
             ? "重新翻译"
             : "翻译中..."}

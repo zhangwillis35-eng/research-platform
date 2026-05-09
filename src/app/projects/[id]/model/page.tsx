@@ -414,7 +414,7 @@ export default function ConceptualModelPage() {
           onClick={generateFromAI}
           disabled={generating}
         >
-          {generating ? "AI 生成中..." : "AI 自动生成模型"}
+          {generating ? "AI 生成中..." : "AI 自动生成模型 ~10s"}
         </Button>
         <StopButton show={generating} onClick={xAbort.abort} />
 

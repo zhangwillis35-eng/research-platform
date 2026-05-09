@@ -342,7 +342,7 @@ export default function IdeasGeneratePage() {
           disabled={(phase !== "idle" && phase !== "done") || activePapers.length === 0}
           className="bg-teal text-teal-foreground hover:bg-teal/90"
         >
-          生成研究想法
+          生成研究想法 <span className="text-[10px] opacity-60">~40s</span>
         </Button>
         <StopButton show={phase === "loading-storm" || phase === "generating" || phase === "reviewing"} onClick={xAbort.abort} />
 

@@ -264,7 +264,7 @@ export default function TheoriesIntegratePage() {
           disabled={loading || activePapers.length === 0}
           className="bg-teal text-teal-foreground hover:bg-teal/90"
         >
-          {loading ? (stormStatus || "分析中...") : "分析理论"}
+          {loading ? (stormStatus || "分析中...") : "分析理论 ~40s"}
         </Button>
         <StopButton show={loading} onClick={xAbort.abort} />
       </form>

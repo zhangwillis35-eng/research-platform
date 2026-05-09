@@ -640,12 +640,12 @@ Answer in Chinese. Be specific and actionable.`;
           {/* Action buttons */}
           <div className="flex items-center gap-2 flex-wrap">
             {!draftAnalysis && (
-              <Button onClick={handleAnalyzeDraft} disabled={isWorking} className="bg-teal text-teal-foreground hover:bg-teal/90 h-8 text-xs">分析初稿</Button>
+              <Button onClick={handleAnalyzeDraft} disabled={isWorking} className="bg-teal text-teal-foreground hover:bg-teal/90 h-8 text-xs">分析初稿 ~30s</Button>
             )}
             {draftAnalysis && !gapAnalysis && (
               <>
                 <Button onClick={handleSearchGaps} disabled={isWorking || selectedKeywords.size === 0} className="bg-teal text-teal-foreground hover:bg-teal/90 h-8 text-xs">
-                  检索补充文献（{selectedKeywords.size} 个方向）
+                  检索补充文献（{selectedKeywords.size} 个方向）~120s
                 </Button>
                 <select value={journalLang} onChange={(e) => setJournalLang(e.target.value as "en" | "zh")} className="h-8 px-2 text-xs border border-input rounded bg-background">
                   <option value="en">英文期刊</option>
@@ -655,13 +655,13 @@ Answer in Chinese. Be specific and actionable.`;
             )}
             {gapAnalysis && !revisionPlan && (
               <Button onClick={handleGeneratePlan} disabled={isWorking || (selectedGaps.size === 0 && selectedWeakSections.size === 0)} className="bg-teal text-teal-foreground hover:bg-teal/90 h-8 text-xs">
-                基于已选方案生成修改计划（{selectedGaps.size} 个缺口 · {basket.length} 篇文献 · {selectedWeakSections.size} 项改进）
+                基于已选方案生成修改计划 ~40s（{selectedGaps.size} 个缺口 · {basket.length} 篇文献 · {selectedWeakSections.size} 项改进）
               </Button>
             )}
             {basket.length > 0 && (
               <>
                 <Button onClick={handleRewrite} disabled={isWorking} className="bg-teal text-teal-foreground hover:bg-teal/90 h-8 text-xs">
-                  执行优化（{basket.length} 项）
+                  执行优化 ~170s（{basket.length} 项）
                 </Button>
                 <div className="flex items-center gap-1 shrink-0">
                   <input type="number" value={wordCountMin} onChange={(e) => setWordCountMin(Number(e.target.value) || 5000)}

@@ -468,7 +468,7 @@ Return the modified outline as JSON only.`;
             disabled={(phase !== "idle" && phase !== "done") || activePapers.length === 0}
             className="bg-teal text-teal-foreground hover:bg-teal/90"
           >
-            生成综述
+            生成综述 <span className="text-[10px] opacity-60">~20s</span>
           </Button>
           <StopButton show={phase !== "idle" && phase !== "done" && phase !== "outline-review"} onClick={xAbort.abort} />
         </div>
@@ -643,7 +643,7 @@ Return the modified outline as JSON only.`;
               onClick={handleConfirmAndWrite}
               className="bg-green-600 text-white hover:bg-green-700"
             >
-              {analysisEngine === "storm" && !stormReady ? "确认大纲（等待 STORM 完成后开始）" : "确认大纲，开始撰写完整综述"}
+              {analysisEngine === "storm" && !stormReady ? "确认大纲（等待 STORM 完成后开始）" : "确认大纲，开始撰写完整综述"} <span className="text-[10px] opacity-60">~170s</span>
             </Button>
             <Button
               variant="outline"

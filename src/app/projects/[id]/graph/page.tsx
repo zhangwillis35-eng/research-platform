@@ -383,7 +383,7 @@ export default function GraphPage() {
 
       <div className="flex items-center gap-2">
         <Button onClick={handleGenerate} disabled={loading || activePapers.length === 0} className="bg-teal text-teal-foreground hover:bg-teal/90">
-          {loading ? loadingPhase || "分析中..." : "生成领域全景分析"}
+          {loading ? loadingPhase || "分析中..." : "生成领域全景分析 ~120s"}
         </Button>
         <StopButton show={loading} onClick={xAbort.abort} />
       </div>

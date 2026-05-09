@@ -300,7 +300,7 @@ export default function ProposalPage() {
               onClick={handleGenerate}
               disabled={loading || !topic.trim() || activePapers.length === 0}
             >
-              {loading ? (loadingPhase || "撰写中...") : "生成 Proposal"}
+              {loading ? (loadingPhase || "撰写中...") : "生成 Proposal ~50s"}
             </Button>
             <StopButton show={loading} onClick={xAbort.abort} />
           </div>
