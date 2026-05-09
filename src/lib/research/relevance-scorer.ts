@@ -256,7 +256,7 @@ export async function scoreRelevance(
   }
 
   const useBatchMode = papers.length >= BATCH_SCORING_THRESHOLD;
-  const batchSize = getBatchSize(papers.length);
+  const batchSize = 10; // only used if batch mode is enabled (currently disabled)
 
   console.log(
     `[relevance-scorer] Scoring ${papers.length} papers (${scoringProvider}, ` +
@@ -304,7 +304,7 @@ export async function scoreRelevance(
       },
       SCORING_CONCURRENCY,
       (completed, total) => {
-        const scored = Math.min(completed * getBatchSize(papers.length), papers.length);
+        const scored = Math.min(completed * batchSize, papers.length);
         onProgress?.(scored, papers.length);
         if (completed % 5 === 0 || completed === total) {
           console.log(`[relevance-scorer] Batch progress: ${completed}/${total} batches`);
