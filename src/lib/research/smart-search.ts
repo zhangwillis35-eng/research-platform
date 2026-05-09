@@ -506,11 +506,11 @@ export async function smartSearch(
         .catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] })),
     ]);
 
-    // 30s hard timeout
+    // 60s hard timeout
     const [cnkiResults, gsResults, freeResults, translatedResults] = await Promise.race([
       searchPromise,
       new Promise<[never[], { papers: never[]; results: never[] }, never[], { papers: never[]; results: never[] }]>((resolve) =>
-        setTimeout(() => resolve([[], { papers: [], results: [] }, [], { papers: [], results: [] }]), 30000)
+        setTimeout(() => resolve([[], { papers: [], results: [] }, [], { papers: [], results: [] }]), 60000)
       ),
     ]);
 
@@ -557,14 +557,14 @@ export async function smartSearch(
       })),
     ]);
 
-    // 30s hard timeout — use whatever results we have
+    // 60s hard timeout — use whatever results we have
     const [gsResults, freeResults, rawResults] = await Promise.race([
       searchPromise,
       new Promise<[typeof gsResults, typeof freeResults, { papers: UnifiedPaper[]; results: SearchResult[] }]>((resolve) =>
         setTimeout(() => {
-          console.log("[smart-search] 30s search deadline hit, using partial results");
+          console.log("[smart-search] 60s search deadline hit, using partial results");
           resolve([[], [], { papers: [], results: [] }]);
-        }, 30000)
+        }, 60000)
       ),
     ]) as [Array<{ papers: UnifiedPaper[]; results: SearchResult[] }>, Array<{ papers: UnifiedPaper[]; results: SearchResult[] }>, { papers: UnifiedPaper[]; results: SearchResult[] }];
 
@@ -638,7 +638,7 @@ export async function smartSearch(
     return b.citationCount - a.citationCount;
   });
   // Hard cap at 100 — scoring 200 papers causes SSE timeout
-  // Cap enrichment at limit (30s timeout protects against SSE disconnect)
+  // Cap enrichment at limit (60s timeout protects against SSE disconnect)
   const enrichCap = Math.min(allDeduped.length, Math.max(limit, 80));
   const rawPapers = allDeduped.slice(0, enrichCap);
   if (allDeduped.length > enrichCap) {
@@ -648,12 +648,12 @@ export async function smartSearch(
   }
 
   // Phase 1: Enrichment (fills abstracts from S2, CrossRef, OpenAlex)
-  // 30s timeout — if external APIs are slow, continue with partial data
+  // 60s timeout — if external APIs are slow, continue with partial data
   let enrichedPapers: typeof rawPapers;
   try {
     enrichedPapers = await Promise.race([
       enrichPapersBatch(rawPapers),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("enrich_timeout")), 30000)),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("enrich_timeout")), 60000)),
     ]);
   } catch (err) {
     if ((err as Error).message === "enrich_timeout") {
