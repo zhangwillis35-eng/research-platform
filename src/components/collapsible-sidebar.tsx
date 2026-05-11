@@ -86,6 +86,7 @@ export function CollapsibleSidebar({ projectId }: { projectId: string }) {
               <Link
                 key={item.label}
                 href={fullHref}
+                prefetch={false}
                 className={`flex items-center gap-1.5 rounded-md text-xs whitespace-nowrap px-2.5 py-1.5 transition-colors duration-150 ${
                   isActive
                     ? "bg-primary/10 text-primary font-medium"
