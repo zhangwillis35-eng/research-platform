@@ -55,18 +55,29 @@ export function usePersistedState<T>(
   // Always initialize with initialValue to match SSR — hydrate from storage in useEffect
   const [value, setValueRaw] = useState<T>(initialValue);
 
-  // Hydrate from sessionStorage AFTER mount (avoids hydration mismatch)
+  // Hydrate from sessionStorage AFTER mount, deferred to idle time
+  // This prevents 85 concurrent JSON.parse calls from blocking the main thread
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
-    try {
-      const stored = sessionStorage.getItem(sKey);
-      if (stored !== null) {
-        const restored = deserialize<T>(stored);
-        setValueRaw(restored);
+
+    const hydrate = () => {
+      try {
+        const stored = sessionStorage.getItem(sKey);
+        if (stored !== null) {
+          const restored = deserialize<T>(stored);
+          setValueRaw(restored);
+        }
+      } catch {
+        // sessionStorage not available or parse error
       }
-    } catch {
-      // sessionStorage not available or parse error
+    };
+
+    // Spread reads across idle periods — prevents UI freeze
+    if (typeof requestIdleCallback !== "undefined") {
+      requestIdleCallback(hydrate);
+    } else {
+      setTimeout(hydrate, 0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
