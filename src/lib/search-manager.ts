@@ -190,9 +190,9 @@ class BackgroundSearchManager {
                   p.relevanceScore = evt.score;
                   p.relevanceReason = evt.reason;
                   p.keyMatch = evt.keyMatch;
-                  p.contribution = evt.contribution;
-                  p.methodology = evt.methodology;
-                  p.innovation = evt.innovation;
+                  p.relevanceContribution = evt.contribution;
+                  p.relevanceMethodology = evt.methodology;
+                  p.relevanceInnovation = evt.innovation;
                 }
                 // Re-sort: scored papers first (by score desc, then citations), unscored last
                 this.state.result.papers.sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
