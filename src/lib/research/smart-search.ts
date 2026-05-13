@@ -821,6 +821,10 @@ export async function smartSearch(
 
       return true;
     });
+
+    if (papers.length < totalBeforeFilter) {
+      onProgress?.("filter", `期刊质量过滤: ${totalBeforeFilter} → ${papers.length} 篇`);
+    }
   }
 
   // Step 6.5: Pre-scoring truncation — only when paper count is very high (>500)

@@ -34,7 +34,7 @@ export interface ScoredPaper extends UnifiedPaper {
   hasFullText?: boolean;
 }
 
-const SCORING_CONCURRENCY = 10;
+const SCORING_CONCURRENCY = 5; // 5 concurrent to avoid DeepSeek rate limiting
 // Single mode: 1 paper per LLM call — best score differentiation
 const BATCH_SCORING_THRESHOLD = 999; // disabled — always single mode
 const SCORING_DEFAULT_PROVIDER: AIProvider = "deepseek-fast";
@@ -313,36 +313,45 @@ export async function scoreRelevance(
     );
   } else {
     // Single mode: 1 paper per AI call — better quality for smaller sets
+    // Includes 1 retry on failure to ensure complete analysis
     await concurrentPool(
       papers,
       async (paper, idx) => {
-        const response = await callAI({
-          provider: scoringProvider,
-          system: SINGLE_SYSTEM,
-          messages: [
-            {
-              role: "user",
-              content: buildSinglePrompt(paper, userQuery, translatedQuery),
-            },
-          ],
-          jsonMode: true,
-          noThinking: true,
-          temperature: 0,
-          maxTokens: 500,
-        });
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const response = await callAI({
+              provider: scoringProvider,
+              system: SINGLE_SYSTEM,
+              messages: [
+                {
+                  role: "user",
+                  content: buildSinglePrompt(paper, userQuery, translatedQuery),
+                },
+              ],
+              jsonMode: true,
+              noThinking: true,
+              temperature: 0,
+              maxTokens: 500,
+            });
 
-        const cleaned = response.content
-          .replace(/```json\s*/g, "")
-          .replace(/```\s*/g, "")
-          .trim();
-        try {
-          const parsed = JSON.parse(cleaned);
-          const s = Array.isArray(parsed) ? parsed[0] : parsed;
-          const score = parseScore(s);
-          allScores.set(idx, score);
-          onPaperScored?.(idx, score);
-        } catch {
-          console.warn(`[relevance-scorer] Parse failed for paper ${idx}: ${cleaned.slice(0, 100)}`);
+            const cleaned = response.content
+              .replace(/```json\s*/g, "")
+              .replace(/```\s*/g, "")
+              .trim();
+            const parsed = JSON.parse(cleaned);
+            const s = Array.isArray(parsed) ? parsed[0] : parsed;
+            const score = parseScore(s);
+            allScores.set(idx, score);
+            onPaperScored?.(idx, score);
+            return; // success
+          } catch (err) {
+            if (attempt === 0) {
+              // Retry once after a short delay
+              await new Promise(r => setTimeout(r, 1000));
+            } else {
+              console.warn(`[relevance-scorer] Failed after retry for paper ${idx}: ${(err as Error).message?.slice(0, 80)}`);
+            }
+          }
         }
       },
       SCORING_CONCURRENCY,
