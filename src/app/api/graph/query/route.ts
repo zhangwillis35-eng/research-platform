@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { callAI, setAIContext } from "@/lib/ai";
+import { streamAI, setAIContext } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
 import type { GraphNode, GraphEdge } from "@/generated/prisma/client";
 
@@ -59,19 +59,40 @@ RULES:
 KNOWLEDGE GRAPH DATA:
 ${graphContext}`;
 
-  const response = await callAI({
-    provider: provider as AIProvider,
-    system: systemPrompt,
-    messages: [{ role: "user", content: question }],
-    noThinking: true,
+  // Stream the answer for faster user feedback
+  const encoder = new TextEncoder();
+  const readable = new ReadableStream({
+    async start(controller) {
+      try {
+        // Send graph stats immediately
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "stats", nodes: nodes.length, edges: edges.length })}\n\n`));
 
-    temperature: 0.3,
+        const stream = streamAI({
+          provider: provider as AIProvider,
+          system: systemPrompt,
+          messages: [{ role: "user", content: question }],
+          noThinking: true,
+          temperature: 0.3,
+        });
+
+        for await (const chunk of stream) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "text", text: chunk })}\n\n`));
+        }
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done" })}\n\n`));
+      } catch (err) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: String(err) })}\n\n`));
+      }
+      controller.close();
+    },
   });
 
-  return NextResponse.json({
-    answer: response.content,
-    graphStats: { nodes: nodes.length, edges: edges.length },
-    provider: response.provider,
+  return new Response(readable, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
   });
 }
 

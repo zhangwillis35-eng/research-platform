@@ -123,7 +123,10 @@ export async function analyzeDraft(
   // Two parallel calls: (A) analyze draft structure, (B) match library papers
   // This halves wall-clock time vs one giant call
 
-  // 3 parallel calls — NO input truncation, full draft text
+  // 3 parallel calls — truncate draft to 15K chars for speed (saves ~50% tokens on long drafts)
+  const draftForAnalysis = draftText.length > 15000
+    ? draftText.slice(0, 7500) + "\n\n[...中间部分省略...]\n\n" + draftText.slice(-7500)
+    : draftText;
 
   // A1: Structure analysis
   const structurePromise = callAI({
@@ -132,7 +135,7 @@ export async function analyzeDraft(
 {"topic":"主题(中文1-2句)","keyThemes":["主题1","主题2"],"structureOutline":[{"heading":"章节标题","summary":"概要","citationCount":0}],"weakSections":["薄弱环节"],"keywords":["English keyword 1","keyword 2","keyword 3","keyword 4","keyword 5"]}
 
 keywords must be 5-10 English academic search terms. Be concise.`,
-    messages: [{ role: "user", content: draftText }],
+    messages: [{ role: "user", content: draftForAnalysis }],
     jsonMode: true,
     noThinking: true,
     temperature: 0.2,
@@ -143,7 +146,7 @@ keywords must be 5-10 English academic search terms. Be concise.`,
   const refsPromise = callAI({
     provider,
     system: `Extract cited papers from this review draft. Output JSON: {"citedReferences":["Author (Year)","Author (Year)"]}. List up to 20 most important ones.`,
-    messages: [{ role: "user", content: draftText }],
+    messages: [{ role: "user", content: draftForAnalysis }],
     jsonMode: true,
     noThinking: true,
     temperature: 0,
@@ -158,7 +161,7 @@ keywords must be 5-10 English academic search terms. Be concise.`,
   const matchPromise = callAI({
     provider,
     system: `Count how many of these library papers are cited or closely referenced in the draft. Return JSON: {"libraryMatchCount": N}`,
-    messages: [{ role: "user", content: `Draft:\n${draftText}\n\nLibrary papers:\n${libraryTitles}` }],
+    messages: [{ role: "user", content: `Draft:\n${draftForAnalysis}\n\nLibrary papers:\n${libraryTitles}` }],
     jsonMode: true,
     noThinking: true,
     temperature: 0,

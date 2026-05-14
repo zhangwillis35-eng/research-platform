@@ -22,7 +22,7 @@ export async function POST(request: Request) {
 
     const content = papers
       .slice(0, 20)
-      .map((p, i) => `[${i + 1}] ${p.title} (${p.year ?? "N/A"})\n${p.abstract ?? ""}`)
+      .map((p, i) => `[${i + 1}] ${p.title} (${p.year ?? "N/A"}) — ${p.venue ?? ""}\n${(p.abstract ?? "").slice(0, 500)}`)
       .join("\n---\n");
 
     const response = await callAI({

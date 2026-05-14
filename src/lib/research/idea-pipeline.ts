@@ -204,11 +204,13 @@ export async function* runIdeaPipelineStream(
   // Emit ideas immediately — user sees results without waiting for peer review
   yield { phase: "ideas", dimensions, ideas };
 
-  // Peer review top 2 sequentially (streaming each as it completes)
+  // Peer review top 2 in PARALLEL (saves 2-4s vs sequential)
   if (withPeerReview && ideas.length > 0) {
     const topIdeas = ideas.slice(0, 2);
-    for (const idea of topIdeas) {
-      const review = await simulatePeerReview(idea, provider);
+    const reviews = await Promise.all(
+      topIdeas.map(idea => simulatePeerReview(idea, provider).then(review => ({ idea, review })))
+    );
+    for (const { idea, review } of reviews) {
       if (review) {
         yield { phase: "review", ideaId: idea.id, review };
       }
