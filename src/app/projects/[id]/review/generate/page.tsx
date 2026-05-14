@@ -6,6 +6,7 @@ import { useThrottledStream } from "@/hooks/use-throttled-stream";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -361,6 +362,7 @@ Return the modified outline as JSON only.`;
   const progressPhases: Phase[] = ["outlining", "outline-review", "writing", "done"];
 
   return (
+    <ErrorBoundary onReset={() => { setReviewText(""); setOutline(null); setError(null); }}>
     <div className="space-y-6">
       {crossFeatureBanner && (
         <div className="flex items-center justify-between px-4 py-2 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-700">
@@ -791,5 +793,6 @@ Return the modified outline as JSON only.`;
         paperTitles={papers.map(p => p.title)}
       />
     </div>
+    </ErrorBoundary>
   );
 }

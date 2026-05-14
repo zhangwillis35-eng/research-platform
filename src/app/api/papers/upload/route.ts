@@ -130,8 +130,21 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("[upload] PDF processing error:", error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    let userMessage = "PDF 处理失败";
+
+    if (errMsg.includes("decrypt") || errMsg.includes("password") || errMsg.includes("encrypted")) {
+      userMessage = "PDF 已加密，无法解析。请上传未加密的版本";
+    } else if (errMsg.includes("ENOMEM") || errMsg.includes("heap")) {
+      userMessage = "文件过大，服务器内存不足。请尝试压缩 PDF 后重新上传";
+    } else if (errMsg.includes("timeout") || errMsg.includes("ETIMEDOUT")) {
+      userMessage = "上传超时，请检查网络后重试";
+    } else if (errMsg.includes("Invalid PDF") || errMsg.includes("not a PDF")) {
+      userMessage = "无效的 PDF 文件，请检查文件是否损坏";
+    }
+
     return NextResponse.json(
-      { error: "PDF processing failed", details: String(error) },
+      { error: userMessage, details: errMsg.slice(0, 200) },
       { status: 500 }
     );
   }

@@ -2472,7 +2472,7 @@ Note journal rankings (UTD24/FT50/ABS4*). Use Chinese academic writing style.`,
                   onClick={() => chatPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}
                 >{i + 1}</button>
                 {/* Relevance score badge */}
-                {paper.relevanceScore != null && (
+                {paper.relevanceScore != null ? (
                   <div
                     className={`shrink-0 w-10 h-10 rounded-lg border flex flex-col items-center justify-center ${getRelevanceColor(paper.relevanceScore)}`}
                     title={paper.relevanceReason || getRelevanceLabel(paper.relevanceScore)}
@@ -2480,7 +2480,15 @@ Note journal rankings (UTD24/FT50/ABS4*). Use Chinese academic writing style.`,
                     <span className="text-sm font-bold leading-none">{paper.relevanceScore}</span>
                     <span className="text-[8px] leading-none mt-0.5">{getRelevanceLabel(paper.relevanceScore).slice(0, 2)}</span>
                   </div>
-                )}
+                ) : searchStats?.relevanceScored ? (
+                  <div
+                    className="shrink-0 w-10 h-10 rounded-lg border border-gray-300 bg-gray-50 flex flex-col items-center justify-center"
+                    title="评分失败，请重新检索"
+                  >
+                    <span className="text-sm font-bold leading-none text-gray-400">?</span>
+                    <span className="text-[8px] leading-none mt-0.5 text-gray-400">未评</span>
+                  </div>
+                ) : null}
                 {/* Full text indicator */}
                 {paper.hasFullText ? (
                   <span className="shrink-0 px-1 py-0.5 rounded text-[9px] font-medium bg-emerald-50 text-emerald-600 border border-emerald-200" title="已获取全文">全文</span>

@@ -75,6 +75,23 @@ export async function POST(request: Request) {
     const auth = await requireProjectAccess(projectId);
     if (auth instanceof NextResponse) return auth;
 
+    // Dedup check: skip if paper already exists in this project (by DOI or normalized title)
+    const normTitle = paperData.title.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const existing = await prisma.paper.findFirst({
+      where: {
+        projectId,
+        OR: [
+          ...(paperData.doi ? [{ doi: paperData.doi }] : []),
+          { title: { equals: paperData.title, mode: "insensitive" as const } },
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (existing) {
+      return NextResponse.json({ paper: existing, skipped: true, message: "该论文已存在于文献库中" });
+    }
+
     const paper = await prisma.paper.create({
       data: {
         projectId,

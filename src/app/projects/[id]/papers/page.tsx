@@ -317,6 +317,8 @@ export default function PapersPage() {
             const decoder = new TextDecoder();
             let buffer = "";
             let lastRefresh = 0;
+            let analyzed = 0;
+            let failed = 0;
 
             while (true) {
               const { done, value } = await reader.read();
@@ -330,10 +332,11 @@ export default function PapersPage() {
                 try {
                   const evt = JSON.parse(line.slice(6));
                   if (evt.type === "progress") {
+                    if (evt.status === "ok") analyzed++;
+                    if (evt.status === "error") failed++;
                     setDigestResult(
-                      `AI 深度分析: ${evt.completed}/${evt.total} 篇` +
-                      (evt.hasFullText ? " [全文]" : "") +
-                      (evt.status === "error" ? ` (${evt.completed - 1} 成功)` : "")
+                      `AI 深度分析: ${evt.completed}/${evt.total} 篇（${analyzed} 成功` +
+                      (failed > 0 ? `，${failed} 失败` : "") + "）"
                     );
                     if (evt.completed - lastRefresh >= 10 || evt.completed === evt.total) {
                       lastRefresh = evt.completed;

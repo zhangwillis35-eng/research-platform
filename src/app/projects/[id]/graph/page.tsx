@@ -6,6 +6,7 @@ import { useSavedAnalysis } from "@/hooks/use-saved-analysis";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -319,6 +320,7 @@ export default function GraphPage() {
   const hasResults = nodes.length > 0;
 
   return (
+    <ErrorBoundary onReset={() => { setNodes([]); setEdges([]); setError(null); }}>
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -850,5 +852,6 @@ export default function GraphPage() {
       )}
 
     </div>
+    </ErrorBoundary>
   );
 }

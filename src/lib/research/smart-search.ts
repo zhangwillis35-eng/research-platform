@@ -927,6 +927,10 @@ export async function smartSearch(
         (scored, total) => onProgress?.("score", `AI 摘要快速评分: ${scored}/${total} 篇...`),
         onPaperScored
       );
+      const unscoredCount = scoredPapers.filter(p => p.relevanceScore == null).length;
+      if (unscoredCount > 0) {
+        onProgress?.("score", `AI 摘要快速评分: ${papers.length}/${papers.length} 篇...（${unscoredCount} 篇评分失败）`);
+      }
       scoredPapers = filterByRelevance(scoredPapers, 3); // Lower threshold for first pass
       relevanceScored = true;
     } catch (err) {

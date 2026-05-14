@@ -152,9 +152,26 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("Smart search error:", error);
+    const err = error instanceof Error ? error : new Error(String(error));
+    let userMessage: string;
+    let status = 500;
+
+    if (err.message.includes("timeout") || err.message.includes("ETIMEDOUT") || err.message.includes("aborted")) {
+      userMessage = "检索超时，请缩小检索范围或稍后重试";
+      status = 504;
+    } else if (err.message.includes("429") || err.message.includes("rate limit") || err.message.includes("Too Many")) {
+      userMessage = "AI 服务繁忙，请等待 30 秒后重试";
+      status = 429;
+    } else if (err.message.includes("API key") || err.message.includes("API_KEY") || err.message.includes("not set")) {
+      userMessage = "AI 服务配置错误，请检查设置页面的 API 密钥";
+      status = 503;
+    } else {
+      userMessage = `检索失败: ${err.message.slice(0, 100)}`;
+    }
+
     return new Response(
-      JSON.stringify({ error: "Smart search failed", details: String(error) }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
+      JSON.stringify({ error: userMessage, details: err.message.slice(0, 200) }),
+      { status, headers: { "Content-Type": "application/json" } }
     );
   }
 }
