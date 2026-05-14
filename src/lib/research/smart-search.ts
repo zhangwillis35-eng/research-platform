@@ -538,14 +538,15 @@ export async function smartSearch(
     const gsQueries = [gsPrecisionQuery, gsBroadQuery].filter(Boolean);
     // Free source queries: 3 precision + 2 broad (exact-phrase focused)
     const freeQueries = [...precisionQueries.slice(0, 3), ...broadQueries.slice(0, 2)];
-    const freeLimit = Math.max(20, Math.ceil((limit * 3) / (freeQueries.length || 1)));
-    // Raw semantic query (no quotes, small limit) — supplementary, catches diverse terminology
+    // Increase per-query limit to cast a wider net (was ~30, now 50)
+    const freeLimit = Math.max(50, Math.ceil((limit * 4) / (freeQueries.length || 1)));
+    // Raw semantic query (no quotes) — supplementary, catches diverse terminology
     const rawSemanticQuery = plan.translatedInput || input;
 
-    const totalQueries = gsQueries.length + freeQueries.length + 1;
+    const totalQueries = gsQueries.length + freeQueries.length + 2;
     onProgress?.("search", `并行检索 ${totalQueries} 个查询...`);
 
-    // Race all searches against a 30s hard deadline
+    // Race all searches against a 120s hard deadline
     const searchPromise = Promise.all([
       // Google Scholar (with extras like arXiv, CORE, etc.)
       Promise.all(
@@ -565,25 +566,39 @@ export async function smartSearch(
           }))
         )
       ),
-      // Raw semantic query (no quotes, limit 20) — supplementary catch-all
-      searchAllSourcesRaw({ query: rawSemanticQuery, limit: 20, yearFrom, yearTo, freeOnly: true }).catch(() => ({
+      // Raw semantic query — supplementary catch-all (increased from 20 to 50)
+      searchAllSourcesRaw({ query: rawSemanticQuery, limit: 50, yearFrom, yearTo, freeOnly: true }).catch(() => ({
         papers: [] as UnifiedPaper[],
         results: [] as SearchResult[],
       })),
+      // Broad OpenAlex sweep: 200 results to capture papers from diverse journals
+      // that precision/broad queries miss (e.g., Energy Economics, TFSC are ranked
+      // below JCP/ESPR in OpenAlex relevance — need 200+ to reach them)
+      searchAllSourcesRaw({
+        query: rawSemanticQuery, limit: 200, yearFrom, yearTo,
+        sources: ["openalex"],
+      }).catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] })),
     ]);
 
     // 120s hard timeout — use whatever results we have
-    const [gsResults, freeResults, rawResults] = await Promise.race([
+    type RawResult = { papers: UnifiedPaper[]; results: SearchResult[] };
+    const [gsResults, freeResults, rawResults, broadOAResults] = await Promise.race([
       searchPromise,
-      new Promise<[typeof gsResults, typeof freeResults, { papers: UnifiedPaper[]; results: SearchResult[] }]>((resolve) =>
+      new Promise<[RawResult[], RawResult[], RawResult, RawResult]>((resolve) =>
         setTimeout(() => {
           console.log("[smart-search] 120s search deadline hit, using partial results");
-          resolve([[], [], { papers: [], results: [] }]);
+          const empty: RawResult = { papers: [], results: [] };
+          resolve([[], [], empty, empty]);
         }, 120000)
       ),
-    ]) as [Array<{ papers: UnifiedPaper[]; results: SearchResult[] }>, Array<{ papers: UnifiedPaper[]; results: SearchResult[] }>, { papers: UnifiedPaper[]; results: SearchResult[] }];
+    ]) as [RawResult[], RawResult[], RawResult, RawResult];
 
-    allResults = [...(gsResults ?? []), ...(freeResults ?? []), ...(rawResults ? [rawResults] : [])];
+    allResults = [
+      ...(gsResults ?? []),
+      ...(freeResults ?? []),
+      ...(rawResults ? [rawResults] : []),
+      ...(broadOAResults?.papers?.length ? [broadOAResults] : []),
+    ];
   }
 
   // ── Targeted journal search (when user specifies specific journals or journal lists) ──
