@@ -134,31 +134,32 @@ function isQualitySource(p: UnifiedPaper): boolean {
   return false;
 }
 
-/** Sort: relevance → citations → journal grade */
+/** Sort by tiered relevance bands, then citations within each band.
+ *  Band A (8-10): highest relevance — sort by citations (most impactful first)
+ *  Band B (6-7):  good relevance — sort by citations
+ *  Band C (≤5):   marginal — keep original relevance order, then citations
+ *  Unscored (null): placed after Band C, sorted by citations
+ */
 function sortByQuality(papers: ScoredPaper[]): ScoredPaper[] {
   return papers.sort((a, b) => {
-    // Primary: relevance score
-    const scoreA = a.relevanceScore ?? 0;
-    const scoreB = b.relevanceScore ?? 0;
+    const scoreA = a.relevanceScore ?? -1;
+    const scoreB = b.relevanceScore ?? -1;
+
+    // Assign band: 0 = high (8-10), 1 = good (6-7), 2 = marginal (≤5), 3 = unscored
+    const bandOf = (s: number) => s >= 8 ? 0 : s >= 6 ? 1 : s >= 0 ? 2 : 3;
+    const bandA = bandOf(scoreA);
+    const bandB = bandOf(scoreB);
+
+    // Different bands: higher band first
+    if (bandA !== bandB) return bandA - bandB;
+
+    // Same band: Band A & B sort by citations (within-band relevance is similar enough)
+    if (bandA <= 1) {
+      return b.citationCount - a.citationCount;
+    }
+
+    // Band C (≤5): sort by relevance score first, then citations
     if (scoreB !== scoreA) return scoreB - scoreA;
-
-    // Secondary: citation count (same score → higher citations = more authoritative)
-    if (b.citationCount !== a.citationCount) return b.citationCount - a.citationCount;
-
-    // Tertiary: journal grade (UTD24/FT50 > JCR Q1 > Q2)
-    const jcrOrder: Record<string, number> = { Q1: 4, Q2: 3, Q3: 2, Q4: 1 };
-    const aGrade = (a.journalRanking?.utd24 ? 10 : 0) + (a.journalRanking?.ft50 ? 10 : 0) +
-      (jcrOrder[a.journalMeta?.jcrQuartile ?? ""] ?? 0);
-    const bGrade = (b.journalRanking?.utd24 ? 10 : 0) + (b.journalRanking?.ft50 ? 10 : 0) +
-      (jcrOrder[b.journalMeta?.jcrQuartile ?? ""] ?? 0);
-    if (bGrade !== aGrade) return bGrade - aGrade;
-
-    // Quaternary: impact factor
-    const aIF = a.journalMeta?.impactFactor ?? 0;
-    const bIF = b.journalMeta?.impactFactor ?? 0;
-    if (aIF !== bIF) return bIF - aIF;
-
-    // Last: citations
     return b.citationCount - a.citationCount;
   });
 }
