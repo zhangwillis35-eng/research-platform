@@ -317,7 +317,8 @@ export async function scoreRelevance(
     await concurrentPool(
       papers,
       async (paper, idx) => {
-        for (let attempt = 0; attempt < 2; attempt++) {
+        const MAX_ATTEMPTS = 4;
+        for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
           try {
             const response = await callAI({
               provider: scoringProvider,
@@ -345,11 +346,12 @@ export async function scoreRelevance(
             onPaperScored?.(idx, score);
             return; // success
           } catch (err) {
-            if (attempt === 0) {
-              // Retry once after a short delay
-              await new Promise(r => setTimeout(r, 1000));
+            if (attempt < MAX_ATTEMPTS - 1) {
+              // Exponential backoff: 1s, 2s, 4s
+              const delay = 1000 * Math.pow(2, attempt);
+              await new Promise(r => setTimeout(r, delay));
             } else {
-              console.warn(`[relevance-scorer] Failed after retry for paper ${idx}: ${(err as Error).message?.slice(0, 80)}`);
+              console.warn(`[relevance-scorer] Failed after ${MAX_ATTEMPTS} attempts for paper ${idx}: ${(err as Error).message?.slice(0, 80)}`);
             }
           }
         }
@@ -365,16 +367,17 @@ export async function scoreRelevance(
   }
 
   // Merge scores back into papers
+  // Papers that failed scoring get undefined relevanceScore (not a fake default 5)
   return papers.map((paper, i) => {
     const score = allScores.get(i);
     return {
       ...paper,
-      relevanceScore: score?.score ?? 5,
-      relevanceReason: score?.reason || `该论文与"${userQuery}"相关`,
+      relevanceScore: score?.score,
+      relevanceReason: score?.reason || "",
       relevanceContribution: score?.contribution || "",
       relevanceMethodology: score?.methodology || "",
       relevanceInnovation: score?.innovation || "",
-      relevanceDataSource: "摘要",
+      relevanceDataSource: score ? "摘要" : "",
       relevanceKeyMatch: score?.keyMatch ?? [],
       hasFullText: false,
     } as ScoredPaper;
@@ -452,17 +455,18 @@ export async function scoreRelevanceWithFullText(
   );
 
   // Merge scores back into papers
+  // Papers that failed scoring get undefined relevanceScore (not a fake default 5)
   return papers.map((paper, i) => {
     const score = allScores.get(i);
     const p = paper as UnifiedPaper & { fullText?: string; hasFullText?: boolean; fullTextSource?: string; fullTextWordCount?: number };
     return {
       ...paper,
-      relevanceScore: score?.score ?? 5,
-      relevanceReason: score?.reason || `该论文与"${userQuery}"相关`,
+      relevanceScore: score?.score,
+      relevanceReason: score?.reason || "",
       relevanceContribution: score?.contribution || "",
       relevanceMethodology: score?.methodology || "",
       relevanceInnovation: score?.innovation || "",
-      relevanceDataSource: score?.dataSource || (p.hasFullText ? "全文" : "摘要"),
+      relevanceDataSource: score?.dataSource || "",
       relevanceKeyMatch: score?.keyMatch ?? [],
       hasFullText: !!p.hasFullText,
     } as ScoredPaper;

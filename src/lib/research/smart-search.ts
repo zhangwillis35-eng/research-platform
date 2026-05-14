@@ -167,14 +167,15 @@ function applyTieredLimit(papers: ScoredPaper[], limit: number, relevanceScored:
   // Chinese journals: skip quality filter
   if (journalLang === "zh") {
     const sorted = sortByQuality(papers);
-    if (relevanceScored) return sorted.filter(p => (p.relevanceScore ?? 0) >= 3).slice(0, limit >= 999 ? sorted.length : limit);
+    // Keep papers that scored >= 3 OR were never scored (undefined = scoring failed)
+    if (relevanceScored) return sorted.filter(p => p.relevanceScore == null || p.relevanceScore >= 3).slice(0, limit >= 999 ? sorted.length : limit);
     return sorted.slice(0, limit >= 999 ? sorted.length : limit);
   }
 
   const sorted = sortByQuality(papers);
 
   if (limit >= 999) {
-    return relevanceScored ? sorted.filter(p => (p.relevanceScore ?? 0) >= 5) : sorted;
+    return relevanceScored ? sorted.filter(p => p.relevanceScore == null || p.relevanceScore >= 5) : sorted;
   }
 
   if (limit >= 100) {
