@@ -94,7 +94,7 @@ export async function callDeepSeek(options: AIRequestOptions): Promise<AIRespons
       baseDelayMs: 2000,
       maxDelayMs: 15000,
       retryOn: [429, 500, 502, 503],
-      timeoutMs: 60000,
+      timeoutMs: options.timeoutMs ?? 60000,
     }
   );
 

@@ -82,6 +82,7 @@ paperRefs 中的数字对应文献编号 [1], [2] 等。确保每个发现都有
     jsonMode: true,
     noThinking: true,
     temperature: 0.3,
+    timeoutMs: 180000, // 3 min — outline generation processes many paper summaries
   });
 
   try {
@@ -137,6 +138,7 @@ async function generateSectionText(
     noThinking: true,
     temperature: 0.4,
     maxTokens: Math.max(2048, Math.ceil(targetWords * 1.5)),
+    timeoutMs: 180000, // 3 min — section generation with full text is heavy
   });
 
   return response.content;

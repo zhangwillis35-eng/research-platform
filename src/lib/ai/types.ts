@@ -28,6 +28,8 @@ export interface AIRequestOptions {
   jsonMode?: boolean;
   /** Disable thinking/reasoning for faster structured extraction (DeepSeek only) */
   noThinking?: boolean;
+  /** Per-request timeout in ms. Default: 60s. Use higher values for long-running operations (e.g., review generation with many papers). */
+  timeoutMs?: number;
 }
 
 export interface AIResponse {
