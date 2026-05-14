@@ -1,4 +1,4 @@
-// FT50 — Financial Times Top 50 Business Journals (2024 list)
+// FT50 — Financial Times Top 50 Business Journals (2025 list)
 // Source: https://www.ft.com/ft-top-50-journals
 export const FT50_JOURNALS = new Set([
   // Accounting (6)
@@ -17,8 +17,6 @@ export const FT50_JOURNALS = new Set([
   // Entrepreneurship (2)
   "Entrepreneurship Theory and Practice",
   "Journal of Business Venturing",
-  // Ethics (1)
-  "Journal of Business Ethics",
   // Finance (4)
   "Journal of Finance",
   "Journal of Financial Economics",
@@ -31,7 +29,8 @@ export const FT50_JOURNALS = new Set([
   // International Business (2)
   "Journal of International Business Studies",
   "Journal of World Business",
-  // Management (5)
+  // Management (6)
+  "Academy of Management Annals",
   "Academy of Management Journal",
   "Academy of Management Review",
   "Administrative Science Quarterly",
@@ -51,17 +50,19 @@ export const FT50_JOURNALS = new Set([
   "Manufacturing & Service Operations Management",
   "Operations Research",
   "Production and Operations Management",
-  // Organizational Behavior / HR (6)
-  "Human Relations",
+  // Organizational Behavior / HR (4)
   "Human Resource Management",
   "Journal of Applied Psychology",
   "Organizational Behavior and Human Decision Processes",
   "Organization Science",
-  "Organization Studies",
   // Innovation (1)
   "Research Policy",
   // Strategy (1)
   "Strategic Entrepreneurship Journal",
+  // Psychology (1)
+  "Psychological Science",
+  // Sociology (1)
+  "American Sociological Review",
   // General (2)
   "Harvard Business Review",
   "MIT Sloan Management Review",

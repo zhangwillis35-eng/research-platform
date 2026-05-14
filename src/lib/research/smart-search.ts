@@ -787,15 +787,66 @@ export async function smartSearch(
       if (f.yearFrom && (p.year ?? 0) < f.yearFrom) return false;
       if (f.yearTo && (p.year ?? 9999) > f.yearTo) return false;
 
-      // UTD24 / FT50
-      if (f.requireUTD24 && !ranking?.utd24) return false;
-      if (f.requireFT50 && !ranking?.ft50) return false;
+      // UTD24 / FT50 / Target journals — OR logic when multiple journal-source
+      // filters coexist. User says "Nature子刊 + UTD24" meaning papers from
+      // Nature family OR UTD24, not Nature AND UTD24.
+      const hasJournalSourceFilter =
+        f.requireUTD24 || f.requireFT50 ||
+        (f.targetJournals && f.targetJournals.length > 0);
 
-      // Target specific journals — fuzzy match on venue name
-      if (f.targetJournals && f.targetJournals.length > 0) {
-        const venue = (p.venue ?? "").toLowerCase();
-        const match = f.targetJournals.some(j => venue.includes(j.toLowerCase()));
-        if (!match) return false;
+      if (hasJournalSourceFilter) {
+        const matchesUTD24 = f.requireUTD24 ? !!ranking?.utd24 : false;
+        const matchesFT50 = f.requireFT50 ? !!ranking?.ft50 : false;
+
+        let matchesTargetJournal = false;
+        if (f.targetJournals && f.targetJournals.length > 0) {
+          const venue = (p.venue ?? "").toLowerCase().trim();
+          matchesTargetJournal = f.targetJournals.some(j => {
+            const target = j.toLowerCase().trim();
+            if (venue === target) return true;
+            // startsWith but require word boundary after match
+            // "nature" matches "nature communications" but not "nature-inspired"
+            if (venue.startsWith(target)) {
+              return target.length >= venue.length || /[\s,;:]/.test(venue[target.length]);
+            }
+            if (target.startsWith(venue)) {
+              return venue.length >= target.length || /[\s,;:]/.test(target[venue.length]);
+            }
+            // For targets with multiple words (e.g. "Nature Human Behaviour"),
+            // check if venue words are abbreviation-prefixes of target words.
+            // "Nat. Hum. Behav." → ["nat", "hum", "behav"] matches ["nature", "human", "behaviour"]
+            const venueWords = venue.replace(/\./g, "").split(/\s+/).filter(Boolean);
+            const targetWords = target.split(/\s+/).filter(Boolean);
+            if (venueWords.length >= 2 && targetWords.length >= 2 && venueWords.length === targetWords.length) {
+              const allPrefixMatch = venueWords.every((vw, i) => targetWords[i].startsWith(vw) || vw.startsWith(targetWords[i]));
+              if (allPrefixMatch) return true;
+            }
+            return false;
+          });
+
+          // Fallback: check NATURE_SCIENCE_KEYWORDS for Nature/Science family journals
+          // This catches abbreviated venue names like "Nat Hum Behav" when the user
+          // requests Nature family journals
+          if (!matchesTargetJournal) {
+            const hasNatureScienceTargets = f.targetJournals.some(j =>
+              NATURE_SCIENCE_KEYWORDS.some(k => j.toLowerCase().includes(k))
+            );
+            if (hasNatureScienceTargets) {
+              matchesTargetJournal = NATURE_SCIENCE_KEYWORDS.some(k => {
+                // Short generic keywords ("nature", "science", "cell") — require venue to start with them
+                // to avoid "management science", "computer science", "nature-inspired" etc.
+                if (!k.includes(" ")) {
+                  return venue.startsWith(k) && (venue.length === k.length || /[\s,;:]/.test(venue[k.length]));
+                }
+                // Multi-word keywords ("nature human behav", "science advances") — substring OK
+                return venue.includes(k);
+              });
+            }
+          }
+        }
+
+        // OR: paper must match at least ONE journal-source condition
+        if (!matchesUTD24 && !matchesFT50 && !matchesTargetJournal) return false;
       }
 
       // "高质量期刊" — OR logic: paper must match at least ONE quality indicator
