@@ -2,6 +2,7 @@
  * OpenAI client — REST API with proxy support.
  */
 import type { AIRequestOptions, AIResponse } from "./types";
+import { fetchWithRetry } from "@/lib/retry-fetch";
 import { proxyFetch } from "./proxy-fetch";
 import { getEnv } from "@/lib/env";
 
@@ -24,7 +25,7 @@ export async function callOpenAI(options: AIRequestOptions): Promise<AIResponse>
     messages.push({ role: m.role, content: m.content });
   }
 
-  const res = await proxyFetch(`${OPENAI_BASE}/chat/completions`, {
+  const res = await fetchWithRetry(`${OPENAI_BASE}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -72,6 +73,7 @@ export async function* streamOpenAI(
     messages.push({ role: m.role, content: m.content });
   }
 
+  // Streaming: use proxyFetch (no timeout — stream can take minutes)
   const res = await proxyFetch(`${OPENAI_BASE}/chat/completions`, {
     method: "POST",
     headers: {

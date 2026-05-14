@@ -2,6 +2,7 @@
  * Claude client — REST API with proxy support.
  */
 import type { AIRequestOptions, AIResponse } from "./types";
+import { fetchWithRetry } from "@/lib/retry-fetch";
 import { proxyFetch } from "./proxy-fetch";
 import { getEnv } from "@/lib/env";
 
@@ -21,7 +22,7 @@ export async function callClaude(options: AIRequestOptions): Promise<AIResponse>
     .filter((m) => m.role !== "system")
     .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
-  const res = await proxyFetch(`${CLAUDE_BASE}/messages`, {
+  const res = await fetchWithRetry(`${CLAUDE_BASE}/messages`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -65,6 +66,7 @@ export async function* streamClaude(
     .filter((m) => m.role !== "system")
     .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
+  // Streaming: use proxyFetch (no timeout — stream can take minutes)
   const res = await proxyFetch(`${CLAUDE_BASE}/messages`, {
     method: "POST",
     headers: {
