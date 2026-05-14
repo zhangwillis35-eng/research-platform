@@ -11,6 +11,7 @@ import { callAI } from "@/lib/ai";
 import type { AIProvider } from "@/lib/ai";
 import { searchAllSourcesRaw, enrichPapersBatch } from "@/lib/sources/aggregator";
 import { searchOpenAlexByJournals } from "@/lib/sources/openalex";
+import { FT50_JOURNALS, UTD24_JOURNALS } from "@/lib/sources/journal-rankings";
 import type { SearchResult } from "@/lib/sources/types";
 import type { UnifiedPaper } from "@/lib/sources/types";
 import { scoreRelevance, scoreRelevanceWithFullText, filterByRelevance, type ScoredPaper } from "./relevance-scorer";
@@ -580,20 +581,40 @@ export async function smartSearch(
     allResults = [...(gsResults ?? []), ...(freeResults ?? []), ...(rawResults ? [rawResults] : [])];
   }
 
-  // ── Targeted journal search (when user specifies specific journals) ──
+  // ── Targeted journal search (when user specifies specific journals or journal lists) ──
+  // When user says "Nature子刊 + FT50", we search ALL those journals via OpenAlex.
   // Dual strategy: OpenAlex source ID filter + Google Scholar source: operator
-  const targetJournals = plan.filters.targetJournals;
-  if (targetJournals && targetJournals.length > 0) {
-    onProgress?.("journal-search", `定向检索指定期刊: ${targetJournals.join(", ")}...`);
+  const targetJournals = plan.filters.targetJournals ?? [];
+  const expandedJournals = new Set(targetJournals.map(j => j.toLowerCase()));
+
+  // Expand to include ALL FT50/UTD24 journals when those filters are set
+  if (plan.filters.requireFT50) {
+    for (const j of FT50_JOURNALS) expandedJournals.add(j.toLowerCase());
+  }
+  if (plan.filters.requireUTD24) {
+    for (const j of UTD24_JOURNALS) expandedJournals.add(j.toLowerCase());
+  }
+
+  const allTargetJournals = [...expandedJournals];
+
+  if (allTargetJournals.length > 0) {
+    const labelParts: string[] = [];
+    if (targetJournals.length > 0) labelParts.push(targetJournals.slice(0, 5).join(", "));
+    if (plan.filters.requireFT50) labelParts.push("FT50 (50刊)");
+    if (plan.filters.requireUTD24) labelParts.push("UTD24 (24刊)");
+    onProgress?.("journal-search", `定向检索指定期刊: ${labelParts.join(" + ")}...`);
+
     const topicQuery = plan.translatedInput || input;
     try {
-      // Strategy 1: OpenAlex source ID filter (most precise)
-      // Strategy 2: Google Scholar source:"journal" operator (catches papers OpenAlex may miss)
+      // Strategy 1: OpenAlex source ID filter (most precise, covers all journals)
+      // Strategy 2: Google Scholar source:"journal" operator (for user-specified journals only)
       const gsJournalQueries = targetJournals.slice(0, 3).map(j =>
         `source:"${j}" ${topicQuery}`
       );
+      // For large journal lists (FT50=50, UTD24=24), increase OpenAlex limit
+      const oaLimit = allTargetJournals.length > 10 ? 100 : 50;
       const [oaResults, ...gsJournalResults] = await Promise.all([
-        searchOpenAlexByJournals(topicQuery, targetJournals, { yearFrom, yearTo, limit: 50 }),
+        searchOpenAlexByJournals(topicQuery, allTargetJournals, { yearFrom, yearTo, limit: oaLimit }),
         ...gsJournalQueries.map(q =>
           searchAllSourcesRaw({
             query: q, limit: 20, yearFrom, yearTo,

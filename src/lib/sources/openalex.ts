@@ -140,8 +140,10 @@ function mapOpenAlexWork(w: Record<string, unknown>): UnifiedPaper {
   };
 }
 
-// Known journal → OpenAlex source ID mapping (from weekly-digest)
+// Known journal → OpenAlex source ID mapping
+// Covers: Nature/Science family, FT50, UTD24, and other top journals
 const JOURNAL_SOURCE_IDS: Record<string, string> = {
+  // ── Nature / Science family ──
   "nature": "S137773608",
   "science": "S3880285",
   "nature machine intelligence": "S2912241403",
@@ -153,24 +155,79 @@ const JOURNAL_SOURCE_IDS: Record<string, string> = {
   "science robotics": "S4210213233",
   "pnas": "S125754415",
   "proceedings of the national academy of sciences": "S125754415",
-  "management science": "S33323087",
-  "mis quarterly": "S57293258",
+  // ── Accounting ──
+  "the accounting review": "S160506855",
+  "accounting review": "S160506855",
+  "accounting organizations and society": "S198892436",
+  "accounting, organizations and society": "S198892436",
+  "contemporary accounting research": "S65924262",
+  "journal of accounting and economics": "S62142384",
+  "journal of accounting research": "S111116695",
+  "review of accounting studies": "S11853582",
+  // ── Economics ──
+  "american economic review": "S23254222",
+  "econometrica": "S95464858",
+  "journal of political economy": "S95323914",
+  "quarterly journal of economics": "S203860005",
+  "the quarterly journal of economics": "S203860005",
+  "review of economic studies": "S88935262",
+  "the review of economic studies": "S88935262",
+  // ── Entrepreneurship ──
+  "entrepreneurship theory and practice": "S187626162",
+  "journal of business venturing": "S66201313",
+  // ── Finance ──
+  "journal of finance": "S5353659",
+  "the journal of finance": "S5353659",
+  "journal of financial economics": "S149240962",
+  "journal of financial and quantitative analysis": "S193228710",
+  "review of financial studies": "S170137484",
+  // ── Information Systems ──
   "information systems research": "S202812398",
+  "journal of management information systems": "S9954729",
+  "mis quarterly": "S57293258",
+  // ── International Business ──
+  "journal of international business studies": "S38024979",
+  "journal of world business": "S143995394",
+  // ── Management ──
+  "academy of management annals": "S27614628",
   "academy of management journal": "S117778295",
   "academy of management review": "S24092667",
-  "organization science": "S206124708",
-  "strategic management journal": "S102949365",
-  "journal of marketing": "S142990027",
-  "journal of consumer research": "S15424610",
-  "marketing science": "S154084757",
-  "journal of marketing research": "S6029591",
+  "administrative science quarterly": "S143668711",
   "journal of management": "S91740795",
-  "journal of applied psychology": "S182017137",
-  "journal of business ethics": "S150700104",
-  "research policy": "S68862796",
   "journal of management studies": "S56749031",
+  "strategic management journal": "S102949365",
+  // ── Marketing ──
+  "journal of consumer psychology": "S163545350",
+  "journal of consumer research": "S15424610",
+  "journal of marketing": "S142990027",
+  "journal of marketing research": "S6029591",
   "journal of the academy of marketing science": "S2735964968",
+  "marketing science": "S154084757",
+  // ── Operations ──
+  "journal of operations management": "S142306484",
+  "management science": "S33323087",
+  "manufacturing & service operations management": "S81410195",
+  "manufacturing and service operations management": "S81410195",
+  "operations research": "S125775545",
+  "production and operations management": "S149070780",
+  // ── OB / HR ──
+  "human resource management": "S134094273",
+  "journal of applied psychology": "S182017137",
+  "organizational behavior and human decision processes": "S64744539",
+  "organization science": "S206124708",
+  // ── Innovation / Strategy ──
+  "research policy": "S68862796",
+  "strategic entrepreneurship journal": "S31690342",
+  // ── Psychology / Sociology ──
+  "psychological science": "S58854535",
+  "american sociological review": "S157620343",
+  // ── General ──
   "harvard business review": "S86510944",
+  "mit sloan management review": "S196034224",
+  // ── INFORMS ──
+  "informs journal on computing": "S165318533",
+  // ── Other commonly searched ──
+  "journal of business ethics": "S150700104",
 };
 
 /**

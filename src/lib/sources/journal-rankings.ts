@@ -228,11 +228,70 @@ const JOURNAL_ALIASES: Record<string, string> = {
   "the accounting review tar": "accounting review",
   "jae": "journal of accounting and economics",
   "jar": "journal of accounting research",
+  // Common non-prefix abbreviations from Semantic Scholar / Google Scholar
+  "mgmt sci": "management science",
+  "mgmt science": "management science",
+  "management sci": "management science",
+  "j mgmt": "journal of management",
+  "j mgmt studies": "journal of management studies",
+  "acad mgmt j": "academy of management journal",
+  "acad mgmt rev": "academy of management review",
+  "acad mgmt annals": "academy of management annals",
+  "admin sci q": "administrative science quarterly",
+  "admin sci quarterly": "administrative science quarterly",
+  "mfg and service oper mgmt": "manufacturing and service operations management",
+  "j int bus stud": "journal of international business studies",
+  "jibs": "journal of international business studies",
+  "j oper mgmt": "journal of operations management",
+  "strat mgmt j": "strategic management journal",
+  "org sci": "organization science",
+  "hum resour mgmt": "human resource management",
+  "j consum psychol": "journal of consumer psychology",
+  "j world bus": "journal of world business",
+  "rev financ stud": "review of financial studies",
+  "rev econ stud": "review of economic studies",
+  "j polit econ": "journal of political economy",
+  "j polit economy": "journal of political economy",
+  "amer econ rev": "american economic review",
+  "am econ rev": "american economic review",
+  "am sociol rev": "american sociological review",
+  "amer sociol rev": "american sociological review",
+  "psychol sci": "psychological science",
+  "entrep theory pract": "entrepreneurship theory and practice",
+  "j bus venturing": "journal of business venturing",
+  "j bus ventur": "journal of business venturing",
+  "prod oper mgmt": "production and operations management",
+  "prod operations mgmt": "production and operations management",
+  "strat entrep j": "strategic entrepreneurship journal",
+  "mit sloan mgmt rev": "mit sloan management review",
+  "contemp account res": "contemporary accounting research",
+  "j account econ": "journal of accounting and economics",
+  "j account res": "journal of accounting research",
+  "rev account stud": "review of accounting studies",
+  "account org soc": "accounting organizations and society",
+  "j financ quant anal": "journal of financial and quantitative analysis",
+  "j mgmt inf syst": "journal of management information systems",
+  "jmis": "journal of management information systems",
 };
 
 const ft50Normalized = buildNormalizedSet(FT50_JOURNALS);
 const utd24Normalized = buildNormalizedSet(UTD24_JOURNALS);
 const abs4starNormalized = buildNormalizedSet(ABS4STAR_JOURNALS);
+
+/** Check if venue words are abbreviation-prefixes of journal words.
+ *  e.g. "Acad Manag J" matches "academy of management journal"
+ *  Skips common filler words like "of", "and", "the", "for".
+ */
+function abbreviationMatch(venueNorm: string, journalNorm: string): boolean {
+  const fillers = new Set(["of", "and", "the", "for", "in", "on", "a", "an"]);
+  const venueWords = venueNorm.split(/\s+/).filter(w => !fillers.has(w) && w.length > 0);
+  const journalWords = journalNorm.split(/\s+/).filter(w => !fillers.has(w) && w.length > 0);
+  if (venueWords.length < 2 || journalWords.length < 2) return false;
+  if (venueWords.length !== journalWords.length) return false;
+  return venueWords.every((vw, i) =>
+    journalWords[i].startsWith(vw) || vw.startsWith(journalWords[i])
+  );
+}
 
 export function getJournalRanking(venue: string | undefined | null): JournalRanking {
   if (!venue) return { ft50: false, utd24: false, abs4star: false };
@@ -245,12 +304,20 @@ export function getJournalRanking(venue: string | undefined | null): JournalRank
   // Resolve alias if exists
   const resolved = JOURNAL_ALIASES[normalized] ?? normalized;
 
-  // Strict matching: exact match or known alias only
-  // NEVER use substring matching — it causes false positives like
-  // "Annals of Operations Research" matching "Operations Research"
-  const matchesSet = (set: Set<string>) => {
-    return set.has(resolved);
+  // Primary: exact match or known alias
+  const exactMatch = (set: Set<string>) => set.has(resolved);
+
+  // Fallback: abbreviation-prefix matching for API venue names like
+  // "Acad Manag J" → "academy of management journal"
+  // "J Financ Econ" → "journal of financial economics"
+  const abbrMatch = (set: Set<string>) => {
+    for (const j of set) {
+      if (abbreviationMatch(resolved, j)) return true;
+    }
+    return false;
   };
+
+  const matchesSet = (set: Set<string>) => exactMatch(set) || abbrMatch(set);
 
   return {
     ft50: matchesSet(ft50Normalized),
