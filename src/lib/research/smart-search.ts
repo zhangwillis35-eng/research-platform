@@ -155,12 +155,14 @@ function sortByQuality(papers: ScoredPaper[]): ScoredPaper[] {
 
     // Same band: Band A & B sort by citations (within-band relevance is similar enough)
     if (bandA <= 1) {
-      return b.citationCount - a.citationCount;
+      if (b.citationCount !== a.citationCount) return b.citationCount - a.citationCount;
+      return (a.title ?? "").localeCompare(b.title ?? "");
     }
 
     // Band C (≤5): sort by relevance score first, then citations
     if (scoreB !== scoreA) return scoreB - scoreA;
-    return b.citationCount - a.citationCount;
+    if (b.citationCount !== a.citationCount) return b.citationCount - a.citationCount;
+    return (a.title ?? "").localeCompare(b.title ?? "");
   });
 }
 
@@ -414,7 +416,8 @@ export async function buildSmartSearchPlan(
       system,
       messages: [{ role: "user", content: input }],
       jsonMode: true,
-      temperature: 0.2,
+      noThinking: true,
+      temperature: 0,
     });
 
     console.log(`[smart-search] AI response (${response.provider}):`, response.content.slice(0, 200));
@@ -702,7 +705,10 @@ export async function smartSearch(
     const aTier = getPriorityTier(a);
     const bTier = getPriorityTier(b);
     if (aTier !== bTier) return aTier - bTier;
-    return b.citationCount - a.citationCount;
+    if (b.citationCount !== a.citationCount) return b.citationCount - a.citationCount;
+    // Stable tie-breaker: sort by title alphabetically so identical-citation papers
+    // always appear in the same order across runs
+    return (a.title ?? "").localeCompare(b.title ?? "");
   });
   // Hard cap at 100 — scoring 200 papers causes SSE timeout
   // Cap enrichment at limit (120s timeout protects against SSE disconnect)
