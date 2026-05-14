@@ -6,7 +6,7 @@ import type { AIProvider } from "@/lib/ai";
 import { concurrentPool } from "@/lib/concurrent-pool";
 import { batchFetchFullText } from "@/lib/research/fulltext-fetcher";
 
-const MAX_CONCURRENCY = 100;
+const MAX_CONCURRENCY = 15;
 const FULLTEXT_CONCURRENCY = 20;
 const DEFAULT_PROVIDER: AIProvider = "deepseek-fast";
 

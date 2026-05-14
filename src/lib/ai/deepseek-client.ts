@@ -10,6 +10,7 @@
 import type { AIRequestOptions, AIResponse } from "./types";
 import { PROVIDER_MODELS } from "./types";
 import { proxyFetch } from "./proxy-fetch";
+import { fetchWithRetry } from "@/lib/retry-fetch";
 import { getEnv } from "@/lib/env";
 
 const DEEPSEEK_BASE = "https://api.deepseek.com";
@@ -81,11 +82,21 @@ export async function callDeepSeek(options: AIRequestOptions): Promise<AIRespons
 
   const body = buildBody(options, model, isReasoner, false);
 
-  const res = await proxyFetch(`${DEEPSEEK_BASE}/chat/completions`, {
-    method: "POST",
-    headers: baseHeaders(apiKey),
-    body: JSON.stringify(body),
-  });
+  const res = await fetchWithRetry(
+    `${DEEPSEEK_BASE}/chat/completions`,
+    {
+      method: "POST",
+      headers: baseHeaders(apiKey),
+      body: JSON.stringify(body),
+    },
+    {
+      maxRetries: 3,
+      baseDelayMs: 2000,
+      maxDelayMs: 15000,
+      retryOn: [429, 500, 502, 503],
+      timeoutMs: 30000,
+    }
+  );
 
   if (!res.ok) {
     const errText = await res.text();
