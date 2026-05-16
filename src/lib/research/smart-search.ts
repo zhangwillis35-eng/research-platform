@@ -724,9 +724,9 @@ export async function smartSearch(
     // always appear in the same order across runs
     return (a.title ?? "").localeCompare(b.title ?? "");
   });
-  // Cap enrichment — balance completeness vs SSE timeout (120s)
-  // Use 2x limit with a floor of 120 to ensure enough papers get enriched before scoring
-  const enrichCap = Math.min(allDeduped.length, Math.max(limit * 2, 120));
+  // Cap enrichment — score limit+20 extra papers as buffer for quality filtering
+  // 20→40, 50→70, 100→120
+  const enrichCap = Math.min(allDeduped.length, limit + 20);
   const rawPapers = allDeduped.slice(0, enrichCap);
   if (allDeduped.length > enrichCap) {
     onProgress?.("enrich", `去重后 ${allDeduped.length} 篇，按期刊等级 + 引用量保留前 ${enrichCap} 篇，补全摘要 + 期刊元数据...`);
