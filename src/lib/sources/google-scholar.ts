@@ -65,8 +65,9 @@ async function searchViaSerper(
   options: SearchOptions,
   apiKey: string
 ): Promise<SearchResult> {
-  const { query, limit = 40, yearFrom, yearTo } = options;
+  const { query, limit = 100, yearFrom, yearTo } = options;
   const NUM_PER_PAGE = 20; // Serper Scholar max = 20 per page
+  const totalPages = Math.min(Math.ceil(limit / NUM_PER_PAGE), 5); // up to 5 pages = 100 results
 
   // Always fetch page 1
   const page1 = await fetchSerperPage(query, apiKey, NUM_PER_PAGE, 1, yearFrom, yearTo);
@@ -74,22 +75,11 @@ async function searchViaSerper(
 
   let allPapers = page1;
 
-  // Page 2 (limit > 20 and page 1 had results)
-  if (limit > 20 && page1.length >= 15) {
-    const page2 = await fetchSerperPage(query, apiKey, NUM_PER_PAGE, 2, yearFrom, yearTo);
-    if (page2) allPapers = [...allPapers, ...page2];
-  }
-
-  // Page 3 (limit > 40)
-  if (limit > 40 && allPapers.length >= 35) {
-    const page3 = await fetchSerperPage(query, apiKey, NUM_PER_PAGE, 3, yearFrom, yearTo);
-    if (page3) allPapers = [...allPapers, ...page3];
-  }
-
-  // Page 4 (unlimited/999 mode)
-  if (limit > 60 && allPapers.length >= 55) {
-    const page4 = await fetchSerperPage(query, apiKey, NUM_PER_PAGE, 4, yearFrom, yearTo);
-    if (page4) allPapers = [...allPapers, ...page4];
+  // Fetch remaining pages dynamically — stop early if a page returns too few results
+  for (let pageNum = 2; pageNum <= totalPages; pageNum++) {
+    if (allPapers.length < (pageNum - 1) * NUM_PER_PAGE - 5) break; // previous page was sparse
+    const page = await fetchSerperPage(query, apiKey, NUM_PER_PAGE, pageNum, yearFrom, yearTo);
+    if (page) allPapers = [...allPapers, ...page];
   }
 
   console.log(`[google-scholar] Serper returned ${allPapers.length} papers`);
@@ -168,88 +158,101 @@ async function searchViaSerpAPI(
   options: SearchOptions,
   apiKey: string
 ): Promise<SearchResult> {
-  const { query, limit = 20, yearFrom, yearTo } = options;
+  const { query, limit = 100, yearFrom, yearTo } = options;
+  const NUM_PER_PAGE = 20; // SerpAPI Scholar max = 20 per page
+  const totalPages = Math.min(Math.ceil(limit / NUM_PER_PAGE), 5);
 
-  const params = new URLSearchParams({
-    engine: "google_scholar",
-    q: query,
-    api_key: apiKey,
-    num: String(Math.min(limit, 20)),
-    hl: "en",
-  });
+  let allPapers: UnifiedPaper[] = [];
 
-  if (yearFrom != null) params.set("as_ylo", String(yearFrom));
-  if (yearTo != null) params.set("as_yhi", String(yearTo));
+  for (let pageNum = 0; pageNum < totalPages; pageNum++) {
+    if (pageNum > 0 && allPapers.length < pageNum * NUM_PER_PAGE - 5) break;
 
-  const res = await fetchWithRetry(
-    `https://serpapi.com/search.json?${params}`,
-    {},
-    { maxRetries: 2, baseDelayMs: 2000, retryOn: [429, 503] }
-  );
+    const params = new URLSearchParams({
+      engine: "google_scholar",
+      q: query,
+      api_key: apiKey,
+      num: String(NUM_PER_PAGE),
+      start: String(pageNum * NUM_PER_PAGE),
+      hl: "en",
+    });
 
-  if (!res.ok) {
-    throw new Error(`SerpAPI error: ${res.status}`);
-  }
+    if (yearFrom != null) params.set("as_ylo", String(yearFrom));
+    if (yearTo != null) params.set("as_yhi", String(yearTo));
 
-  const data = await res.json();
+    const res = await fetchWithRetry(
+      `https://serpapi.com/search.json?${params}`,
+      {},
+      { maxRetries: 2, baseDelayMs: 2000, retryOn: [429, 503] }
+    );
 
-  if (data.error?.includes("run out of searches") || data.error?.includes("Invalid API key")) {
-    markExhausted("serpapi");
-    throw new Error("SerpAPI quota exhausted");
-  }
-
-  const papers: UnifiedPaper[] = (data.organic_results ?? []).map(
-    (r: Record<string, unknown>) => {
-      const pubInfo = r.publication_info as {
-        summary?: string;
-        authors?: Array<{ name: string; author_id?: string }>;
-      } | undefined;
-
-      const inlineLinks = r.inline_links as {
-        cited_by?: { total?: number; link?: string };
-        versions?: { total?: number; link?: string };
-        cached_page_link?: string;
-      } | undefined;
-
-      const resources = r.resources as Array<{
-        file_format?: string;
-        link?: string;
-      }> | undefined;
-
-      const authors = pubInfo?.authors?.length
-        ? pubInfo.authors.map((a) => ({ name: a.name, authorId: a.author_id }))
-        : parseAuthorString(pubInfo?.summary).map((name) => ({ name }));
-
-      const venue = extractVenue(pubInfo?.summary);
-      const year = extractYear(pubInfo?.summary);
-
-      const pdfResource = resources?.find(
-        (res) => res.file_format === "PDF" || res.link?.endsWith(".pdf")
-      );
-
-      return {
-        title: r.title as string,
-        abstract: r.snippet as string | undefined,
-        authors,
-        year,
-        venue,
-        citationCount: inlineLinks?.cited_by?.total ?? 0,
-        referenceCount: 0,
-        doi: extractDOI(r.link as string | undefined),
-        externalId: r.result_id as string,
-        source: "google_scholar" as const,
-        pdfUrl: pdfResource?.link ?? (r.link as string | undefined),
-        openAccessPdf: pdfResource?.link,
-        fieldsOfStudy: undefined,
-      };
+    if (!res.ok) {
+      if (pageNum === 0) throw new Error(`SerpAPI error: ${res.status}`);
+      break; // partial results from earlier pages are still usable
     }
-  );
 
-  console.log(`[google-scholar] SerpAPI returned ${papers.length} papers`);
+    const data = await res.json();
+
+    if (data.error?.includes("run out of searches") || data.error?.includes("Invalid API key")) {
+      markExhausted("serpapi");
+      if (pageNum === 0) throw new Error("SerpAPI quota exhausted");
+      break;
+    }
+
+    const papers: UnifiedPaper[] = (data.organic_results ?? []).map(
+      (r: Record<string, unknown>) => {
+        const pubInfo = r.publication_info as {
+          summary?: string;
+          authors?: Array<{ name: string; author_id?: string }>;
+        } | undefined;
+
+        const inlineLinks = r.inline_links as {
+          cited_by?: { total?: number; link?: string };
+          versions?: { total?: number; link?: string };
+          cached_page_link?: string;
+        } | undefined;
+
+        const resources = r.resources as Array<{
+          file_format?: string;
+          link?: string;
+        }> | undefined;
+
+        const authors = pubInfo?.authors?.length
+          ? pubInfo.authors.map((a) => ({ name: a.name, authorId: a.author_id }))
+          : parseAuthorString(pubInfo?.summary).map((name) => ({ name }));
+
+        const venue = extractVenue(pubInfo?.summary);
+        const year = extractYear(pubInfo?.summary);
+
+        const pdfResource = resources?.find(
+          (res) => res.file_format === "PDF" || res.link?.endsWith(".pdf")
+        );
+
+        return {
+          title: r.title as string,
+          abstract: r.snippet as string | undefined,
+          authors,
+          year,
+          venue,
+          citationCount: inlineLinks?.cited_by?.total ?? 0,
+          referenceCount: 0,
+          doi: extractDOI(r.link as string | undefined),
+          externalId: r.result_id as string,
+          source: "google_scholar" as const,
+          pdfUrl: pdfResource?.link ?? (r.link as string | undefined),
+          openAccessPdf: pdfResource?.link,
+          fieldsOfStudy: undefined,
+        };
+      }
+    );
+
+    allPapers = [...allPapers, ...papers];
+  }
+
+  console.log(`[google-scholar] SerpAPI returned ${allPapers.length} papers`);
 
   return {
-    papers,
-    total: (data.search_information?.total_results as number) ?? papers.length,
+    papers: allPapers,
+    total: allPapers.length,
     source: "google_scholar",
   };
 }

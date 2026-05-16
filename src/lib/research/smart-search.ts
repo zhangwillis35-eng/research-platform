@@ -14,8 +14,7 @@ import { searchOpenAlexByJournals } from "@/lib/sources/openalex";
 import { FT50_JOURNALS, UTD24_JOURNALS } from "@/lib/sources/journal-rankings";
 import type { SearchResult } from "@/lib/sources/types";
 import type { UnifiedPaper } from "@/lib/sources/types";
-import { scoreRelevance, scoreRelevanceWithFullText, filterByRelevance, type ScoredPaper } from "./relevance-scorer";
-import { batchFetchFullText, type FullTextResult } from "./fulltext-fetcher";
+import { scoreRelevance, filterByRelevance, type ScoredPaper } from "./relevance-scorer";
 
 export interface SearchFilters {
   minABS?: "1" | "2" | "3" | "4" | "4*";
@@ -506,7 +505,7 @@ export async function smartSearch(
       ),
       // Google Scholar with Chinese keywords
       searchAllSourcesRaw({
-        query: gsChineseQuery, limit: Math.max(40, limit), yearFrom, yearTo,
+        query: gsChineseQuery, limit: Math.max(100, limit), yearFrom, yearTo,
         sources: ["google_scholar"],
       }).catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] })),
       // OpenAlex + Semantic Scholar with Chinese keywords (they index Chinese journals)
@@ -552,7 +551,7 @@ export async function smartSearch(
       Promise.all(
         gsQueries.map((q) =>
           searchAllSourcesRaw({
-            query: q, limit: Math.max(40, limit), yearFrom, yearTo,
+            query: q, limit: Math.max(100, limit), yearFrom, yearTo,
             sources: ["google_scholar"],
           }).catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
         )
@@ -725,9 +724,9 @@ export async function smartSearch(
     // always appear in the same order across runs
     return (a.title ?? "").localeCompare(b.title ?? "");
   });
-  // Hard cap at 100 — scoring 200 papers causes SSE timeout
-  // Cap enrichment at limit (120s timeout protects against SSE disconnect)
-  const enrichCap = Math.min(allDeduped.length, Math.max(limit, 80));
+  // Cap enrichment — balance completeness vs SSE timeout (120s)
+  // Use 2x limit with a floor of 120 to ensure enough papers get enriched before scoring
+  const enrichCap = Math.min(allDeduped.length, Math.max(limit * 2, 120));
   const rawPapers = allDeduped.slice(0, enrichCap);
   if (allDeduped.length > enrichCap) {
     onProgress?.("enrich", `去重后 ${allDeduped.length} 篇，按期刊等级 + 引用量保留前 ${enrichCap} 篇，补全摘要 + 期刊元数据...`);
@@ -923,13 +922,19 @@ export async function smartSearch(
   }
 
   // Step 6.5: Pre-scoring truncation — only when paper count is very high (>500)
-  // Use citation count as primary signal (universally available, correlates with relevance)
-  // Journal grade as secondary — avoids discarding niche-venue papers that may be highly relevant
+  // Use priority tier (journal quality) as primary, citation count as secondary
+  // This prevents recent high-relevance papers in niche venues from being discarded
   if (limit < 999 && papers.length > 500) {
-    papers.sort((a, b) => b.citationCount - a.citationCount);
-    const candidatePool = Math.max(limit * 5, 200);
+    papers.sort((a, b) => {
+      const aTier = getPriorityTier(a);
+      const bTier = getPriorityTier(b);
+      if (aTier !== bTier) return aTier - bTier;
+      if (b.citationCount !== a.citationCount) return b.citationCount - a.citationCount;
+      return (a.title ?? "").localeCompare(b.title ?? "");
+    });
+    const candidatePool = Math.max(limit * 5, 300);
     papers = papers.slice(0, candidatePool);
-    onProgress?.("truncate", `按引用量排序，保留前 ${papers.length} 篇候选进入评分`);
+    onProgress?.("truncate", `按期刊等级 + 引用量排序，保留前 ${papers.length} 篇候选进入评分`);
   }
 
   // Step 7: Two-phase scoring pipeline
