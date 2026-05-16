@@ -1,5 +1,6 @@
 // FT50 — Financial Times Top 50 Business Journals (2025 list)
-// Source: https://www.ft.com/ft-top-50-journals
+// Source: https://ceibs.libguides.com/c.php?g=963339&p=7006421
+// Verified: 2026-05-16 against CEIBS LibGuides (50 journals)
 export const FT50_JOURNALS = new Set([
   // Accounting (6)
   "The Accounting Review",
@@ -17,19 +18,19 @@ export const FT50_JOURNALS = new Set([
   // Entrepreneurship (2)
   "Entrepreneurship Theory and Practice",
   "Journal of Business Venturing",
-  // Finance (4)
+  // Finance (5)
   "Journal of Finance",
   "Journal of Financial Economics",
   "Journal of Financial and Quantitative Analysis",
+  "Review of Finance",
   "Review of Financial Studies",
   // Information Systems (3)
   "Information Systems Research",
   "Journal of Management Information Systems",
   "MIS Quarterly",
-  // International Business (2)
+  // International Business (1)
   "Journal of International Business Studies",
-  "Journal of World Business",
-  // Management (6)
+  // Management (7)
   "Academy of Management Annals",
   "Academy of Management Journal",
   "Academy of Management Review",
@@ -85,7 +86,7 @@ export const UTD24_JOURNALS = new Set([
   "MIS Quarterly",
   // International Business (1)
   "Journal of International Business Studies",
-  // Management (4)
+  // Management (5)
   "Academy of Management Journal",
   "Academy of Management Review",
   "Administrative Science Quarterly",
@@ -107,7 +108,7 @@ export const UTD24_JOURNALS = new Set([
 
 // ABS (Chartered Association of Business Schools) 4* Journals of Distinction
 // Source: Chartered ABS Academic Journal Guide 2024
-// Full list of 45 journals rated 4* (Journal of Distinction)
+// Full list of 46 journals rated 4* (Journal of Distinction)
 export const ABS4STAR_JOURNALS = new Set([
   // Accounting
   "The Accounting Review",
