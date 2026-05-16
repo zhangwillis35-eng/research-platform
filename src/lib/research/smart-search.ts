@@ -14,7 +14,7 @@ import { searchOpenAlexByJournals } from "@/lib/sources/openalex";
 import { FT50_JOURNALS, UTD24_JOURNALS } from "@/lib/sources/journal-rankings";
 import type { SearchResult } from "@/lib/sources/types";
 import type { UnifiedPaper } from "@/lib/sources/types";
-import { scoreRelevance, filterByRelevance, type ScoredPaper } from "./relevance-scorer";
+import type { ScoredPaper } from "./relevance-scorer";
 
 export interface SearchFilters {
   minABS?: "1" | "2" | "3" | "4" | "4*";
@@ -141,51 +141,27 @@ function isQualitySource(p: UnifiedPaper): boolean {
  */
 function sortByQuality(papers: ScoredPaper[]): ScoredPaper[] {
   return papers.sort((a, b) => {
-    const scoreA = a.relevanceScore ?? -1;
-    const scoreB = b.relevanceScore ?? -1;
-
-    // Assign band: 0 = high (8-10), 1 = good (6-7), 2 = marginal (≤5), 3 = unscored
-    const bandOf = (s: number) => s >= 8 ? 0 : s >= 6 ? 1 : s >= 0 ? 2 : 3;
-    const bandA = bandOf(scoreA);
-    const bandB = bandOf(scoreB);
-
-    // Different bands: higher band first
-    if (bandA !== bandB) return bandA - bandB;
-
-    // Same band: Band A & B sort by citations (within-band relevance is similar enough)
-    if (bandA <= 1) {
-      if (b.citationCount !== a.citationCount) return b.citationCount - a.citationCount;
-      return (a.title ?? "").localeCompare(b.title ?? "");
-    }
-
-    // Band C (≤5): sort by relevance score first, then citations
-    if (scoreB !== scoreA) return scoreB - scoreA;
+    // Sort by priority tier (journal quality) first, then by citation count
+    const aTier = getPriorityTier(a);
+    const bTier = getPriorityTier(b);
+    if (aTier !== bTier) return aTier - bTier;
     if (b.citationCount !== a.citationCount) return b.citationCount - a.citationCount;
     return (a.title ?? "").localeCompare(b.title ?? "");
   });
 }
 
-function applyTieredLimit(papers: ScoredPaper[], limit: number, relevanceScored: boolean, journalLang: JournalLang = "en"): ScoredPaper[] {
-  // Chinese journals: skip quality filter
-  if (journalLang === "zh") {
-    const sorted = sortByQuality(papers);
-    // Keep papers that scored >= 3 OR were never scored (undefined = scoring failed)
-    if (relevanceScored) return sorted.filter(p => p.relevanceScore == null || p.relevanceScore >= 3).slice(0, limit >= 999 ? sorted.length : limit);
+function applyTieredLimit(papers: ScoredPaper[], limit: number, _relevanceScored: boolean, journalLang: JournalLang = "en"): ScoredPaper[] {
+  const sorted = sortByQuality(papers);
+
+  if (journalLang === "zh" || limit >= 999) {
     return sorted.slice(0, limit >= 999 ? sorted.length : limit);
   }
 
-  const sorted = sortByQuality(papers);
-
-  if (limit >= 999) {
-    return relevanceScored ? sorted.filter(p => p.relevanceScore == null || p.relevanceScore >= 5) : sorted;
-  }
-
   if (limit >= 100) {
-    // 100 (不限刊): keep all three tiers, up to 100
     return sorted.slice(0, 100);
   }
 
-  // 20 or 50: P1 first, then P2, then P3
+  // 20 or 50: P1 first, then P2, then P3, sorted by citations within each tier
   const p1 = sorted.filter(p => isPriority1(p));
   const p2 = sorted.filter(p => !isPriority1(p) && isPriority2(p));
   const p3 = sorted.filter(p => !isPriority1(p) && !isPriority2(p) && isPriority3(p));
@@ -735,56 +711,44 @@ export async function smartSearch(
     }
   }
 
-  // Step 5.5: Sort all papers by quality, then split into enrichment pool + scoring pool
-  // Sort by 3-tier priority: P1 (Nature/Science/ABS3+/Q1) → P2 (high citations) → P3 (recent arXiv) → rest
+  // Step 5.5: Sort all papers by priority tier + citation count
+  // P1 (Nature/Science/ABS3+/Q1) → P2 (high citations) → P3 (recent arXiv) → rest
   const allDeduped = Array.from(seen.values());
   allDeduped.sort((a, b) => {
     const aTier = getPriorityTier(a);
     const bTier = getPriorityTier(b);
     if (aTier !== bTier) return aTier - bTier;
     if (b.citationCount !== a.citationCount) return b.citationCount - a.citationCount;
-    // Stable tie-breaker: sort by title alphabetically so identical-citation papers
-    // always appear in the same order across runs
     return (a.title ?? "").localeCompare(b.title ?? "");
   });
 
-  // Scoring pool: larger set that AI will evaluate (papers WITH existing abstracts don't need enrichment)
-  // Enrichment pool: subset that needs abstract filling (top papers by quality)
-  const scoringPool = Math.min(allDeduped.length, Math.max(limit * 4, 200));
-  const enrichCap = Math.min(scoringPool, limit + 20);
-  const rawPapers = allDeduped.slice(0, scoringPool);
+  // Take top papers for enrichment (limit + 20 buffer for quality filtering)
+  const enrichCap = Math.min(allDeduped.length, limit + 20);
+  const rawPapers = allDeduped.slice(0, enrichCap);
 
-  // Papers beyond enrichCap still enter scoring IF they already have abstracts from search sources
-  const needEnrichment = rawPapers.slice(0, enrichCap);
-  const alreadyHaveAbstract = rawPapers.slice(enrichCap).filter(p => p.abstract && p.abstract.length >= 80);
-  const skippedNoAbstract = rawPapers.length - enrichCap - alreadyHaveAbstract.length;
-
-  if (allDeduped.length > scoringPool) {
-    onProgress?.("enrich", `去重后 ${allDeduped.length} 篇，保留 ${scoringPool} 篇候选（补全前 ${enrichCap} 篇摘要，${alreadyHaveAbstract.length} 篇已有摘要${skippedNoAbstract > 0 ? `，${skippedNoAbstract} 篇无摘要跳过` : ""}）...`);
+  if (allDeduped.length > enrichCap) {
+    onProgress?.("enrich", `去重后 ${allDeduped.length} 篇，按期刊等级 + 引用量保留前 ${enrichCap} 篇，补全摘要 + 期刊元数据...`);
   } else {
     onProgress?.("enrich", `去重后 ${rawPapers.length} 篇，补全摘要 + 期刊元数据...`);
   }
 
-  // Phase 1: Enrichment — only enrich the top subset (fills abstracts from S2, CrossRef, OpenAlex)
-  // Papers beyond enrichCap that already have abstracts skip enrichment and go straight to scoring
+  // Enrichment: fill abstracts from S2, CrossRef, OpenAlex
   // enrichPapersBatch mutates papers in-place, so on timeout we keep partial progress
   try {
     await Promise.race([
-      enrichPapersBatch(needEnrichment),
+      enrichPapersBatch(rawPapers),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error("enrich_timeout")), 120000)),
     ]);
   } catch (err) {
     if ((err as Error).message === "enrich_timeout") {
       console.warn("[smart-search] Enrichment timed out after 120s, using partial data");
       onProgress?.("enrich", "元数据补全超时，使用已有数据继续...");
-      // needEnrichment already has partial enrichment (mutated in-place)
     } else {
       throw err;
     }
   }
 
-  // Merge: enriched papers + papers that already had abstracts (skip those without)
-  const enrichedPapers = [...needEnrichment, ...alreadyHaveAbstract];
+  const enrichedPapers = rawPapers;
 
   let papers = enrichedPapers;
 
@@ -953,59 +917,14 @@ export async function smartSearch(
     }
   }
 
-  // Step 6.5: Pre-scoring truncation — only when paper count is very high (>500)
-  // Use priority tier (journal quality) as primary, citation count as secondary
-  // This prevents recent high-relevance papers in niche venues from being discarded
-  if (limit < 999 && papers.length > 500) {
-    papers.sort((a, b) => {
-      const aTier = getPriorityTier(a);
-      const bTier = getPriorityTier(b);
-      if (aTier !== bTier) return aTier - bTier;
-      if (b.citationCount !== a.citationCount) return b.citationCount - a.citationCount;
-      return (a.title ?? "").localeCompare(b.title ?? "");
-    });
-    const candidatePool = Math.max(limit * 5, 300);
-    papers = papers.slice(0, candidatePool);
-    onProgress?.("truncate", `按期刊等级 + 引用量排序，保留前 ${papers.length} 篇候选进入评分`);
-  }
-
-  // Step 7: Two-phase scoring pipeline
-  // Phase 1: Fast abstract-based scoring to narrow down candidates
-  // Phase 2: Full text fetch + deep scoring for top candidates only (quality tiers)
+  // Step 7: Select top papers by priority tier + citation count
+  // Papers are already sorted by priority tier from Step 5.5
+  // No AI scoring — selection relies on source relevance ranking + citation count
+  const scoredPapers: ScoredPaper[] = papers.map((p) => ({ ...p, relevanceScore: undefined }));
   const isQualityTier = limit <= 50;
-  const totalBeforeRelevance = papers.length;
-  let scoredPapers: ScoredPaper[];
-  let relevanceScored = false;
 
-  if (enableRelevanceScoring && papers.length > 0) {
-    // Phase 1: Quick abstract-based scoring (ALL papers)
-    onProgress?.("score", `AI 摘要快速评分: 0/${papers.length} 篇...`);
-    try {
-      // Always use deepseek-fast for scoring — fastest + cheapest for structured JSON
-      scoredPapers = await scoreRelevance(papers, input, plan.translatedInput, "deepseek-fast",
-        (scored, total) => onProgress?.("score", `AI 摘要快速评分: ${scored}/${total} 篇...`),
-        onPaperScored
-      );
-      const unscoredCount = scoredPapers.filter(p => p.relevanceScore == null).length;
-      if (unscoredCount > 0) {
-        onProgress?.("score", `AI 摘要快速评分: ${papers.length}/${papers.length} 篇...（${unscoredCount} 篇评分失败）`);
-      }
-      scoredPapers = filterByRelevance(scoredPapers, 3); // Lower threshold for first pass
-      relevanceScored = true;
-    } catch (err) {
-      console.error("[smart-search] abstract scoring failed:", err);
-      scoredPapers = papers.map((p) => ({ ...p, relevanceScore: undefined }));
-    }
-
-    // Phase 2: Full-text fetching is DEFERRED — results are returned first,
-    // full text is fetched later via the /api/papers/fulltext endpoint.
-    // This prevents the search from hanging on slow/unreachable PDF sources.
-  } else {
-    scoredPapers = papers.map((p) => ({ ...p, relevanceScore: undefined }));
-  }
-
-  // Step 9: Tiered quality filtering based on user-selected limit
-  const finalPapers = applyTieredLimit(scoredPapers, limit, relevanceScored, journalLang);
+  // Apply tiered limit: P1 → P2 → P3 → rest, up to user's limit
+  const finalPapers = applyTieredLimit(scoredPapers, limit, false, journalLang);
 
   // Step 10: Optional SPECTER2 semantic re-ranking for quality tiers
   if (isQualityTier && finalPapers.length > 0) {
@@ -1047,10 +966,10 @@ export async function smartSearch(
     stats: {
       total: finalPapers.length,
       totalBeforeFilter,
-      totalBeforeRelevance,
+      totalBeforeRelevance: papers.length,
       byQuery,
       durationMs: Date.now() - startTime,
-      relevanceScored,
+      relevanceScored: false,
       googleScholarAvailable: !(globalThis as Record<string, unknown>).__serpapi_exhausted,
       withFullText,
       withAbstractOnly: withAbstract - withFullText,
