@@ -66,8 +66,8 @@ async function searchViaSerper(
   apiKey: string
 ): Promise<SearchResult> {
   const { query, limit = 100, yearFrom, yearTo } = options;
-  const NUM_PER_PAGE = 20; // Serper Scholar max = 20 per page
-  const totalPages = Math.min(Math.ceil(limit / NUM_PER_PAGE), 5); // up to 5 pages = 100 results
+  const NUM_PER_PAGE = 10; // Serper Scholar returns max 10 per page
+  const totalPages = Math.min(Math.ceil(limit / NUM_PER_PAGE), 10); // up to 10 pages = 100 results
 
   // Always fetch page 1
   const page1 = await fetchSerperPage(query, apiKey, NUM_PER_PAGE, 1, yearFrom, yearTo);
@@ -77,9 +77,10 @@ async function searchViaSerper(
 
   // Fetch remaining pages dynamically — stop early if a page returns too few results
   for (let pageNum = 2; pageNum <= totalPages; pageNum++) {
-    if (allPapers.length < (pageNum - 1) * NUM_PER_PAGE - 5) break; // previous page was sparse
+    if (allPapers.length < (pageNum - 1) * NUM_PER_PAGE - 2) break; // previous page was sparse
     const page = await fetchSerperPage(query, apiKey, NUM_PER_PAGE, pageNum, yearFrom, yearTo);
-    if (page) allPapers = [...allPapers, ...page];
+    if (!page || page.length === 0) break;
+    allPapers = [...allPapers, ...page];
   }
 
   console.log(`[google-scholar] Serper returned ${allPapers.length} papers`);
