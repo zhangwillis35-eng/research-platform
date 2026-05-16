@@ -14,7 +14,7 @@ import { searchOpenAlexByJournals } from "@/lib/sources/openalex";
 import { FT50_JOURNALS, UTD24_JOURNALS } from "@/lib/sources/journal-rankings";
 import type { SearchResult } from "@/lib/sources/types";
 import type { UnifiedPaper } from "@/lib/sources/types";
-import type { ScoredPaper } from "./relevance-scorer";
+import { scoreRelevance, filterByRelevance, type ScoredPaper } from "./relevance-scorer";
 
 export interface SearchFilters {
   minABS?: "1" | "2" | "3" | "4" | "4*";
@@ -141,7 +141,25 @@ function isQualitySource(p: UnifiedPaper): boolean {
  */
 function sortByQuality(papers: ScoredPaper[]): ScoredPaper[] {
   return papers.sort((a, b) => {
-    // Sort by priority tier (journal quality) first, then by citation count
+    const scoreA = a.relevanceScore ?? -1;
+    const scoreB = b.relevanceScore ?? -1;
+
+    // If both scored: sort by relevance band, then citations
+    if (scoreA >= 0 && scoreB >= 0) {
+      const bandOf = (s: number) => s >= 8 ? 0 : s >= 6 ? 1 : 2;
+      const bandA = bandOf(scoreA);
+      const bandB = bandOf(scoreB);
+      if (bandA !== bandB) return bandA - bandB;
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      if (b.citationCount !== a.citationCount) return b.citationCount - a.citationCount;
+      return (a.title ?? "").localeCompare(b.title ?? "");
+    }
+
+    // If only one scored, scored paper wins
+    if (scoreA >= 0) return -1;
+    if (scoreB >= 0) return 1;
+
+    // Both unscored: fall back to priority tier + citations
     const aTier = getPriorityTier(a);
     const bTier = getPriorityTier(b);
     if (aTier !== bTier) return aTier - bTier;
@@ -150,24 +168,24 @@ function sortByQuality(papers: ScoredPaper[]): ScoredPaper[] {
   });
 }
 
-function applyTieredLimit(papers: ScoredPaper[], limit: number, _relevanceScored: boolean, journalLang: JournalLang = "en"): ScoredPaper[] {
+function applyTieredLimit(papers: ScoredPaper[], limit: number, relevanceScored: boolean, journalLang: JournalLang = "en"): ScoredPaper[] {
   const sorted = sortByQuality(papers);
 
-  if (journalLang === "zh" || limit >= 999) {
+  if (journalLang === "zh") {
+    if (relevanceScored) return sorted.filter(p => p.relevanceScore == null || p.relevanceScore >= 3).slice(0, limit >= 999 ? sorted.length : limit);
     return sorted.slice(0, limit >= 999 ? sorted.length : limit);
+  }
+
+  if (limit >= 999) {
+    return relevanceScored ? sorted.filter(p => p.relevanceScore == null || p.relevanceScore >= 5) : sorted;
   }
 
   if (limit >= 100) {
     return sorted.slice(0, 100);
   }
 
-  // 20 or 50: P1 first, then P2, then P3, sorted by citations within each tier
-  const p1 = sorted.filter(p => isPriority1(p));
-  const p2 = sorted.filter(p => !isPriority1(p) && isPriority2(p));
-  const p3 = sorted.filter(p => !isPriority1(p) && !isPriority2(p) && isPriority3(p));
-
-  const combined = [...p1, ...p2, ...p3];
-  return combined.slice(0, limit);
+  // 20 or 50: sorted by relevance score (if available) → priority tier → citations
+  return sorted.slice(0, limit);
 }
 
 const EXTRACT_SYSTEM = `You are an academic literature search expert. Follow these steps IN ORDER:
@@ -919,14 +937,31 @@ export async function smartSearch(
     }
   }
 
-  // Step 7: Select top papers by priority tier + citation count
-  // Papers are already sorted by priority tier from Step 5.5
-  // No AI scoring — selection relies on source relevance ranking + citation count
-  const scoredPapers: ScoredPaper[] = papers.map((p) => ({ ...p, relevanceScore: undefined }));
+  // Step 7: AI relevance scoring on the pre-selected papers (limit+20 pool)
+  // Papers were pre-selected by journal tier + citations — now AI scores for relevance
   const isQualityTier = limit <= 50;
+  let scoredPapers: ScoredPaper[];
+  let relevanceScored = false;
+
+  if (enableRelevanceScoring && papers.length > 0) {
+    onProgress?.("score", `AI 摘要快速评分: 0/${papers.length} 篇...`);
+    try {
+      scoredPapers = await scoreRelevance(papers, input, plan.translatedInput, "deepseek-fast",
+        (scored, total) => onProgress?.("score", `AI 摘要快速评分: ${scored}/${total} 篇...`),
+        onPaperScored
+      );
+      scoredPapers = filterByRelevance(scoredPapers, 3);
+      relevanceScored = true;
+    } catch (err) {
+      console.error("[smart-search] abstract scoring failed:", err);
+      scoredPapers = papers.map((p) => ({ ...p, relevanceScore: undefined }));
+    }
+  } else {
+    scoredPapers = papers.map((p) => ({ ...p, relevanceScore: undefined }));
+  }
 
   // Apply tiered limit: P1 → P2 → P3 → rest, up to user's limit
-  const finalPapers = applyTieredLimit(scoredPapers, limit, false, journalLang);
+  const finalPapers = applyTieredLimit(scoredPapers, limit, relevanceScored, journalLang);
 
   // Step 10: Optional SPECTER2 semantic re-ranking for quality tiers
   if (isQualityTier && finalPapers.length > 0) {
@@ -971,7 +1006,7 @@ export async function smartSearch(
       totalBeforeRelevance: papers.length,
       byQuery,
       durationMs: Date.now() - startTime,
-      relevanceScored: false,
+      relevanceScored,
       googleScholarAvailable: !(globalThis as Record<string, unknown>).__serpapi_exhausted,
       withFullText,
       withAbstractOnly: withAbstract - withFullText,
