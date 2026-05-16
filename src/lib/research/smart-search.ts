@@ -521,7 +521,7 @@ export async function smartSearch(
       // Google Scholar with Chinese keywords
       withTimeoutZh(
         searchAllSourcesRaw({
-          query: gsChineseQuery, limit: Math.max(100, limit), yearFrom, yearTo,
+          query: gsChineseQuery, limit: Math.max(50, limit), yearFrom, yearTo,
           sources: ["google_scholar"],
         }).catch(() => emptyZh),
         emptyZh, "Google Scholar (ZH)", 60000
@@ -582,7 +582,7 @@ export async function smartSearch(
         Promise.all(
           gsQueries.map((q) =>
             searchAllSourcesRaw({
-              query: q, limit: Math.max(100, limit), yearFrom, yearTo,
+              query: q, limit: Math.max(50, limit), yearFrom, yearTo,
               sources: ["google_scholar"],
             }).catch(() => emptyResult)
           )
@@ -735,7 +735,7 @@ export async function smartSearch(
     }
   }
 
-  // Step 5.5: Cap papers before enrichment
+  // Step 5.5: Sort all papers by quality, then split into enrichment pool + scoring pool
   // Sort by 3-tier priority: P1 (Nature/Science/ABS3+/Q1) → P2 (high citations) → P3 (recent arXiv) → rest
   const allDeduped = Array.from(seen.values());
   allDeduped.sort((a, b) => {
@@ -747,34 +747,44 @@ export async function smartSearch(
     // always appear in the same order across runs
     return (a.title ?? "").localeCompare(b.title ?? "");
   });
-  // Cap enrichment — score limit+20 extra papers as buffer for quality filtering
-  // 20→40, 50→70, 100→120
-  const enrichCap = Math.min(allDeduped.length, limit + 20);
-  const rawPapers = allDeduped.slice(0, enrichCap);
-  if (allDeduped.length > enrichCap) {
-    onProgress?.("enrich", `去重后 ${allDeduped.length} 篇，按期刊等级 + 引用量保留前 ${enrichCap} 篇，补全摘要 + 期刊元数据...`);
+
+  // Scoring pool: larger set that AI will evaluate (papers WITH existing abstracts don't need enrichment)
+  // Enrichment pool: subset that needs abstract filling (top papers by quality)
+  const scoringPool = Math.min(allDeduped.length, Math.max(limit * 4, 200));
+  const enrichCap = Math.min(scoringPool, limit + 20);
+  const rawPapers = allDeduped.slice(0, scoringPool);
+
+  // Papers beyond enrichCap still enter scoring IF they already have abstracts from search sources
+  const needEnrichment = rawPapers.slice(0, enrichCap);
+  const alreadyHaveAbstract = rawPapers.slice(enrichCap).filter(p => p.abstract && p.abstract.length >= 80);
+  const skippedNoAbstract = rawPapers.length - enrichCap - alreadyHaveAbstract.length;
+
+  if (allDeduped.length > scoringPool) {
+    onProgress?.("enrich", `去重后 ${allDeduped.length} 篇，保留 ${scoringPool} 篇候选（补全前 ${enrichCap} 篇摘要，${alreadyHaveAbstract.length} 篇已有摘要${skippedNoAbstract > 0 ? `，${skippedNoAbstract} 篇无摘要跳过` : ""}）...`);
   } else {
     onProgress?.("enrich", `去重后 ${rawPapers.length} 篇，补全摘要 + 期刊元数据...`);
   }
 
-  // Phase 1: Enrichment (fills abstracts from S2, CrossRef, OpenAlex)
+  // Phase 1: Enrichment — only enrich the top subset (fills abstracts from S2, CrossRef, OpenAlex)
+  // Papers beyond enrichCap that already have abstracts skip enrichment and go straight to scoring
   // enrichPapersBatch mutates papers in-place, so on timeout we keep partial progress
-  let enrichedPapers: typeof rawPapers;
   try {
-    enrichedPapers = await Promise.race([
-      enrichPapersBatch(rawPapers),
+    await Promise.race([
+      enrichPapersBatch(needEnrichment),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error("enrich_timeout")), 120000)),
     ]);
   } catch (err) {
     if ((err as Error).message === "enrich_timeout") {
       console.warn("[smart-search] Enrichment timed out after 120s, using partial data");
       onProgress?.("enrich", "元数据补全超时，使用已有数据继续...");
-      // rawPapers already has partial enrichment (mutated in-place), use as-is
-      enrichedPapers = rawPapers;
+      // needEnrichment already has partial enrichment (mutated in-place)
     } else {
       throw err;
     }
   }
+
+  // Merge: enriched papers + papers that already had abstracts (skip those without)
+  const enrichedPapers = [...needEnrichment, ...alreadyHaveAbstract];
 
   let papers = enrichedPapers;
 
