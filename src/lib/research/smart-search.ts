@@ -732,10 +732,10 @@ export async function smartSearch(
     onProgress?.("enrich", `去重后 ${rawPapers.length} 篇，补全摘要 + 期刊元数据...`);
   }
 
-  // Enrichment: fill abstracts from S2, CrossRef, OpenAlex
-  // enrichPapersBatch mutates papers in-place, so on timeout we keep partial progress
+  // Enrichment: fill abstracts + journal metadata from S2, CrossRef, OpenAlex
+  let enrichedPapers: typeof rawPapers;
   try {
-    await Promise.race([
+    enrichedPapers = await Promise.race([
       enrichPapersBatch(rawPapers),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error("enrich_timeout")), 120000)),
     ]);
@@ -743,12 +743,14 @@ export async function smartSearch(
     if ((err as Error).message === "enrich_timeout") {
       console.warn("[smart-search] Enrichment timed out after 120s, using partial data");
       onProgress?.("enrich", "元数据补全超时，使用已有数据继续...");
+      // enrichPapersBatch creates new objects with journalRanking — on timeout,
+      // fall back to basic enrichment (sync, always completes)
+      const { enrichPapers } = await import("@/lib/sources/aggregator");
+      enrichedPapers = enrichPapers(rawPapers);
     } else {
       throw err;
     }
   }
-
-  const enrichedPapers = rawPapers;
 
   let papers = enrichedPapers;
 
