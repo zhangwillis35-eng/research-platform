@@ -490,18 +490,22 @@ function normalizeTitle(title: string): string {
 }
 
 function mergePapers(a: UnifiedPaper, b: UnifiedPaper): UnifiedPaper {
-  // Always keep the LONGEST abstract (S2/OpenAlex have full abstracts, GS only has snippets)
-  const bestAbstract = (a.abstract?.length ?? 0) >= (b.abstract?.length ?? 0) ? a.abstract : b.abstract;
+  // Order-independent merge: always pick the richer/better value for each field
+  // Use the paper with longer abstract as the base (more complete metadata source)
+  const aAbsLen = a.abstract?.length ?? 0;
+  const bAbsLen = b.abstract?.length ?? 0;
+  const [primary, secondary] = aAbsLen >= bAbsLen ? [a, b] : [b, a];
   return {
-    ...a,
-    abstract: bestAbstract ?? a.abstract ?? b.abstract,
-    doi: a.doi ?? b.doi,
-    year: a.year ?? b.year,
-    venue: a.venue ?? b.venue,
+    ...primary,
+    abstract: primary.abstract ?? secondary.abstract,
+    doi: primary.doi ?? secondary.doi,
+    year: primary.year ?? secondary.year,
+    venue: (primary.venue && primary.venue.length > (secondary.venue?.length ?? 0))
+      ? primary.venue : (secondary.venue ?? primary.venue),
     citationCount: Math.max(a.citationCount, b.citationCount),
     referenceCount: Math.max(a.referenceCount, b.referenceCount),
-    openAccessPdf: a.openAccessPdf ?? b.openAccessPdf,
-    pdfUrl: a.pdfUrl ?? b.pdfUrl,
-    fieldsOfStudy: a.fieldsOfStudy ?? b.fieldsOfStudy,
+    openAccessPdf: primary.openAccessPdf ?? secondary.openAccessPdf,
+    pdfUrl: primary.pdfUrl ?? secondary.pdfUrl,
+    fieldsOfStudy: primary.fieldsOfStudy ?? secondary.fieldsOfStudy,
   };
 }

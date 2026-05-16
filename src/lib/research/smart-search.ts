@@ -494,37 +494,53 @@ export async function smartSearch(
     const totalQ = cnkiQueries.length + freeQueries.length + 2;
     onProgress?.("search", `中文检索：CNKI + Google Scholar + OpenAlex + S2（${totalQ} 个查询）...`);
 
-    const searchPromise = Promise.all([
+    // Per-source timeout wrapper — each source gets 60s
+    type RawResultZh = { papers: UnifiedPaper[]; results: SearchResult[] };
+    const emptyZh: RawResultZh = { papers: [], results: [] };
+    const withTimeoutZh = <T>(p: Promise<T>, fallback: T, label: string, ms = 60000): Promise<T> =>
+      Promise.race([
+        p,
+        new Promise<T>((resolve) => setTimeout(() => {
+          console.warn(`[smart-search] ${label} timed out after ${ms / 1000}s`);
+          resolve(fallback);
+        }, ms)),
+      ]);
+
+    const [cnkiResults, gsResults, freeResults, translatedResults] = await Promise.all([
       // CNKI via Serper (site:cnki.net)
-      Promise.all(
-        cnkiQueries.map((q) =>
-          searchCNKI({ query: q, limit: Math.max(20, limit), yearFrom, yearTo })
-            .then((r) => ({ papers: r.papers, results: [r] as SearchResult[] }))
-            .catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
-        )
+      withTimeoutZh(
+        Promise.all(
+          cnkiQueries.map((q) =>
+            searchCNKI({ query: q, limit: Math.max(20, limit), yearFrom, yearTo })
+              .then((r) => ({ papers: r.papers, results: [r] as SearchResult[] }))
+              .catch(() => emptyZh)
+          )
+        ),
+        [] as RawResultZh[], "CNKI", 60000
       ),
       // Google Scholar with Chinese keywords
-      searchAllSourcesRaw({
-        query: gsChineseQuery, limit: Math.max(100, limit), yearFrom, yearTo,
-        sources: ["google_scholar"],
-      }).catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] })),
-      // OpenAlex + Semantic Scholar with Chinese keywords (they index Chinese journals)
-      Promise.all(
-        freeQueries.map((q) =>
-          searchAllSourcesRaw({ query: q, limit: 20, yearFrom, yearTo, freeOnly: true })
-            .catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
-        )
+      withTimeoutZh(
+        searchAllSourcesRaw({
+          query: gsChineseQuery, limit: Math.max(100, limit), yearFrom, yearTo,
+          sources: ["google_scholar"],
+        }).catch(() => emptyZh),
+        emptyZh, "Google Scholar (ZH)", 60000
       ),
-      // Also search with English translation (many Chinese papers have English metadata in OpenAlex/S2)
-      searchAllSourcesRaw({ query: translatedQuery, limit: 30, yearFrom, yearTo, freeOnly: true })
-        .catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] })),
-    ]);
-
-    // 120s hard timeout
-    const [cnkiResults, gsResults, freeResults, translatedResults] = await Promise.race([
-      searchPromise,
-      new Promise<[never[], { papers: never[]; results: never[] }, never[], { papers: never[]; results: never[] }]>((resolve) =>
-        setTimeout(() => resolve([[], { papers: [], results: [] }, [], { papers: [], results: [] }]), 120000)
+      // OpenAlex + Semantic Scholar with Chinese keywords
+      withTimeoutZh(
+        Promise.all(
+          freeQueries.map((q) =>
+            searchAllSourcesRaw({ query: q, limit: 20, yearFrom, yearTo, freeOnly: true })
+              .catch(() => emptyZh)
+          )
+        ),
+        [] as RawResultZh[], "Free sources (ZH)", 60000
+      ),
+      // English translation query
+      withTimeoutZh(
+        searchAllSourcesRaw({ query: translatedQuery, limit: 30, yearFrom, yearTo, freeOnly: true })
+          .catch(() => emptyZh),
+        emptyZh, "Translated query", 45000
       ),
     ]);
 
@@ -545,52 +561,59 @@ export async function smartSearch(
     const totalQueries = gsQueries.length + freeQueries.length + 2;
     onProgress?.("search", `并行检索 ${totalQueries} 个查询...`);
 
-    // Race all searches against a 120s hard deadline
-    const searchPromise = Promise.all([
+    // Run all searches in parallel, each with its own per-source timeout.
+    // Use Promise.allSettled so slow/failed sources don't block others.
+    type RawResult = { papers: UnifiedPaper[]; results: SearchResult[] };
+    const emptyResult: RawResult = { papers: [], results: [] };
+
+    // Per-source timeout wrapper — each source gets 60s to respond
+    const withTimeout = <T>(p: Promise<T>, fallback: T, label: string, ms = 60000): Promise<T> =>
+      Promise.race([
+        p,
+        new Promise<T>((resolve) => setTimeout(() => {
+          console.warn(`[smart-search] ${label} timed out after ${ms / 1000}s`);
+          resolve(fallback);
+        }, ms)),
+      ]);
+
+    const [gsResults, freeResults, rawResults, broadOAResults] = await Promise.all([
       // Google Scholar (with extras like arXiv, CORE, etc.)
-      Promise.all(
-        gsQueries.map((q) =>
-          searchAllSourcesRaw({
-            query: q, limit: Math.max(100, limit), yearFrom, yearTo,
-            sources: ["google_scholar"],
-          }).catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] }))
-        )
+      withTimeout(
+        Promise.all(
+          gsQueries.map((q) =>
+            searchAllSourcesRaw({
+              query: q, limit: Math.max(100, limit), yearFrom, yearTo,
+              sources: ["google_scholar"],
+            }).catch(() => emptyResult)
+          )
+        ),
+        [] as RawResult[], "Google Scholar", 60000
       ),
       // Free sources: precise + broad queries (exact-phrase focused)
-      Promise.all(
-        freeQueries.map((q) =>
-          searchAllSourcesRaw({ query: q, limit: freeLimit, yearFrom, yearTo, freeOnly: true }).catch(() => ({
-            papers: [] as UnifiedPaper[],
-            results: [] as SearchResult[],
-          }))
-        )
+      withTimeout(
+        Promise.all(
+          freeQueries.map((q) =>
+            searchAllSourcesRaw({ query: q, limit: freeLimit, yearFrom, yearTo, freeOnly: true })
+              .catch(() => emptyResult)
+          )
+        ),
+        [] as RawResult[], "Free sources", 60000
       ),
-      // Raw semantic query — supplementary catch-all (increased from 20 to 50)
-      searchAllSourcesRaw({ query: rawSemanticQuery, limit: 50, yearFrom, yearTo, freeOnly: true }).catch(() => ({
-        papers: [] as UnifiedPaper[],
-        results: [] as SearchResult[],
-      })),
+      // Raw semantic query — supplementary catch-all
+      withTimeout(
+        searchAllSourcesRaw({ query: rawSemanticQuery, limit: 50, yearFrom, yearTo, freeOnly: true })
+          .catch(() => emptyResult),
+        emptyResult, "Raw semantic", 45000
+      ),
       // Broad OpenAlex sweep: 200 results to capture papers from diverse journals
-      // that precision/broad queries miss (e.g., Energy Economics, TFSC are ranked
-      // below JCP/ESPR in OpenAlex relevance — need 200+ to reach them)
-      searchAllSourcesRaw({
-        query: rawSemanticQuery, limit: 200, yearFrom, yearTo,
-        sources: ["openalex"],
-      }).catch(() => ({ papers: [] as UnifiedPaper[], results: [] as SearchResult[] })),
-    ]);
-
-    // 120s hard timeout — use whatever results we have
-    type RawResult = { papers: UnifiedPaper[]; results: SearchResult[] };
-    const [gsResults, freeResults, rawResults, broadOAResults] = await Promise.race([
-      searchPromise,
-      new Promise<[RawResult[], RawResult[], RawResult, RawResult]>((resolve) =>
-        setTimeout(() => {
-          console.log("[smart-search] 120s search deadline hit, using partial results");
-          const empty: RawResult = { papers: [], results: [] };
-          resolve([[], [], empty, empty]);
-        }, 120000)
+      withTimeout(
+        searchAllSourcesRaw({
+          query: rawSemanticQuery, limit: 200, yearFrom, yearTo,
+          sources: ["openalex"],
+        }).catch(() => emptyResult),
+        emptyResult, "Broad OpenAlex", 45000
       ),
-    ]) as [RawResult[], RawResult[], RawResult, RawResult];
+    ]);
 
     allResults = [
       ...(gsResults ?? []),
@@ -735,7 +758,7 @@ export async function smartSearch(
   }
 
   // Phase 1: Enrichment (fills abstracts from S2, CrossRef, OpenAlex)
-  // 120s timeout — if external APIs are slow, continue with partial data
+  // enrichPapersBatch mutates papers in-place, so on timeout we keep partial progress
   let enrichedPapers: typeof rawPapers;
   try {
     enrichedPapers = await Promise.race([
@@ -744,11 +767,10 @@ export async function smartSearch(
     ]);
   } catch (err) {
     if ((err as Error).message === "enrich_timeout") {
-      console.warn("[smart-search] Enrichment timed out after 30s, using partial data");
+      console.warn("[smart-search] Enrichment timed out after 120s, using partial data");
       onProgress?.("enrich", "元数据补全超时，使用已有数据继续...");
-      // Fall back to papers with just journal rankings (sync, always completes)
-      const { enrichPapers } = await import("@/lib/sources/aggregator");
-      enrichedPapers = enrichPapers(rawPapers);
+      // rawPapers already has partial enrichment (mutated in-place), use as-is
+      enrichedPapers = rawPapers;
     } else {
       throw err;
     }
