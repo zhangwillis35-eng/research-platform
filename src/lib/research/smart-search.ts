@@ -103,8 +103,8 @@ function isPriority2(p: UnifiedPaper | ScoredPaper): boolean {
   const year = p.year ?? 0;
   const cited = p.citationCount ?? 0;
   const currentYear = new Date().getFullYear();
-  if (year >= currentYear && cited > 0) return true;         // 2026+: > 0
-  if (year === currentYear - 1 && cited > 30) return true;   // 2025: > 30
+  if (year >= currentYear && cited > 1) return true;         // 2026+: > 1
+  if (year === currentYear - 1 && cited > 5) return true;    // 2025: > 5
   if (year === currentYear - 2 && cited > 100) return true;  // 2024: > 100
   if (year <= currentYear - 3 && cited > 200) return true;   // 2023-: > 200
   return false;
