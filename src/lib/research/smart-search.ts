@@ -14,7 +14,7 @@ import { searchOpenAlexByJournals } from "@/lib/sources/openalex";
 import { FT50_JOURNALS, UTD24_JOURNALS } from "@/lib/sources/journal-rankings";
 import type { SearchResult } from "@/lib/sources/types";
 import type { UnifiedPaper } from "@/lib/sources/types";
-import { scoreRelevance, filterByRelevance, type ScoredPaper } from "./relevance-scorer";
+import { scoreRelevance, type ScoredPaper } from "./relevance-scorer";
 
 export interface SearchFilters {
   minABS?: "1" | "2" | "3" | "4" | "4*";
@@ -171,13 +171,9 @@ function sortByQuality(papers: ScoredPaper[]): ScoredPaper[] {
 function applyTieredLimit(papers: ScoredPaper[], limit: number, relevanceScored: boolean, journalLang: JournalLang = "en"): ScoredPaper[] {
   const sorted = sortByQuality(papers);
 
-  if (journalLang === "zh") {
-    if (relevanceScored) return sorted.filter(p => p.relevanceScore == null || p.relevanceScore >= 3).slice(0, limit >= 999 ? sorted.length : limit);
-    return sorted.slice(0, limit >= 999 ? sorted.length : limit);
-  }
-
+  // Unlimited mode: return all papers sorted by quality (no aggressive filtering)
   if (limit >= 999) {
-    return relevanceScored ? sorted.filter(p => p.relevanceScore == null || p.relevanceScore >= 5) : sorted;
+    return sorted;
   }
 
   if (limit >= 100) {
@@ -950,7 +946,9 @@ export async function smartSearch(
         (scored, total) => onProgress?.("score", `AI 摘要快速评分: ${scored}/${total} 篇...`),
         onPaperScored
       );
-      scoredPapers = filterByRelevance(scoredPapers, 3);
+      // Don't pre-filter here — let applyTieredLimit handle the final selection
+      // Sort by score descending so applyTieredLimit picks best papers first
+      scoredPapers.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
       relevanceScored = true;
     } catch (err) {
       console.error("[smart-search] abstract scoring failed:", err);
