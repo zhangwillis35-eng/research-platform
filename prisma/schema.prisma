@@ -20,6 +20,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   projects ResearchProject[]
+  stories  Story[]
 }
 
 model PendingRegistration {
@@ -390,7 +391,8 @@ model Contributor {
 
 model Story {
   id              String      @id @default(cuid())
-  contributorId   String
+  contributorId   String?     // from contributor portal
+  userId          String?     // from researcher case library
   rawContent      String      @db.Text // original story text
   status          StoryStatus @default(PENDING)
 
@@ -412,12 +414,14 @@ model Story {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  contributor Contributor   @relation(fields: [contributorId], references: [id], onDelete: Cascade)
+  contributor Contributor?  @relation(fields: [contributorId], references: [id], onDelete: Cascade)
+  user        User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
   bookmarks   CaseBookmark[]
 
   @@index([status, createdAt])
   @@index([obCategory])
   @@index([contributorId])
+  @@index([userId])
 }
 
 model CaseBookmark {

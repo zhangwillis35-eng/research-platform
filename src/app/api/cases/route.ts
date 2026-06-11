@@ -12,6 +12,7 @@ export async function GET(request: Request) {
   const contextType = searchParams.get("contextType");
   const q = searchParams.get("q");
   const projectId = searchParams.get("projectId");
+  const mine = searchParams.get("mine"); // "1" to filter user's own stories
   const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
   const pageSize = 20;
 
@@ -19,6 +20,7 @@ export async function GET(request: Request) {
   const where: Record<string, unknown> = { status: "PUBLISHED" };
   if (category) where.obCategory = category;
   if (contextType) where.contextType = contextType;
+  if (mine === "1") where.userId = auth.id;
   if (q) {
     where.OR = [
       { academicSummary: { contains: q, mode: "insensitive" } },
@@ -29,6 +31,7 @@ export async function GET(request: Request) {
   // Build select — conditionally include bookmarks only when projectId is present
   const select: Record<string, unknown> = {
     id: true,
+    rawContent: true,
     anonymizedContent: true,
     academicSummary: true,
     keyPhenomena: true,
@@ -38,6 +41,9 @@ export async function GET(request: Request) {
     viewCount: true,
     bookmarkCount: true,
     createdAt: true,
+    userId: true,
+    status: true,
+    followUpMessages: true,
   };
 
   if (projectId) {
@@ -72,14 +78,19 @@ export async function GET(request: Request) {
       );
   }
 
-  // Map results to add isBookmarked field
+  // Map results to frontend-friendly shape
   const result = cases.map((c: Record<string, unknown>) => {
-    const { bookmarks, ...rest } = c as Record<string, unknown> & {
+    const { bookmarks, keyPhenomena, obCategory, ...rest } = c as Record<string, unknown> & {
       bookmarks?: { id: string }[];
+      keyPhenomena?: string[];
+      obCategory?: string;
     };
     return {
       ...rest,
-      isBookmarked: Array.isArray(bookmarks) ? bookmarks.length > 0 : false,
+      obCategory: obCategory ?? null,
+      category: obCategory ?? "",
+      phenomena: Array.isArray(keyPhenomena) ? keyPhenomena : [],
+      bookmarked: Array.isArray(bookmarks) ? bookmarks.length > 0 : false,
     };
   });
 

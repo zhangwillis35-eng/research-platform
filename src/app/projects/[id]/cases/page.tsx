@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -19,22 +20,42 @@ import {
   Loader2,
   Lightbulb,
   Tag,
-  ChevronDown,
-  ChevronUp,
   Filter,
   HelpCircle,
   X,
+  Send,
+  PenLine,
+  Eye,
+  Clock,
+  CheckCircle2,
+  ChevronLeft,
+  MessageSquare,
 } from "lucide-react";
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+interface TheoryTag {
+  theory: string;
+  relevance: string;
+  explanation: string;
+}
 
 interface CaseStory {
   id: string;
-  anonymizedContent: string;
-  academicSummary?: string;
-  category: string;
-  contextType: string;
+  rawContent: string;
+  anonymizedContent: string | null;
+  academicSummary: string | null;
+  obCategory: string | null;
+  contextType: string | null;
   phenomena: string[];
-  theoryTags: string[];
+  theoryTags: TheoryTag[] | string[];
   bookmarked?: boolean;
+  viewCount: number;
+  bookmarkCount: number;
+  createdAt: string;
+  status: string;
+  userId?: string;
+  followUpMessages?: Array<{ role: string; content: string }>;
 }
 
 interface GeneratedIdea {
@@ -46,6 +67,8 @@ interface GeneratedIdea {
   caseLink: string;
   novelty: string;
 }
+
+// ─── Constants ──────────────────────────────────────────────────────────────
 
 const CATEGORIES: { value: string; label: string }[] = [
   { value: "", label: "全部分类" },
@@ -77,26 +100,51 @@ const CONTEXT_TYPES: { value: string; label: string }[] = [
 
 const PAGE_SIZE = 12;
 
+const categoryLabel = (val: string) =>
+  CATEGORIES.find((c) => c.value === val)?.label ?? val;
+const contextLabel = (val: string) =>
+  CONTEXT_TYPES.find((c) => c.value === val)?.label ?? val;
+
+// ─── Main Component ─────────────────────────────────────────────────────────
+
 export default function CasesPage() {
   const { id: projectId } = useParams<{ id: string }>();
 
+  // Case list state
   const [cases, setCases] = useState<CaseStory[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
 
+  // Filters
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [contextType, setContextType] = useState("");
 
+  // Selection & generation
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [generating, setGenerating] = useState(false);
   const [ideas, setIdeas] = useState<GeneratedIdea[]>([]);
 
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  // Detail panel
+  const [activeCase, setActiveCase] = useState<CaseStory | null>(null);
+
+  // Submit form
+  const [showSubmit, setShowSubmit] = useState(false);
+  const [submitContent, setSubmitContent] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+
+  // Guide
   const [showGuide, setShowGuide] = useState(true);
 
+  // Follow-up chat
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // ─── Fetch cases ────────────────────────────────────────────────────────
 
   const fetchCases = useCallback(
     async (p = 1) => {
@@ -133,6 +181,8 @@ export default function CasesPage() {
     fetchCases(1);
   }
 
+  // ─── Selection & bookmark ───────────────────────────────────────────────
+
   function toggleSelect(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -160,6 +210,8 @@ export default function CasesPage() {
     }
   }
 
+  // ─── Generate research questions ───────────────────────────────────────
+
   async function handleGenerate() {
     if (selected.size === 0) return;
     setGenerating(true);
@@ -167,10 +219,7 @@ export default function CasesPage() {
       const res = await fetch("/api/cases/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId,
-          storyIds: Array.from(selected),
-        }),
+        body: JSON.stringify({ projectId, storyIds: Array.from(selected) }),
       });
       if (!res.ok) throw new Error("Failed to generate ideas");
       const data = await res.json();
@@ -182,68 +231,383 @@ export default function CasesPage() {
     }
   }
 
-  const categoryLabel = (val: string) =>
-    CATEGORIES.find((c) => c.value === val)?.label ?? val;
-  const contextLabel = (val: string) =>
-    CONTEXT_TYPES.find((c) => c.value === val)?.label ?? val;
+  // ─── Submit story ─────────────────────────────────────────────────────
+
+  async function handleSubmit() {
+    if (submitContent.trim().length < 50) {
+      setSubmitError("请至少写50个字，让 AI 有足够的信息进行分析");
+      return;
+    }
+    setSubmitError("");
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/cases/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: submitContent }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSubmitError(data.error || "提交失败");
+        return;
+      }
+      setSubmitContent("");
+      setShowSubmit(false);
+      // Refresh after a delay to let AI process
+      setTimeout(() => fetchCases(1), 3000);
+    } catch {
+      setSubmitError("网络错误，请重试");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // ─── Follow-up chat (for own stories) ─────────────────────────────────
+
+  async function handleFollowUp() {
+    if (!chatInput.trim() || !activeCase) return;
+    setChatLoading(true);
+    try {
+      const res = await fetch(`/api/cases/${activeCase.id}/follow-up`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: chatInput }),
+      });
+      const data = await res.json();
+      if (activeCase) {
+        setActiveCase({ ...activeCase, followUpMessages: data.messages });
+      }
+      setChatInput("");
+    } finally {
+      setChatLoading(false);
+    }
+  }
+
+  // ─── Render ───────────────────────────────────────────────────────────
+
+  // Right panel: detail view of selected case
+  const renderDetailPanel = () => {
+    if (!activeCase) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full text-center py-20 text-muted-foreground">
+          <Eye className="w-10 h-10 mb-3 opacity-30" />
+          <p className="text-sm">选择左侧案例查看研究洞察</p>
+        </div>
+      );
+    }
+
+    const tags: TheoryTag[] = Array.isArray(activeCase.theoryTags)
+      ? activeCase.theoryTags.map((t) =>
+          typeof t === "string" ? { theory: t, relevance: "medium", explanation: "" } : t as TheoryTag,
+        )
+      : [];
+
+    const phenomena: string[] = Array.isArray(activeCase.phenomena) ? activeCase.phenomena : [];
+
+    return (
+      <div className="space-y-4 overflow-y-auto max-h-[calc(100vh-12rem)]">
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => setActiveCase(null)}
+            className="lg:hidden flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ChevronLeft className="w-4 h-4" /> 返回列表
+          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => toggleBookmark(activeCase.id)}
+              className="text-muted-foreground hover:text-amber-500 transition-colors"
+            >
+              {activeCase.bookmarked ? (
+                <BookmarkCheck className="h-4 w-4 text-amber-500" />
+              ) : (
+                <Bookmark className="h-4 w-4" />
+              )}
+            </button>
+            <span className="text-xs text-muted-foreground">
+              {activeCase.viewCount} 次浏览
+            </span>
+          </div>
+        </div>
+
+        {/* Status badge for processing stories */}
+        {activeCase.status !== "PUBLISHED" && (
+          <div className="flex items-center gap-2 text-sm">
+            {activeCase.status === "PROCESSING" && (
+              <span className="flex items-center gap-1 text-blue-500">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> AI 分析中...
+              </span>
+            )}
+            {activeCase.status === "PENDING" && (
+              <span className="flex items-center gap-1 text-amber-500">
+                <Clock className="w-3.5 h-3.5" /> 等待处理
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Raw content (anonymized or original) */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">案例讲述</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
+              {activeCase.anonymizedContent || activeCase.rawContent}
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Academic summary */}
+        {activeCase.academicSummary && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">学术摘要</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm leading-relaxed">
+                {activeCase.academicSummary}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Theory tags */}
+        {tags.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Tag className="w-3.5 h-3.5" /> 理论标签
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2.5">
+              {tags.map((tag, i) => (
+                <div key={i} className="flex items-start gap-2.5">
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full mt-0.5 shrink-0 ${
+                      tag.relevance === "high"
+                        ? "bg-teal/10 text-teal"
+                        : tag.relevance === "medium"
+                          ? "bg-amber-50 text-amber-600"
+                          : "bg-secondary text-muted-foreground"
+                    }`}
+                  >
+                    {tag.theory}
+                  </span>
+                  {tag.explanation && (
+                    <span className="text-xs text-muted-foreground">
+                      {tag.explanation}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Key phenomena */}
+        {phenomena.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {phenomena.map((p, i) => (
+              <span
+                key={i}
+                className="text-[11px] px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-600"
+              >
+                {p}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Category & context */}
+        <div className="flex gap-2 text-xs">
+          {activeCase.obCategory && (
+            <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+              {categoryLabel(activeCase.obCategory)}
+            </span>
+          )}
+          {activeCase.contextType && (
+            <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+              {contextLabel(activeCase.contextType)}
+            </span>
+          )}
+        </div>
+
+        {/* Follow-up conversation */}
+        {activeCase.followUpMessages && activeCase.followUpMessages.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <MessageSquare className="w-3.5 h-3.5" /> AI 对话补充
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {activeCase.followUpMessages.map((msg, i) => (
+                  <div
+                    key={i}
+                    className={`text-xs p-2.5 rounded-lg ${
+                      msg.role === "assistant"
+                        ? "bg-secondary"
+                        : "bg-teal/5 ml-6"
+                    }`}
+                  >
+                    {msg.content}
+                  </div>
+                ))}
+              </div>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleFollowUp();
+                }}
+                className="flex gap-2"
+              >
+                <Input
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder="回复 AI 的提问..."
+                  disabled={chatLoading}
+                  className="text-xs"
+                />
+                <Button
+                  type="submit"
+                  size="icon"
+                  variant="outline"
+                  disabled={chatLoading || !chatInput.trim()}
+                  className="h-8 w-8 shrink-0"
+                >
+                  {chatLoading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5" />
+                  )}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    );
+  };
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 space-y-6">
+    <div className="mx-auto max-w-7xl px-4 py-8 space-y-5">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">案例库</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            浏览组织行为学案例，选择感兴趣的案例生成研究问题与假设
+            浏览和分享组织行为学案例，生成研究问题与假设
           </p>
         </div>
-        {!showGuide && (
+        <div className="flex items-center gap-2">
           <Button
-            variant="ghost"
             size="sm"
-            className="text-muted-foreground"
-            onClick={() => setShowGuide(true)}
+            onClick={() => setShowSubmit(!showSubmit)}
+            className="bg-teal text-teal-foreground hover:bg-teal/90"
           >
-            <HelpCircle className="w-4 h-4 mr-1" />
-            使用说明
+            <PenLine className="w-3.5 h-3.5 mr-1" />
+            分享故事
           </Button>
-        )}
+          {!showGuide && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              onClick={() => setShowGuide(true)}
+            >
+              <HelpCircle className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* Submit form */}
+      {showSubmit && (
+        <Card className="border-teal/30">
+          <CardContent className="pt-5 space-y-3">
+            <div className="rounded-lg bg-secondary/50 p-3 text-xs text-muted-foreground leading-relaxed">
+              请像讲故事一样写下当时发生了什么、谁参与其中、谁影响了谁、大家可能为什么这样反应。AI
+              会自动匿名化并识别其中的组织行为学现象和理论视角。
+            </div>
+            <Textarea
+              placeholder="在这里描述你观察到的职场现象..."
+              value={submitContent}
+              onChange={(e) => setSubmitContent(e.target.value)}
+              rows={6}
+              className="resize-none text-sm"
+            />
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">
+                {submitContent.length} 字
+                {submitContent.length > 0 &&
+                  submitContent.length < 50 &&
+                  "（至少 50 字）"}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setShowSubmit(false);
+                    setSubmitContent("");
+                    setSubmitError("");
+                  }}
+                >
+                  取消
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSubmit}
+                  disabled={submitting || submitContent.trim().length < 50}
+                  className="bg-teal text-teal-foreground hover:bg-teal/90"
+                >
+                  {submitting ? (
+                    <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5 mr-1" />
+                  )}
+                  提交故事
+                </Button>
+              </div>
+            </div>
+            {submitError && (
+              <p className="text-xs text-destructive">{submitError}</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Collapsible guide */}
       {showGuide && (
         <Card className="border-teal/20 bg-teal/5">
           <CardContent className="py-4">
             <div className="flex items-start justify-between gap-4">
-              <div className="space-y-3 text-sm leading-relaxed">
+              <div className="space-y-2.5 text-sm leading-relaxed">
                 <p className="font-medium text-base">如何使用案例库</p>
-                <ol className="list-decimal ml-5 space-y-1.5 text-muted-foreground">
+                <ol className="list-decimal ml-5 space-y-1 text-muted-foreground text-xs">
                   <li>
-                    <span className="text-foreground font-medium">浏览案例</span>
-                    &nbsp;— 使用上方的分类/场景筛选器或关键词搜索，找到感兴趣的真实职场案例。每个案例均经过 AI 匿名化处理，并附有学术摘要和理论标签。
+                    <span className="text-foreground font-medium">分享故事</span>
+                    &nbsp;— 点击右上角「分享故事」按钮，写下你观察到的职场现象。AI 会自动匿名化、提取学术摘要和理论标签。
                   </li>
                   <li>
-                    <span className="text-foreground font-medium">展开详情</span>
-                    &nbsp;— 点击卡片右侧的展开按钮（<ChevronDown className="inline w-3.5 h-3.5" />），可查看完整的匿名化故事和理论分析视角。
+                    <span className="text-foreground font-medium">浏览案例</span>
+                    &nbsp;— 左侧列表展示所有公开案例，点击卡片查看右侧的完整研究洞察。
                   </li>
                   <li>
                     <span className="text-foreground font-medium">收藏案例</span>
-                    &nbsp;— 点击书签图标（<Bookmark className="inline w-3.5 h-3.5" />）将案例收藏到当前项目，方便后续查阅。
+                    &nbsp;— 点击书签图标收藏到当前项目。
                   </li>
                   <li>
-                    <span className="text-foreground font-medium">勾选 + 生成研究问题</span>
-                    &nbsp;— 勾选一个或多个案例，点击「生成研究问题」按钮。AI 将结合所选案例与你的知识图谱，生成 3-5 个研究问题和假设。
+                    <span className="text-foreground font-medium">生成研究问题</span>
+                    &nbsp;— 勾选案例后点击「生成研究问题」，AI 结合知识图谱生成假设。
                   </li>
                   <li>
-                    <span className="text-foreground font-medium">衔接研究流程</span>
-                    &nbsp;— 将生成的研究问题导入到「研究想法」模块，继续文献检索和理论整合。
+                    <span className="text-foreground font-medium">AI 对话补充</span>
+                    &nbsp;— 在右侧洞察面板中可以与 AI 进行追问对话，补充更多细节。
                   </li>
                 </ol>
-                <p className="text-xs text-muted-foreground">
-                  案例来源：普通员工/投稿者通过&nbsp;
-                  <a href="/contribute" target="_blank" className="underline hover:text-foreground">洞察投稿入口</a>
-                  &nbsp;提交的真实职场故事，经 AI 匿名化和学术转译后发布。
-                </p>
               </div>
               <button
                 onClick={() => setShowGuide(false)}
@@ -282,7 +646,7 @@ export default function CasesPage() {
           value={category || "__all__"}
           onValueChange={(v) => setCategory(v === "__all__" ? "" : (v ?? ""))}
         >
-          <SelectTrigger className="w-[160px]">
+          <SelectTrigger className="w-[140px]">
             <SelectValue placeholder="全部分类" />
           </SelectTrigger>
           <SelectContent>
@@ -298,7 +662,7 @@ export default function CasesPage() {
           value={contextType || "__all__"}
           onValueChange={(v) => setContextType(v === "__all__" ? "" : (v ?? ""))}
         >
-          <SelectTrigger className="w-[160px]">
+          <SelectTrigger className="w-[140px]">
             <SelectValue placeholder="全部场景" />
           </SelectTrigger>
           <SelectContent>
@@ -339,167 +703,167 @@ export default function CasesPage() {
         </div>
       )}
 
-      {/* Cases grid */}
-      {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          <span className="ml-2 text-sm text-muted-foreground">
-            加载案例中...
-          </span>
-        </div>
-      ) : cases.length === 0 ? (
-        <div className="text-center py-20 text-muted-foreground text-sm">
-          暂无案例数据
-        </div>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          {cases.map((c) => {
-            const isSelected = selected.has(c.id);
-            const isExpanded = expandedId === c.id;
+      {/* Two-panel layout */}
+      <div className="flex gap-5 min-h-[60vh]">
+        {/* Left: case list */}
+        <div
+          className={`space-y-3 overflow-y-auto max-h-[calc(100vh-16rem)] ${
+            activeCase ? "hidden lg:block lg:w-[45%]" : "w-full"
+          }`}
+        >
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-sm text-muted-foreground">
+                加载案例中...
+              </span>
+            </div>
+          ) : cases.length === 0 ? (
+            <div className="text-center py-20 text-muted-foreground text-sm">
+              暂无案例数据，点击「分享故事」提交第一个案例
+            </div>
+          ) : (
+            <>
+              {cases.map((c) => {
+                const isSelected = selected.has(c.id);
+                const isActive = activeCase?.id === c.id;
+                const summary =
+                  c.academicSummary ||
+                  (c.anonymizedContent
+                    ? c.anonymizedContent.slice(0, 100) + "..."
+                    : c.rawContent?.slice(0, 100) + "...");
 
-            return (
-              <Card
-                key={c.id}
-                className={`transition-colors ${
-                  isSelected
-                    ? "border-teal-500/40 bg-teal-500/5"
-                    : "hover:border-border"
-                }`}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-start gap-3">
-                    {/* Selection checkbox */}
-                    <button
-                      onClick={() => toggleSelect(c.id)}
-                      className={`mt-0.5 h-5 w-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
-                        isSelected
-                          ? "border-teal-500 bg-teal-500 text-white"
-                          : "border-muted-foreground/30 hover:border-teal-500/50"
-                      }`}
-                    >
-                      {isSelected && (
-                        <svg
-                          className="h-3 w-3"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          strokeWidth={3}
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M5 13l4 4L19 7"
-                          />
-                        </svg>
-                      )}
-                    </button>
-
-                    <div className="flex-1 min-w-0">
-                      <CardTitle className="text-sm font-medium leading-snug">
-                        {c.academicSummary ||
-                          c.anonymizedContent?.slice(0, 120) + "..."}
-                      </CardTitle>
-                    </div>
-
-                    {/* Bookmark */}
-                    <button
-                      onClick={() => toggleBookmark(c.id)}
-                      className="shrink-0 text-muted-foreground hover:text-amber-500 transition-colors"
-                    >
-                      {c.bookmarked ? (
-                        <BookmarkCheck className="h-4 w-4 text-amber-500" />
-                      ) : (
-                        <Bookmark className="h-4 w-4" />
-                      )}
-                    </button>
-                  </div>
-                </CardHeader>
-
-                <CardContent className="pt-0 space-y-2">
-                  {/* Tags */}
-                  <div className="flex flex-wrap gap-1.5">
-                    <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-                      <Tag className="h-3 w-3" />
-                      {categoryLabel(c.category)}
-                    </span>
-                    {c.phenomena?.slice(0, 3).map((p) => (
-                      <span
-                        key={p}
-                        className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground"
-                      >
-                        {p}
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* Expand / Collapse */}
-                  {isExpanded && (
-                    <div className="space-y-2 pt-2 border-t border-border/50">
-                      <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
-                        {c.anonymizedContent}
-                      </p>
-                      {c.theoryTags?.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {c.theoryTags.map((t) => (
-                            <span
-                              key={t}
-                              className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-600"
-                            >
-                              {t}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <button
-                    onClick={() =>
-                      setExpandedId(isExpanded ? null : c.id)
-                    }
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                return (
+                  <div
+                    key={c.id}
+                    onClick={() => setActiveCase(c)}
+                    className={`group cursor-pointer rounded-lg border p-3.5 transition-colors ${
+                      isActive
+                        ? "border-teal/50 bg-teal/5"
+                        : isSelected
+                          ? "border-teal-500/30 bg-teal-500/5"
+                          : "border-border hover:border-muted-foreground/30"
+                    }`}
                   >
-                    {isExpanded ? (
-                      <>
-                        <ChevronUp className="h-3 w-3" /> 收起
-                      </>
-                    ) : (
-                      <>
-                        <ChevronDown className="h-3 w-3" /> 展开详情
-                      </>
-                    )}
-                  </button>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+                    <div className="flex items-start gap-2.5">
+                      {/* Checkbox */}
+                      <div
+                        role="checkbox"
+                        aria-checked={isSelected}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleSelect(c.id);
+                        }}
+                        className={`mt-0.5 h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
+                          isSelected
+                            ? "border-teal-500 bg-teal-500 text-white"
+                            : "border-muted-foreground/30 hover:border-teal-500/50"
+                        }`}
+                      >
+                        {isSelected && (
+                          <svg
+                            className="h-2.5 w-2.5"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={3}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M5 13l4 4L19 7"
+                            />
+                          </svg>
+                        )}
+                      </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-3 pt-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => fetchCases(page - 1)}
-          >
-            上一页
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            第 {page} / {totalPages} 页
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page >= totalPages}
-            onClick={() => fetchCases(page + 1)}
-          >
-            下一页
-          </Button>
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm leading-snug line-clamp-3">
+                          {summary}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                          {c.obCategory && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                              <Tag className="h-2.5 w-2.5" />
+                              {categoryLabel(c.obCategory)}
+                            </span>
+                          )}
+                          {c.status === "PROCESSING" && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-500 flex items-center gap-0.5">
+                              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                              分析中
+                            </span>
+                          )}
+                          {c.status === "PUBLISHED" && (
+                            <CheckCircle2 className="h-3 w-3 text-teal" />
+                          )}
+                          <span className="text-[10px] text-muted-foreground ml-auto">
+                            {new Date(c.createdAt).toLocaleDateString("zh-CN")}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Bookmark */}
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleBookmark(c.id);
+                        }}
+                        className="shrink-0 text-muted-foreground hover:text-amber-500 transition-colors"
+                      >
+                        {c.bookmarked ? (
+                          <BookmarkCheck className="h-3.5 w-3.5 text-amber-500" />
+                        ) : (
+                          <Bookmark className="h-3.5 w-3.5" />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-3 pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page <= 1}
+                    onClick={() => fetchCases(page - 1)}
+                  >
+                    上一页
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {page} / {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= totalPages}
+                    onClick={() => fetchCases(page + 1)}
+                  >
+                    下一页
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
         </div>
-      )}
+
+        {/* Right: research insights detail */}
+        {(activeCase || !loading) && (
+          <div
+            className={`${
+              activeCase
+                ? "w-full lg:w-[55%] lg:border-l lg:pl-5 border-border/50"
+                : "hidden lg:block lg:w-[55%] lg:border-l lg:pl-5 border-border/50"
+            }`}
+          >
+            {renderDetailPanel()}
+          </div>
+        )}
+      </div>
 
       {/* Generated ideas */}
       {ideas.length > 0 && (
