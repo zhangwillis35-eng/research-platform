@@ -367,36 +367,286 @@
 </div></div>
 
 <!-- ═══ Module 8: Cases ═══ -->
-<div class="sec-sm"><h3>⑧ 案例库 — OB 洞察交换平台（9 轮迭代）</h3></div>
+<div class="sec"><h2>深度案例：⑧ 案例库的 9 轮迭代</h2><p>以案例库模块为例，完整展示 Human-AI 协作开发的每一个细节</p></div>
 
-<div class="phase"><div class="phase-hd"><h4>从双身份到统一平台</h4><div class="pm"><span>~1500 行代码</span><span>9 轮迭代</span></div></div>
+<!-- Round 1 -->
+<div class="phase"><div class="phase-hd"><h4>Round 1 &mdash; 架构推翻：从双身份到统一平台</h4><div class="pm"><span>架构决策</span><span>Prisma + API + 页面重构</span></div></div>
 <div class="phase-bd">
-  <div class="tl">
-    <div class="tl-i"><h5>R1: 统一身份 + 两栏布局</h5>
-      <div class="dlg u"><b>User</b>不用区分是学术研究者还是员工的身份，统一在案例库里操作，左侧页面是实际案例讲述，右边是公开的且经过处理的研究洞察</div>
-      <p>取消研究者/员工双重身份体系，Story 模型新增 userId 关联。</p>
-    </div>
-    <div class="tl-i"><h5>R2: 降低门槛 + 话题前置</h5><p>提交最低字数 50 &rarr; 5。想法生成前必须输入研究方向。</p></div>
-    <div class="tl-i"><h5>R3: Bug — 案例不更新</h5><p>fetchCases 仅查 PUBLISHED，新故事从 PENDING 开始，AI 需 10-30 秒。实现 pollUntilPublished() 轮询。</p></div>
-    <div class="tl-i"><h5>R4: OB 理论知识库</h5>
-      <div class="dlg u"><b>User</b>通过 GitHub 等找有关组织行为学相关的知识库或者理论库，加入到案例库的分析</div>
-      <p>构建 ob-knowledge-base.ts（964 行）：35+ 理论、12 类别，每条含核心构念、奠基作者、边界条件。</p>
-    </div>
-    <div class="tl-i"><h5>R5-6: SSE 想法生成 + 同行评审</h5><p>从研究想法模块移植完整 SSE 管道：维度提取 &rarr; 组合生成 &rarr; 评分排序 &rarr; 模拟同行评审。</p></div>
-    <div class="tl-i"><h5>R7: 对话记忆</h5>
-      <div class="dlg u"><b>User</b>案例库里的对话需要有记忆功能，用户下一次打开或者切换回该界面，都要能展示原来的对话</div>
-      <p>followUpMessages 存入 DB &rarr; API 返回 &rarr; 前端加载 &rarr; 实时同步。</p>
-    </div>
-    <div class="tl-i"><h5>R8-9: 性能优化</h5>
-      <div class="dlg u"><b>User</b>案例库的想法生成太慢了，能否改变策略，提升调用速度</div>
-      <p>按 topic 关键词筛选理论子集（35+ &rarr; &le;15）、想法数 5-8 &rarr; 3-5、maxTokens 6000 &rarr; 4000、同行评审 2 &rarr; 1。</p>
-    </div>
-  </div>
+  <p style="font-size:.85rem;color:var(--muted);margin-bottom:10px"><strong>背景：</strong>案例库最初设计为双端点系统——员工通过 <code>/contribute</code> 提交职场故事，研究者通过 <code>/projects/[id]/cases</code> 浏览已处理的案例。两类用户有独立的身份认证（contributor_id vs user_id cookie）和完全独立的界面。</p>
+  <div class="dlg u"><b>User</b>不用区分是学术研究者还是员工的身份，统一在案例库里操作，左侧页面是实际案例讲述，右边是公开的且经过处理的研究洞察，剩下的按照原来的流程来</div>
+  <div class="dlg a"><b>Claude</b>理解——推翻双身份架构。修改 Prisma Schema 将 Story.contributorId 从必填改为可选，新增 userId 字段关联 User 模型。创建统一提交 API <code>/api/cases/submit</code> 使用 requireAuth()（研究者身份）而非 requireContributorAuth()。重构前端为两栏 master-detail 布局。</div>
+  <p style="margin-top:10px"><strong>Claude 的具体实现：</strong></p>
+  <div class="cb"><span class="c">// prisma/schema.prisma — 数据模型变更</span>
+<span class="kw">model</span> <span class="fn">Story</span> {
+  contributorId <span class="fn">String?</span>      <span class="c">// 原来是 String（必填），现在改为可选</span>
+  userId        <span class="fn">String?</span>      <span class="c">// 新增：研究者也可以提交故事</span>
+  user          <span class="fn">User?</span>   @relation(fields: [userId], references: [id])
+  @@index([userId])          <span class="c">// 为查询「我的故事」建索引</span>
+}</div>
+  <div class="cb"><span class="c">// src/app/api/cases/submit/route.ts — 统一提交 API（新建）</span>
+<span class="kw">export async function</span> <span class="fn">POST</span>(request: Request) {
+  <span class="kw">const</span> auth = <span class="kw">await</span> <span class="fn">requireAuth</span>();  <span class="c">// 研究者身份，非员工身份</span>
+  <span class="kw">const</span> { content } = <span class="kw">await</span> request.<span class="fn">json</span>();
+
+  <span class="kw">const</span> story = <span class="kw">await</span> prisma.story.<span class="fn">create</span>({
+    data: { userId: auth.id, rawContent: content }
+  });
+
+  <span class="c">// 后台触发 AI 处理（脱敏 → 分析 → 理论标签）</span>
+  <span class="fn">processStory</span>(story.id).<span class="fn">catch</span>(err => console.error(err));
+  <span class="kw">return</span> NextResponse.<span class="fn">json</span>({ id: story.id, status: <span class="s">"PENDING"</span> });
+}</div>
+  <p style="margin-top:8px"><strong>前端布局设计：</strong>左栏（40%宽）展示案例卡片列表（可筛选分类、搜索现象）；右栏（60%宽）展示选中案例的完整洞察（脱敏内容 + 学术摘要 + 理论标签 + AI 追问对话 + 想法生成）。点击案例卡片切换右侧详情。</p>
   <div class="tags">
-    <span class="tg tg-k">Story Pipeline</span><span class="tg tg-p">OB Knowledge Base</span>
-    <span class="tg tg-a">SSE Streaming</span><span class="tg tg-b">Chat Memory</span>
-    <span class="tg tg-g">Performance</span>
+    <span class="tg tg-b">Prisma Schema</span><span class="tg tg-p">API Route</span>
+    <span class="tg tg-t">Master-Detail Layout</span><span class="tg tg-a">Auth Unification</span>
   </div>
+</div></div>
+
+<!-- Round 2 -->
+<div class="phase"><div class="phase-hd"><h4>Round 2 &mdash; 体验微调：降低门槛 + 话题前置</h4><div class="pm"><span>两个小需求，一次实现</span></div></div>
+<div class="phase-bd">
+  <div class="dlg u"><b>User</b>分享的字数大于5个字就可以</div>
+  <div class="dlg a"><b>Claude</b>将提交 API 中的最低字数校验从 50 改为 5：<code>content.trim().length &lt; 5</code></div>
+  <div class="dlg u"><b>User</b>生成研究问题前，让用户先给出研究方向或者话题</div>
+  <div class="dlg a"><b>Claude</b>在生成 API 中新增 topic 参数校验。前端添加输入框，placeholder 为「例如：远程工作中的领导力」，与案例一起传入 LLM。topic 嵌入 prompt 中引导生成方向：<code>Researcher's topic: "${topic}"</code></div>
+  <p style="margin-top:8px;font-size:.85rem;color:var(--muted)"><strong>设计意图：</strong>降低参与门槛（5 字可以是一句话的核心），同时通过话题输入提升 AI 生成质量——不再是盲目分析所有案例，而是围绕研究者的具体方向聚焦。</p>
+</div></div>
+
+<!-- Round 3 -->
+<div class="phase"><div class="phase-hd"><h4>Round 3 &mdash; Bug 诊断：提交后案例列表不更新</h4><div class="pm"><span class="tg tg-r">Bug Fix</span><span>异步时序问题</span></div></div>
+<div class="phase-bd">
+  <div class="dlg u"><b>User</b>提交完故事，无法在案例库里更新，请修正</div>
+  <div class="dlg a"><b>Claude</b>排查根因——不是 API 问题，而是时序问题。</div>
+  <div class="bf">
+    <div class="bug"><strong>Root Cause</strong>fetchCases() 仅查询 status="PUBLISHED" 的故事。但新故事从 PENDING 开始，经过 AI 脱敏+分析后才变为 PUBLISHED，整个过程需要 10-30 秒。前端用了一个 3 秒的 setTimeout 就尝试刷新——远远不够。</div>
+    <div class="fix"><strong>Fix</strong>实现 pollUntilPublished() 轮询机制：创建 /api/cases/my-stories 端点返回当前用户的故事（含所有状态）。前端每 3 秒检查一次，直到发现 status 变为 PUBLISHED 后刷新列表。同时在提交期间显示 "AI 正在处理中..." 状态条。</div>
+  </div>
+  <div class="cb"><span class="c">// 轮询等待 AI 处理完成</span>
+<span class="kw">async function</span> <span class="fn">pollUntilPublished</span>(storyId: <span class="fn">string</span>) {
+  <span class="kw">const</span> poll = <span class="fn">setInterval</span>(<span class="kw">async</span> () => {
+    <span class="kw">const</span> res = <span class="kw">await</span> <span class="fn">fetch</span>(<span class="s">"/api/cases/my-stories"</span>);
+    <span class="kw">const</span> data = <span class="kw">await</span> res.<span class="fn">json</span>();
+    <span class="kw">const</span> published = data.<span class="fn">find</span>(
+      (s: <span class="fn">any</span>) => s.id === storyId && s.status === <span class="s">"PUBLISHED"</span>
+    );
+    <span class="kw">if</span> (published) {
+      <span class="fn">clearInterval</span>(poll);
+      <span class="fn">fetchCases</span>();  <span class="c">// 刷新案例列表</span>
+    }
+  }, <span class="n">3000</span>);
+}</div>
+  <p style="margin-top:8px;font-size:.85rem;color:var(--muted)"><strong>协作模式：</strong>用户报告现象（「更新不了」），Claude 不是简单重试，而是分析数据流的完整生命周期：提交 &rarr; PENDING &rarr; AI 处理 &rarr; PUBLISHED &rarr; 前端查询——定位到时序断裂点。</p>
+</div></div>
+
+<!-- Round 4 -->
+<div class="phase"><div class="phase-hd"><h4>Round 4 &mdash; 知识工程：OB 理论知识库集成</h4><div class="pm"><span>964 行 &middot; 35+ 理论 &middot; 12 类别</span></div></div>
+<div class="phase-bd">
+  <div class="dlg u"><b>User</b>通过 GitHub 等，找有关组织行为学相关的知识库或者理论库，加入到案例库的分析，用于提高 AI 的分析质量，与理论标签的水平</div>
+  <div class="dlg a"><b>Claude</b>调研多个学术资源：CPCRN Organization Theory Abstraction Forms（70 构念、65 命题）、IS Theory Wiki (theorizeit.org)、Serrat 的 "A Taxonomy of Management Theories"、AMJ/ASQ/JAP 规范理论分类。综合构建结构化知识库。</div>
+  <p style="margin-top:10px"><strong>知识库结构设计：</strong>每条理论包含 7 个结构化字段——</p>
+  <div class="cb"><span class="c">// src/lib/ob-knowledge-base.ts（964 行）</span>
+<span class="kw">interface</span> <span class="fn">OBTheory</span> {
+  name: <span class="fn">string</span>;           <span class="c">// "Psychological Safety"</span>
+  category: <span class="fn">string</span>;       <span class="c">// "team_dynamics"</span>
+  coreConstructs: <span class="fn">string[]</span>; <span class="c">// ["psychological safety", "team learning behavior"]</span>
+  keyPropositions: <span class="fn">string[]</span>;<span class="c">// ["Teams with high psychological safety..."]</span>
+  seminalAuthors: <span class="fn">string[]</span>; <span class="c">// ["Edmondson (1999)"]</span>
+  boundaryConditions?: <span class="fn">string[]</span>; <span class="c">// ["Less impactful in..."]</span>
+  relatedTheories?: <span class="fn">string[]</span>;    <span class="c">// ["Social Identity Theory"]</span>
+}</div>
+  <p style="margin-top:8px"><strong>12 个类别覆盖：</strong>leadership（LMX、变革型、服务型、真实型、情境型）、motivation（SDT、期望理论、目标设定、JCM、JD-R）、team_dynamics（心理安全感、TMS、共享心智模型）、organizational_justice（组织公正、公平理论、社会交换、心理契约）、conflict、communication、power_politics、organizational_culture、change_management、decision_making、emotions_stress、diversity_inclusion，外加 cross_cutting 类。</p>
+  <p style="margin-top:8px"><strong>如何注入 AI prompt：</strong></p>
+  <div class="cb"><span class="c">// 分析 prompt 中注入理论知识库（要求构念级匹配）</span>
+<span class="kw">const</span> ANALYZE_SYSTEM_PROMPT = <span class="s">`You are a senior OB research analyst...
+
+=== OB THEORY KNOWLEDGE BASE ===
+${THEORY_REFERENCE}
+=== END KNOWLEDGE BASE ===
+
+Use it to:
+- Select the MOST precisely matching theories
+- Cite specific constructs (e.g., "心理安全感 (Edmondson, 1999)")
+- Distinguish directly explaining vs tangentially related theories`</span>;</div>
+  <p style="margin-top:8px;font-size:.85rem;color:var(--muted)"><strong>效果：</strong>AI 分析从泛泛的「领导力问题」升级为精确的构念引用——例如「该案例体现了 LMX 分化 (Graen & Uhl-Bien, 1995) 导致的内群体-外群体不对等，成员间产生了组织公正感知差异」。</p>
+  <div class="tags">
+    <span class="tg tg-p">35+ Theories</span><span class="tg tg-b">12 Categories</span>
+    <span class="tg tg-t">964 Lines</span><span class="tg tg-a">Construct-level Matching</span>
+  </div>
+</div></div>
+
+<!-- Round 5-6 -->
+<div class="phase"><div class="phase-hd"><h4>Round 5-6 &mdash; 功能升级：SSE 流式想法生成 + 模拟同行评审</h4><div class="pm"><span>API 重写 264 行 &middot; 前端重写 750 行</span></div></div>
+<div class="phase-bd">
+  <div class="dlg u"><b>User</b>ScholarFlow 的研究想法模块不能用了，修复它，并把里面的想法生成策略和页面布局充分运用到案例库里的想法生成部分</div>
+  <div class="dlg a"><b>Claude</b>先诊断研究想法模块——TypeScript 编译通过，页面返回 200，API 返回有效流数据。判断可能是缺少全文文献导致按钮禁用。同时着手将其核心模式移植到案例库。</div>
+  <p style="margin-top:10px"><strong>Claude 的实现策略：</strong>不是简单复制代码，而是将研究想法模块的架构模式（SSE 流式管道 + 维度矩阵 + 评分卡片 + 同行评审）适配到案例库的数据特点（从「文献」变为「职场叙事」，输入从 paper.abstract 变为 story.academicSummary）。</p>
+
+  <p style="margin-top:12px"><strong>Step 1: 重写 API 为 SSE 流式管道</strong></p>
+  <div class="cb"><span class="c">// src/app/api/cases/generate/route.ts — SSE 流式管道</span>
+<span class="kw">const</span> readable = <span class="kw">new</span> <span class="fn">ReadableStream</span>({
+  <span class="kw">async</span> <span class="fn">start</span>(controller) {
+    <span class="c">// 每 10 秒发送 keepalive 防止连接超时</span>
+    <span class="kw">const</span> keepalive = <span class="fn">setInterval</span>(() => {
+      controller.<span class="fn">enqueue</span>(encoder.<span class="fn">encode</span>(<span class="s">`: keepalive\n\n`</span>));
+    }, <span class="n">10000</span>);
+
+    <span class="c">// Step 1: 单次 LLM 调用 — 维度提取 + 想法生成</span>
+    <span class="kw">const</span> ideaRes = <span class="kw">await</span> <span class="fn">callAI</span>({
+      provider: <span class="s">"deepseek-fast"</span>,
+      system: <span class="s">`You are a senior OB scholar...
+OB Theory Knowledge Base:\n${theoryRef}\n
+Output JSON: { dimensions: {...}, ideas: [...] }`</span>,
+      messages: [{ role: <span class="s">"user"</span>,
+        content: <span class="s">`Topic: "${topic}"\nCases:\n${caseSummaries}`</span> }],
+      jsonMode: <span class="kw">true</span>, noThinking: <span class="kw">true</span>,
+    });
+
+    <span class="c">// 立即推送 — 用户无需等待评审完成就能看到想法</span>
+    controller.<span class="fn">enqueue</span>(encoder.<span class="fn">encode</span>(
+      <span class="s">`data: ${JSON.stringify({ phase: "ideas", dimensions, ideas })}\n\n`</span>
+    ));
+
+    <span class="c">// Step 2: 仅对 Top 1 想法做同行评审（节省时间）</span>
+    <span class="kw">const</span> reviewRes = <span class="kw">await</span> <span class="fn">callAI</span>({
+      system: <span class="s">`You are an anonymous reviewer for AMJ/ASQ/JAP...`</span>,
+      <span class="c">// ...</span>
+    });
+    controller.<span class="fn">enqueue</span>(<span class="c">/* review event */</span>);
+    controller.<span class="fn">enqueue</span>(<span class="c">/* done event */</span>);
+  }
+});</div>
+
+  <p style="margin-top:12px"><strong>Step 2: 前端 SSE 消费 + 渐进式 UI</strong></p>
+  <div class="cb"><span class="c">// 前端 SSE 消费逻辑</span>
+<span class="kw">const</span> reader = res.body?.<span class="fn">getReader</span>();
+<span class="kw">while</span> (<span class="kw">true</span>) {
+  <span class="kw">const</span> { done, value } = <span class="kw">await</span> reader.<span class="fn">read</span>();
+  <span class="kw">if</span> (done) <span class="kw">break</span>;
+  buffer += decoder.<span class="fn">decode</span>(value, { stream: <span class="kw">true</span> });
+  <span class="kw">for</span> (<span class="kw">const</span> line <span class="kw">of</span> lines) {
+    <span class="kw">const</span> event = <span class="fn">JSON.parse</span>(line.<span class="fn">slice</span>(<span class="n">6</span>));
+    <span class="kw">if</span> (event.phase === <span class="s">"ideas"</span>) {
+      <span class="fn">setDimensions</span>(event.dimensions); <span class="c">// 立即显示维度矩阵</span>
+      <span class="fn">setIdeas</span>(event.ideas);           <span class="c">// 立即显示想法卡片</span>
+      <span class="fn">setPhase</span>(<span class="s">"reviewing"</span>);
+    } <span class="kw">else if</span> (event.phase === <span class="s">"review"</span>) {
+      <span class="c">// 逐一将评审结果 patch 到对应想法上</span>
+      <span class="fn">setIdeas</span>(prev => prev.<span class="fn">map</span>(idea =>
+        idea.id === event.ideaId
+          ? { ...idea, peerReview: event.review } : idea
+      ));
+    }
+  }
+}</div>
+
+  <p style="margin-top:12px"><strong>Step 3: UI 组件设计</strong></p>
+  <p>维度矩阵（3 列网格：理论/情境/方法 + 研究空白卡片）→ 想法卡片（排名号 + 综合分 + 理论/情境/方法徽章 + 展开后显示假设/贡献/评分条/同行评审）→ 进度指示器（生成中 → 评审中 → 完成）→ 中止按钮（AbortController）。</p>
+  <p style="margin-top:4px;font-size:.85rem"><strong>评分公式：</strong><code>overall = novelty &times; 0.4 + feasibility &times; 0.3 + impact &times; 0.3</code></p>
+  <p><strong>同行评审 verdict：</strong>strong_accept（强烈接收）/ accept（接收）/ revise（修改后重审）/ reject（拒绝）</p>
+  <div class="tags">
+    <span class="tg tg-a">SSE Streaming</span><span class="tg tg-t">Dimensions Matrix</span>
+    <span class="tg tg-p">Peer Review</span><span class="tg tg-b">AbortController</span>
+    <span class="tg tg-g">Score Cards</span><span class="tg tg-i">Phase Indicators</span>
+  </div>
+</div></div>
+
+<!-- Round 7 -->
+<div class="phase"><div class="phase-hd"><h4>Round 7 &mdash; 状态持久化：对话记忆功能</h4><div class="pm"><span>DB 持久化 + API 同步 + 前端状态管理</span></div></div>
+<div class="phase-bd">
+  <div class="dlg u"><b>User</b>案例库里的对话需要有记忆功能，用户下一次打开或者切换回该界面，都要能展示原来的对话</div>
+  <div class="dlg a"><b>Claude</b>将 followUpMessages 存入数据库 Story.followUpMessages JSON 字段。在 GET /api/cases 响应中携带历史消息。前端选择案例时加载历史对话，每次追问后同步更新本地状态和服务端。</div>
+  <p style="margin-top:10px"><strong>数据流设计（4 步闭环）：</strong></p>
+  <div class="arch" style="margin:8px 0;padding:16px 20px">
+    <div class="af">
+      <div class="ab" style="border-color:var(--green);background:var(--green-l);color:#166534;font-size:.75rem">① DB 存储<br><small>Story.followUpMessages</small></div>
+      <div class="aa">&rarr;</div>
+      <div class="ab" style="border-color:var(--blue);background:var(--blue-l);color:#1e40af;font-size:.75rem">② API 返回<br><small>GET /api/cases</small></div>
+      <div class="aa">&rarr;</div>
+      <div class="ab" style="border-color:var(--purple);background:var(--purple-l);color:#5b21b6;font-size:.75rem">③ 前端加载<br><small>选中案例时渲染</small></div>
+      <div class="aa">&rarr;</div>
+      <div class="ab" style="border-color:var(--amber);background:var(--amber-l);color:#92400e;font-size:.75rem">④ 实时同步<br><small>追问后写回 DB</small></div>
+    </div>
+  </div>
+  <div class="cb"><span class="c">// POST /api/cases/[id]/follow-up — 追问 + 持久化</span>
+<span class="kw">const</span> existing = (story.followUpMessages as <span class="fn">any</span>[]) || [];
+<span class="kw">const</span> updated = [...existing,
+  { role: <span class="s">"user"</span>, content: message },
+  { role: <span class="s">"assistant"</span>, content: aiReply }
+];
+<span class="kw">await</span> prisma.story.<span class="fn">update</span>({
+  where: { id },
+  data: { followUpMessages: <span class="fn">JSON.parse</span>(<span class="fn">JSON.stringify</span>(updated)) }
+  <span class="c">// ↑ Prisma Json 字段需要这个技巧来通过类型检查</span>
+});</div>
+  <p style="margin-top:8px;font-size:.85rem;color:var(--muted)"><strong>技术细节：</strong>Prisma 的 Json 类型字段赋值时，TypeScript 不认为 <code>Array&lt;{role, content}&gt;</code> 满足 <code>Prisma.InputJsonValue</code>。解决方案：<code>JSON.parse(JSON.stringify(...))</code> 将其转为纯 JSON 类型。这是 Prisma 的一个已知 workaround。</p>
+</div></div>
+
+<!-- Round 8-9 -->
+<div class="phase"><div class="phase-hd"><h4>Round 8-9 &mdash; 性能优化：想法生成提速 60%</h4><div class="pm"><span>5 项并行优化</span><span>~40s &rarr; ~15-20s</span></div></div>
+<div class="phase-bd">
+  <div class="dlg u"><b>User</b>案例库的想法生成太慢了，能否改变策略，提升调用速度</div>
+  <div class="dlg a"><b>Claude</b>瓶颈分析：第一步（维度+想法生成）的 prompt 包含完整 35+ 理论知识库（大量 input tokens），maxTokens 6000 输出 5-8 个想法；第二步两个并行评审各 maxTokens 2048。总耗时 ~40 秒。五管齐下优化——</div>
+  <p style="margin-top:10px"><strong>核心创新 — 按话题筛选理论子集：</strong></p>
+  <div class="cb"><span class="c">// src/lib/ob-knowledge-base.ts — 新增 buildFilteredTheoryReference()</span>
+<span class="c">// 中英文关键词映射到 OB 类别</span>
+<span class="kw">const</span> TOPIC_CATEGORY_MAP = {
+  <span class="s">"领导"</span>: [<span class="s">"leadership"</span>], <span class="s">"leader"</span>: [<span class="s">"leadership"</span>],
+  <span class="s">"激励"</span>: [<span class="s">"motivation"</span>], <span class="s">"团队"</span>: [<span class="s">"team_dynamics"</span>],
+  <span class="s">"公平"</span>: [<span class="s">"organizational_justice"</span>],
+  <span class="s">"冲突"</span>: [<span class="s">"conflict"</span>], <span class="s">"情绪"</span>: [<span class="s">"emotions_stress"</span>],
+  <span class="c">// ... 更多映射</span>
+};
+
+<span class="kw">export function</span> <span class="fn">buildFilteredTheoryReference</span>(topic: <span class="fn">string</span>) {
+  <span class="c">// 按 topic 关键词匹配相关类别</span>
+  <span class="kw">const</span> matched = OB_THEORY_KB.<span class="fn">filter</span>(t => matchedCategories.<span class="fn">has</span>(t.category));
+  <span class="kw">return</span> matched.<span class="fn">slice</span>(<span class="n">0</span>, <span class="n">15</span>).<span class="fn">map</span>(<span class="c">/* compact format */</span>).<span class="fn">join</span>(<span class="s">"\n"</span>);
+  <span class="c">// 35+ 理论 → 最多 15 条相关理论，prompt 体积缩减 ~60%</span>
+}</div>
+  <table class="tb">
+    <thead><tr><th>优化项</th><th>之前</th><th>之后</th><th>效果</th></tr></thead>
+    <tbody>
+      <tr><td>理论知识库</td><td class="old">全部 35+ 理论</td><td class="new">按 topic 筛选 &le;15</td><td>input tokens 减少 ~60%</td></tr>
+      <tr><td>想法数量</td><td class="old">5-8 个</td><td class="new">3-5 个</td><td>output tokens 减少 ~40%</td></tr>
+      <tr><td>生成 maxTokens</td><td class="old">6000</td><td class="new">4000</td><td>更快达到终止条件</td></tr>
+      <tr><td>同行评审</td><td class="old">Top 2 并行</td><td class="new">仅 Top 1</td><td>省掉 1 次 LLM 调用</td></tr>
+      <tr><td>图谱上下文</td><td class="old">30 nodes + 30 edges</td><td class="new">15 + 15</td><td>input tokens 进一步缩减</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:8px;font-size:.85rem;color:var(--muted)"><strong>协作模式：</strong>用户提出「太慢了」这个定性反馈，Claude 自主分析了 token 经济学（input tokens 成本 vs output tokens 成本 vs API 调用次数），提出了 5 项量化优化方案。用户不需要理解 LLM 内部机制，只需要确认「质量可以接受」。</p>
+</div></div>
+
+<!-- Summary -->
+<div class="phase"><div class="phase-hd"><h4>案例库迭代总结 — 9 轮协作中的角色分工</h4></div>
+<div class="phase-bd">
+  <div class="g2" style="margin:0">
+    <div class="ic" style="border-left:3px solid var(--blue);margin:0">
+      <h4 style="color:var(--blue);font-size:.9rem">User 做了什么</h4>
+      <ul style="font-size:.84rem">
+        <li><strong>R1</strong> — 推翻架构方向（双身份 &rarr; 统一）</li>
+        <li><strong>R2</strong> — 调整参数（字数门槛）+ 提出产品需求（话题前置）</li>
+        <li><strong>R3</strong> — 在真实场景中发现 Bug</li>
+        <li><strong>R4</strong> — 提出「提高质量」的战略方向</li>
+        <li><strong>R5-6</strong> — 指出参考对象（研究想法模块）</li>
+        <li><strong>R7</strong> — 提出用户体验需求（记忆）</li>
+        <li><strong>R8-9</strong> — 定性反馈（太慢了）</li>
+      </ul>
+    </div>
+    <div class="ic" style="border-left:3px solid var(--teal);margin:0">
+      <h4 style="color:var(--teal);font-size:.9rem">Claude 做了什么</h4>
+      <ul style="font-size:.84rem">
+        <li><strong>R1</strong> — 设计新数据模型 + 实现 API + 构建前端布局</li>
+        <li><strong>R2</strong> — 修改校验逻辑 + 设计 prompt 注入方式</li>
+        <li><strong>R3</strong> — 根因分析（时序问题）+ 设计轮询机制</li>
+        <li><strong>R4</strong> — 调研学术资源 + 构建 964 行知识库 + 注入 prompt</li>
+        <li><strong>R5-6</strong> — 诊断现有模块 + 提炼架构模式 + 适配移植</li>
+        <li><strong>R7</strong> — 设计 4 步数据流闭环 + 处理 Prisma 类型技巧</li>
+        <li><strong>R8-9</strong> — 量化瓶颈分析 + 设计 5 项优化方案</li>
+      </ul>
+    </div>
+  </div>
+  <p style="margin-top:16px;font-size:.88rem;text-align:center;color:var(--teal-d)"><strong>模式：User 定义「做什么」和「够不够好」，Claude 解决「怎么做」和「为什么不好」</strong></p>
 </div></div>
 
 <!-- ═══ Module 9: Proposal ═══ -->
