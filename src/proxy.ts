@@ -5,7 +5,7 @@ const PUBLIC_PATHS = ["/", "/admin"];
 const AUTH_ONLY_PUBLIC = ["/login"]; // logged-in users should be bounced away
 const CONTRIBUTOR_PUBLIC = ["/contribute"]; // contributor landing/login page
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Allow static assets and API routes
