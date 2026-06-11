@@ -234,8 +234,8 @@ export default function CasesPage() {
   // ─── Submit story ─────────────────────────────────────────────────────
 
   async function handleSubmit() {
-    if (submitContent.trim().length < 50) {
-      setSubmitError("请至少写50个字，让 AI 有足够的信息进行分析");
+    if (submitContent.trim().length < 5) {
+      setSubmitError("请至少写5个字");
       return;
     }
     setSubmitError("");
@@ -543,7 +543,7 @@ export default function CasesPage() {
                 {submitContent.length} 字
                 {submitContent.length > 0 &&
                   submitContent.length < 50 &&
-                  "（至少 50 字）"}
+                  "（至少 5 字）"}
               </span>
               <div className="flex gap-2">
                 <Button
@@ -560,7 +560,7 @@ export default function CasesPage() {
                 <Button
                   size="sm"
                   onClick={handleSubmit}
-                  disabled={submitting || submitContent.trim().length < 50}
+                  disabled={submitting || submitContent.trim().length < 5}
                   className="bg-teal text-teal-foreground hover:bg-teal/90"
                 >
                   {submitting ? (

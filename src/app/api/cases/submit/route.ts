@@ -10,9 +10,9 @@ export async function POST(request: Request) {
 
   const { content } = await request.json();
 
-  if (!content || content.trim().length < 50) {
+  if (!content || content.trim().length < 5) {
     return NextResponse.json(
-      { error: "故事内容至少需要50个字符" },
+      { error: "故事内容至少需要5个字符" },
       { status: 400 },
     );
   }
