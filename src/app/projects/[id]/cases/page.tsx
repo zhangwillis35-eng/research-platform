@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -58,15 +60,40 @@ interface CaseStory {
   followUpMessages?: Array<{ role: string; content: string }>;
 }
 
-interface GeneratedIdea {
-  title: string;
-  researchQuestion: string;
-  hypotheses: string[];
-  theoreticalBasis: string;
-  methodology: string;
-  caseLink: string;
-  novelty: string;
+interface IdeaScores {
+  novelty: number;
+  feasibility: number;
+  impact: number;
+  overall: number;
 }
+
+interface PeerReview {
+  strengths: string[];
+  weaknesses: string[];
+  questions: string[];
+  verdict: string;
+}
+
+interface GeneratedIdea {
+  id: string;
+  title: string;
+  theory: string;
+  context: string;
+  method: string;
+  hypothesis: string;
+  contribution: string;
+  scores: IdeaScores;
+  peerReview?: PeerReview;
+}
+
+interface Dimensions {
+  theories: string[];
+  contexts: string[];
+  methods: string[];
+  gaps: string[];
+}
+
+type GenPhase = "idle" | "generating" | "reviewing" | "done";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -105,6 +132,28 @@ const categoryLabel = (val: string) =>
 const contextLabel = (val: string) =>
   CONTEXT_TYPES.find((c) => c.value === val)?.label ?? val;
 
+const verdictLabels: Record<string, { label: string; color: string }> = {
+  strong_accept: { label: "强烈接收", color: "text-green-600" },
+  accept: { label: "接收", color: "text-teal" },
+  revise: { label: "修改后重审", color: "text-amber-600" },
+  reject: { label: "拒绝", color: "text-red-600" },
+};
+
+function ScoreBar({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className="w-14 text-muted-foreground shrink-0">{label}</span>
+      <div className="flex-1 h-1.5 bg-border rounded-full overflow-hidden">
+        <div
+          className="h-full bg-teal rounded-full transition-all"
+          style={{ width: `${value * 10}%` }}
+        />
+      </div>
+      <span className="w-6 text-right tabular-nums font-medium">{value}</span>
+    </div>
+  );
+}
+
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export default function CasesPage() {
@@ -124,8 +173,12 @@ export default function CasesPage() {
   // Selection & generation
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [researchTopic, setResearchTopic] = useState("");
-  const [generating, setGenerating] = useState(false);
+  const [genPhase, setGenPhase] = useState<GenPhase>("idle");
+  const [dimensions, setDimensions] = useState<Dimensions | null>(null);
   const [ideas, setIdeas] = useState<GeneratedIdea[]>([]);
+  const [expandedIdeaId, setExpandedIdeaId] = useState<string | null>(null);
+  const [genError, setGenError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Detail panel
   const [activeCase, setActiveCase] = useState<CaseStory | null>(null);
@@ -214,30 +267,89 @@ export default function CasesPage() {
     }
   }
 
-  // ─── Generate research questions ───────────────────────────────────────
+  // ─── Streaming idea generation ────────────────────────────────────────
 
   async function handleGenerate() {
     if (selected.size === 0 || !researchTopic.trim()) return;
-    setGenerating(true);
+
+    abortRef.current = new AbortController();
+    setGenError(null);
+    setDimensions(null);
+    setIdeas([]);
+    setExpandedIdeaId(null);
+    setGenPhase("generating");
+
     try {
       const res = await fetch("/api/cases/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, storyIds: Array.from(selected), topic: researchTopic.trim() }),
+        body: JSON.stringify({
+          projectId,
+          storyIds: Array.from(selected),
+          topic: researchTopic.trim(),
+        }),
+        signal: abortRef.current.signal,
       });
-      if (!res.ok) throw new Error("Failed to generate ideas");
-      const data = await res.json();
-      setIdeas(data.ideas ?? []);
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "想法生成失败");
+      }
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const event = JSON.parse(line.slice(6));
+              if (event.phase === "ideas") {
+                setDimensions(event.dimensions);
+                setIdeas(event.ideas);
+                setGenPhase("reviewing");
+              } else if (event.phase === "review") {
+                setIdeas((prev) =>
+                  prev.map((idea) =>
+                    idea.id === event.ideaId
+                      ? { ...idea, peerReview: event.review }
+                      : idea,
+                  ),
+                );
+              } else if (event.phase === "done") {
+                setGenPhase("done");
+              } else if (event.phase === "error") {
+                throw new Error(event.error);
+              }
+            } catch {
+              // skip malformed events
+            }
+          }
+        }
+      }
     } catch (err) {
-      console.error("Failed to generate ideas:", err);
-    } finally {
-      setGenerating(false);
+      if (err instanceof Error && err.name === "AbortError") {
+        setGenPhase("idle");
+        return;
+      }
+      setGenError(String(err));
+      setGenPhase("idle");
     }
+  }
+
+  function handleStopGenerate() {
+    abortRef.current?.abort();
   }
 
   // ─── Submit story ─────────────────────────────────────────────────────
 
-  // Poll a story until it reaches PUBLISHED, then refresh the list
   function pollUntilPublished(storyId: string) {
     setSubmitError("");
     setProcessingStoryId(storyId);
@@ -252,24 +364,20 @@ export default function CasesPage() {
           clearInterval(interval);
           setProcessingStoryId(null);
           fetchCases(1);
-        } else if (story.status === "PENDING" || story.status === "PROCESSING") {
-          // keep polling
-        } else {
-          // REJECTED or other
+        } else if (story.status !== "PENDING" && story.status !== "PROCESSING") {
           clearInterval(interval);
           setProcessingStoryId(null);
           setSubmitError("故事处理失败，请重试");
         }
       } catch {
-        // ignore network blips
+        /* ignore */
       }
     }, 3000);
-    // Stop polling after 2 minutes max
     setTimeout(() => {
       clearInterval(interval);
       setProcessingStoryId((prev) => {
         if (prev === storyId) {
-          fetchCases(1); // try refresh anyway
+          fetchCases(1);
           return null;
         }
         return prev;
@@ -297,7 +405,6 @@ export default function CasesPage() {
       }
       setSubmitContent("");
       setShowSubmit(false);
-      // Poll until the story is processed and published
       pollUntilPublished(data.id);
     } catch {
       setSubmitError("网络错误，请重试");
@@ -306,7 +413,28 @@ export default function CasesPage() {
     }
   }
 
-  // ─── Follow-up chat (for own stories) ─────────────────────────────────
+  // ─── Follow-up chat ───────────────────────────────────────────────────
+
+  async function handleStartChat() {
+    if (!activeCase) return;
+    setChatLoading(true);
+    try {
+      const res = await fetch(`/api/cases/${activeCase.id}/follow-up`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      const updated = { ...activeCase, followUpMessages: data.messages };
+      setActiveCase(updated);
+      // Also update in list
+      setCases((prev) =>
+        prev.map((c) => (c.id === activeCase.id ? { ...c, followUpMessages: data.messages } : c)),
+      );
+    } finally {
+      setChatLoading(false);
+    }
+  }
 
   async function handleFollowUp() {
     if (!chatInput.trim() || !activeCase) return;
@@ -318,18 +446,19 @@ export default function CasesPage() {
         body: JSON.stringify({ message: chatInput }),
       });
       const data = await res.json();
-      if (activeCase) {
-        setActiveCase({ ...activeCase, followUpMessages: data.messages });
-      }
+      const updated = { ...activeCase, followUpMessages: data.messages };
+      setActiveCase(updated);
+      setCases((prev) =>
+        prev.map((c) => (c.id === activeCase.id ? { ...c, followUpMessages: data.messages } : c)),
+      );
       setChatInput("");
     } finally {
       setChatLoading(false);
     }
   }
 
-  // ─── Render ───────────────────────────────────────────────────────────
+  // ─── Detail panel ─────────────────────────────────────────────────────
 
-  // Right panel: detail view of selected case
   const renderDetailPanel = () => {
     if (!activeCase) {
       return (
@@ -342,11 +471,17 @@ export default function CasesPage() {
 
     const tags: TheoryTag[] = Array.isArray(activeCase.theoryTags)
       ? activeCase.theoryTags.map((t) =>
-          typeof t === "string" ? { theory: t, relevance: "medium", explanation: "" } : t as TheoryTag,
+          typeof t === "string"
+            ? { theory: t, relevance: "medium", explanation: "" }
+            : (t as TheoryTag),
         )
       : [];
 
-    const phenomena: string[] = Array.isArray(activeCase.phenomena) ? activeCase.phenomena : [];
+    const phenomena: string[] = Array.isArray(activeCase.phenomena)
+      ? activeCase.phenomena
+      : [];
+
+    const msgs = activeCase.followUpMessages ?? [];
 
     return (
       <div className="space-y-4 overflow-y-auto max-h-[calc(100vh-12rem)]">
@@ -357,7 +492,7 @@ export default function CasesPage() {
           >
             <ChevronLeft className="w-4 h-4" /> 返回列表
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 ml-auto">
             <button
               onClick={() => toggleBookmark(activeCase.id)}
               className="text-muted-foreground hover:text-amber-500 transition-colors"
@@ -374,23 +509,7 @@ export default function CasesPage() {
           </div>
         </div>
 
-        {/* Status badge for processing stories */}
-        {activeCase.status !== "PUBLISHED" && (
-          <div className="flex items-center gap-2 text-sm">
-            {activeCase.status === "PROCESSING" && (
-              <span className="flex items-center gap-1 text-blue-500">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" /> AI 分析中...
-              </span>
-            )}
-            {activeCase.status === "PENDING" && (
-              <span className="flex items-center gap-1 text-amber-500">
-                <Clock className="w-3.5 h-3.5" /> 等待处理
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Raw content (anonymized or original) */}
+        {/* Raw content */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">案例讲述</CardTitle>
@@ -478,62 +597,84 @@ export default function CasesPage() {
         </div>
 
         {/* Follow-up conversation */}
-        {activeCase.followUpMessages && activeCase.followUpMessages.length > 0 && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <MessageSquare className="w-3.5 h-3.5" /> AI 对话补充
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {activeCase.followUpMessages.map((msg, i) => (
-                  <div
-                    key={i}
-                    className={`text-xs p-2.5 rounded-lg ${
-                      msg.role === "assistant"
-                        ? "bg-secondary"
-                        : "bg-teal/5 ml-6"
-                    }`}
-                  >
-                    {msg.content}
-                  </div>
-                ))}
-              </div>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleFollowUp();
-                }}
-                className="flex gap-2"
-              >
-                <Input
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="回复 AI 的提问..."
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <MessageSquare className="w-3.5 h-3.5" /> AI 对话补充
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {msgs.length === 0 ? (
+              <div className="text-center py-3">
+                <p className="text-xs text-muted-foreground mb-2">
+                  AI 可以向你提问，帮助补充更多细节
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleStartChat}
                   disabled={chatLoading}
                   className="text-xs"
-                />
-                <Button
-                  type="submit"
-                  size="icon"
-                  variant="outline"
-                  disabled={chatLoading || !chatInput.trim()}
-                  className="h-8 w-8 shrink-0"
                 >
-                  {chatLoading ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Send className="w-3.5 h-3.5" />
+                  {chatLoading && (
+                    <Loader2 className="w-3 h-3 animate-spin mr-1" />
                   )}
+                  开始对话
                 </Button>
-              </form>
-            </CardContent>
-          </Card>
-        )}
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {msgs.map((msg, i) => (
+                    <div
+                      key={i}
+                      className={`text-xs p-2.5 rounded-lg ${
+                        msg.role === "assistant"
+                          ? "bg-secondary"
+                          : "bg-teal/5 ml-6"
+                      }`}
+                    >
+                      {msg.content}
+                    </div>
+                  ))}
+                </div>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleFollowUp();
+                  }}
+                  className="flex gap-2"
+                >
+                  <Input
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder="回复 AI 的提问..."
+                    disabled={chatLoading}
+                    className="text-xs"
+                  />
+                  <Button
+                    type="submit"
+                    size="icon"
+                    variant="outline"
+                    disabled={chatLoading || !chatInput.trim()}
+                    className="h-8 w-8 shrink-0"
+                  >
+                    {chatLoading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Send className="w-3.5 h-3.5" />
+                    )}
+                  </Button>
+                </form>
+              </>
+            )}
+          </CardContent>
+        </Card>
       </div>
     );
   };
+
+  // ─── Render ───────────────────────────────────────────────────────────
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 space-y-5">
@@ -586,7 +727,7 @@ export default function CasesPage() {
               <span className="text-xs text-muted-foreground">
                 {submitContent.length} 字
                 {submitContent.length > 0 &&
-                  submitContent.length < 50 &&
+                  submitContent.length < 5 &&
                   "（至少 5 字）"}
               </span>
               <div className="flex gap-2">
@@ -642,31 +783,36 @@ export default function CasesPage() {
                 <p className="font-medium text-base">如何使用案例库</p>
                 <ol className="list-decimal ml-5 space-y-1 text-muted-foreground text-xs">
                   <li>
-                    <span className="text-foreground font-medium">分享故事</span>
-                    &nbsp;— 点击右上角「分享故事」按钮，写下你观察到的职场现象。AI 会自动匿名化、提取学术摘要和理论标签。
+                    <span className="text-foreground font-medium">
+                      分享故事
+                    </span>
+                    &nbsp;— 点击「分享故事」，AI
+                    自动匿名化、提取学术摘要和理论标签。
                   </li>
                   <li>
-                    <span className="text-foreground font-medium">浏览案例</span>
-                    &nbsp;— 左侧列表展示所有公开案例，点击卡片查看右侧的完整研究洞察。
+                    <span className="text-foreground font-medium">
+                      浏览案例
+                    </span>
+                    &nbsp;— 左侧列表展示所有公开案例，点击查看右侧研究洞察。
                   </li>
                   <li>
-                    <span className="text-foreground font-medium">收藏案例</span>
-                    &nbsp;— 点击书签图标收藏到当前项目。
+                    <span className="text-foreground font-medium">
+                      生成研究想法
+                    </span>
+                    &nbsp;— 勾选案例 → 输入研究方向 → AI
+                    生成维度矩阵、评分排序、模拟同行评审。
                   </li>
                   <li>
-                    <span className="text-foreground font-medium">生成研究问题</span>
-                    &nbsp;— 勾选案例后点击「生成研究问题」，AI 结合知识图谱生成假设。
-                  </li>
-                  <li>
-                    <span className="text-foreground font-medium">AI 对话补充</span>
-                    &nbsp;— 在右侧洞察面板中可以与 AI 进行追问对话，补充更多细节。
+                    <span className="text-foreground font-medium">
+                      AI 对话补充
+                    </span>
+                    &nbsp;— 右侧面板可与 AI 追问对话，对话记录会自动保存。
                   </li>
                 </ol>
               </div>
               <button
                 onClick={() => setShowGuide(false)}
                 className="shrink-0 p-1 rounded hover:bg-teal/10 text-muted-foreground hover:text-foreground transition-colors"
-                title="隐藏说明"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -705,7 +851,10 @@ export default function CasesPage() {
           </SelectTrigger>
           <SelectContent>
             {CATEGORIES.map((c) => (
-              <SelectItem key={c.value || "__all__"} value={c.value || "__all__"}>
+              <SelectItem
+                key={c.value || "__all__"}
+                value={c.value || "__all__"}
+              >
                 {c.label}
               </SelectItem>
             ))}
@@ -714,14 +863,19 @@ export default function CasesPage() {
 
         <Select
           value={contextType || "__all__"}
-          onValueChange={(v) => setContextType(v === "__all__" ? "" : (v ?? ""))}
+          onValueChange={(v) =>
+            setContextType(v === "__all__" ? "" : (v ?? ""))
+          }
         >
           <SelectTrigger className="w-[140px]">
             <SelectValue placeholder="全部场景" />
           </SelectTrigger>
           <SelectContent>
             {CONTEXT_TYPES.map((c) => (
-              <SelectItem key={c.value || "__all__"} value={c.value || "__all__"}>
+              <SelectItem
+                key={c.value || "__all__"}
+                value={c.value || "__all__"}
+              >
                 {c.label}
               </SelectItem>
             ))}
@@ -745,16 +899,29 @@ export default function CasesPage() {
             <Button
               size="sm"
               onClick={handleGenerate}
-              disabled={generating || !researchTopic.trim()}
+              disabled={
+                (genPhase !== "idle" && genPhase !== "done") ||
+                !researchTopic.trim()
+              }
               className="bg-teal-600 hover:bg-teal-700 text-white shrink-0"
             >
-              {generating ? (
+              {genPhase === "generating" || genPhase === "reviewing" ? (
                 <Loader2 className="h-4 w-4 mr-1 animate-spin" />
               ) : (
                 <Lightbulb className="h-4 w-4 mr-1" />
               )}
-              生成研究问题
+              生成研究想法
             </Button>
+            {(genPhase === "generating" || genPhase === "reviewing") && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleStopGenerate}
+                className="text-xs border-destructive/50 text-destructive hover:bg-destructive/10 shrink-0"
+              >
+                &#x25A0; 停止
+              </Button>
+            )}
             <button
               onClick={() => setSelected(new Set())}
               className="text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
@@ -764,9 +931,53 @@ export default function CasesPage() {
           </div>
           {!researchTopic.trim() && (
             <p className="text-xs text-muted-foreground">
-              请先输入研究方向，AI 将结合所选案例和你的研究话题生成研究问题与假设
+              请先输入研究方向，AI
+              将结合所选案例生成维度矩阵、研究想法、评分排序和模拟同行评审
             </p>
           )}
+          {/* Progress indicators */}
+          {genPhase !== "idle" && (
+            <div className="flex items-center gap-3 text-xs pt-1">
+              {(["generating", "reviewing", "done"] as GenPhase[]).map(
+                (p, i) => {
+                  const order = ["generating", "reviewing", "done"];
+                  const currentIdx = order.indexOf(genPhase);
+                  const active = currentIdx >= i;
+                  return (
+                    <div key={p} className="flex items-center gap-1.5">
+                      <div
+                        className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                          active
+                            ? "bg-teal text-teal-foreground"
+                            : "bg-border text-muted-foreground"
+                        }`}
+                      >
+                        {i + 1}
+                      </div>
+                      <span
+                        className={
+                          genPhase === p
+                            ? "text-foreground"
+                            : "text-muted-foreground"
+                        }
+                      >
+                        {["生成想法", "同行评审", "完成"][i]}
+                      </span>
+                      {i < 2 && (
+                        <span className="text-border mx-1">—</span>
+                      )}
+                    </div>
+                  );
+                },
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {genError && (
+        <div className="p-3 bg-destructive/10 text-destructive rounded-lg text-sm">
+          {genError}
         </div>
       )}
 
@@ -813,7 +1024,6 @@ export default function CasesPage() {
                     }`}
                   >
                     <div className="flex items-start gap-2.5">
-                      {/* Checkbox */}
                       <div
                         role="checkbox"
                         aria-checked={isSelected}
@@ -843,8 +1053,6 @@ export default function CasesPage() {
                           </svg>
                         )}
                       </div>
-
-                      {/* Content */}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm leading-snug line-clamp-3">
                           {summary}
@@ -870,8 +1078,6 @@ export default function CasesPage() {
                           </span>
                         </div>
                       </div>
-
-                      {/* Bookmark */}
                       <div
                         onClick={(e) => {
                           e.stopPropagation();
@@ -890,7 +1096,6 @@ export default function CasesPage() {
                 );
               })}
 
-              {/* Pagination */}
               {totalPages > 1 && (
                 <div className="flex items-center justify-center gap-3 pt-2">
                   <Button
@@ -932,72 +1137,274 @@ export default function CasesPage() {
         )}
       </div>
 
-      {/* Generated ideas */}
-      {ideas.length > 0 && (
+      {/* ─── Dimensions matrix ───────────────────────────────────────────── */}
+      {dimensions && (
         <div className="space-y-4 pt-4">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Lightbulb className="h-5 w-5 text-amber-500" />
-            生成的研究问题
-          </h2>
-          <div className="grid gap-4 md:grid-cols-2">
-            {ideas.map((idea, i) => (
-              <Card key={i}>
+          <h2 className="text-lg font-semibold">研究维度矩阵</h2>
+          <div className="grid sm:grid-cols-3 gap-4">
+            {[
+              {
+                label: "理论",
+                items: dimensions.theories,
+                color: "text-blue-600",
+              },
+              {
+                label: "情境",
+                items: dimensions.contexts,
+                color: "text-green-600",
+              },
+              {
+                label: "方法",
+                items: dimensions.methods,
+                color: "text-purple-600",
+              },
+            ].map(({ label, items, color }) => (
+              <Card key={label}>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    {idea.title}
+                  <CardTitle className={`text-sm ${color}`}>
+                    {label}维度
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-2 text-sm">
-                  <div>
-                    <span className="font-medium text-muted-foreground">
-                      研究问题：
-                    </span>
-                    <span>{idea.researchQuestion}</span>
+                <CardContent>
+                  <div className="flex flex-wrap gap-1.5">
+                    {items.map((item, i) => (
+                      <Badge
+                        key={i}
+                        variant="secondary"
+                        className="text-[11px]"
+                      >
+                        {item.split(":")[0].split("：")[0]}
+                      </Badge>
+                    ))}
                   </div>
-                  {idea.hypotheses?.length > 0 && (
-                    <div>
-                      <span className="font-medium text-muted-foreground">
-                        假设：
-                      </span>
-                      <ul className="list-disc list-inside mt-1 space-y-0.5">
-                        {idea.hypotheses.map((h, j) => (
-                          <li key={j}>{h}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  <div>
-                    <span className="font-medium text-muted-foreground">
-                      理论基础：
-                    </span>
-                    <span>{idea.theoreticalBasis}</span>
-                  </div>
-                  <div>
-                    <span className="font-medium text-muted-foreground">
-                      方法建议：
-                    </span>
-                    <span>{idea.methodology}</span>
-                  </div>
-                  {idea.caseLink && (
-                    <div>
-                      <span className="font-medium text-muted-foreground">
-                        案例关联：
-                      </span>
-                      <span>{idea.caseLink}</span>
-                    </div>
-                  )}
-                  {idea.novelty && (
-                    <div>
-                      <span className="font-medium text-muted-foreground">
-                        新颖性：
-                      </span>
-                      <span>{idea.novelty}</span>
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             ))}
           </div>
+
+          {dimensions.gaps?.length > 0 && (
+            <Card className="border-amber-200 bg-amber-50/30">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-amber-700">
+                  识别的研究空白
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-1">
+                  {dimensions.gaps.map((gap, i) => (
+                    <p key={i} className="text-xs text-amber-800">
+                      • {gap}
+                    </p>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* ─── Generated ideas ─────────────────────────────────────────────── */}
+      {ideas.length > 0 && (
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Lightbulb className="h-5 w-5 text-amber-500" />
+              生成的研究想法
+            </h2>
+            <span className="text-xs text-muted-foreground">
+              按综合评分排序 · 前2名含模拟评审
+              {genPhase === "reviewing" && " · 评审生成中..."}
+            </span>
+          </div>
+
+          {ideas.map((idea, rank) => {
+            const isExpanded = expandedIdeaId === idea.id;
+            return (
+              <Card
+                key={idea.id}
+                className={`transition-all duration-200 ${
+                  isExpanded ? "border-teal/30 shadow-sm" : "hover:border-border"
+                }`}
+              >
+                <CardHeader
+                  className="pb-3 cursor-pointer"
+                  onClick={() =>
+                    setExpandedIdeaId(isExpanded ? null : idea.id)
+                  }
+                >
+                  <div className="flex items-start gap-3">
+                    <span
+                      className={`text-lg font-bold tabular-nums shrink-0 ${
+                        rank < 3 ? "text-teal" : "text-muted-foreground"
+                      }`}
+                    >
+                      #{rank + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-base leading-snug">
+                        {idea.title}
+                      </CardTitle>
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] bg-blue-50 text-blue-700"
+                        >
+                          {idea.theory.split(":")[0].split("：")[0]}
+                        </Badge>
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] bg-green-50 text-green-700"
+                        >
+                          {idea.context.split(":")[0].split("：")[0]}
+                        </Badge>
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] bg-purple-50 text-purple-700"
+                        >
+                          {idea.method.split(":")[0].split("：")[0]}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-2xl font-bold tabular-nums text-teal">
+                        {idea.scores.overall.toFixed(1)}
+                      </span>
+                      <span className="text-xs text-muted-foreground block">
+                        /10
+                      </span>
+                    </div>
+                  </div>
+                </CardHeader>
+
+                {isExpanded && (
+                  <>
+                    <Separator />
+                    <CardContent className="pt-4 space-y-4">
+                      <div className="max-w-xs space-y-1.5">
+                        <ScoreBar
+                          label="新颖性"
+                          value={idea.scores.novelty}
+                        />
+                        <ScoreBar
+                          label="可行性"
+                          value={idea.scores.feasibility}
+                        />
+                        <ScoreBar
+                          label="影响力"
+                          value={idea.scores.impact}
+                        />
+                      </div>
+
+                      <div className="grid sm:grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <p className="font-medium mb-1">核心假设</p>
+                          <p className="text-muted-foreground">
+                            {idea.hypothesis}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="font-medium mb-1">预期贡献</p>
+                          <p className="text-muted-foreground">
+                            {idea.contribution}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Peer review loading */}
+                      {!idea.peerReview &&
+                        rank < 2 &&
+                        genPhase === "reviewing" && (
+                          <div className="bg-muted/20 rounded-lg px-4 py-3 flex items-center gap-2 text-xs text-muted-foreground">
+                            <span
+                              className="inline-block w-1.5 h-1.5 bg-teal rounded-full animate-bounce"
+                              style={{ animationDelay: "0ms" }}
+                            />
+                            <span
+                              className="inline-block w-1.5 h-1.5 bg-teal rounded-full animate-bounce"
+                              style={{ animationDelay: "150ms" }}
+                            />
+                            <span
+                              className="inline-block w-1.5 h-1.5 bg-teal rounded-full animate-bounce"
+                              style={{ animationDelay: "300ms" }}
+                            />
+                            <span className="ml-1">同行评审生成中...</span>
+                          </div>
+                        )}
+
+                      {/* Peer review result */}
+                      {idea.peerReview && (
+                        <div className="bg-muted/30 rounded-lg p-4 space-y-3">
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-medium">
+                              模拟同行评审
+                            </h4>
+                            <Badge
+                              variant="secondary"
+                              className={`text-[10px] ${
+                                verdictLabels[idea.peerReview.verdict]?.color ??
+                                ""
+                              }`}
+                            >
+                              {verdictLabels[idea.peerReview.verdict]?.label ??
+                                idea.peerReview.verdict}
+                            </Badge>
+                          </div>
+                          <div className="grid sm:grid-cols-2 gap-3 text-xs">
+                            <div>
+                              <p className="font-medium text-green-700 mb-1">
+                                优点
+                              </p>
+                              {idea.peerReview.strengths.map((s, i) => (
+                                <p key={i} className="text-muted-foreground">
+                                  + {s}
+                                </p>
+                              ))}
+                            </div>
+                            <div>
+                              <p className="font-medium text-red-600 mb-1">
+                                不足
+                              </p>
+                              {idea.peerReview.weaknesses.map((w, i) => (
+                                <p key={i} className="text-muted-foreground">
+                                  - {w}
+                                </p>
+                              ))}
+                            </div>
+                          </div>
+                          {idea.peerReview.questions?.length > 0 && (
+                            <div className="text-xs">
+                              <p className="font-medium text-amber-600 mb-1">
+                                审稿人问题
+                              </p>
+                              {idea.peerReview.questions.map((q, i) => (
+                                <p key={i} className="text-muted-foreground">
+                                  ? {q}
+                                </p>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigator.clipboard.writeText(
+                            `${idea.title}\n\n理论: ${idea.theory}\n情境: ${idea.context}\n方法: ${idea.method}\n\n假设: ${idea.hypothesis}\n\n贡献: ${idea.contribution}`,
+                          );
+                        }}
+                      >
+                        复制
+                      </Button>
+                    </CardContent>
+                  </>
+                )}
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>
