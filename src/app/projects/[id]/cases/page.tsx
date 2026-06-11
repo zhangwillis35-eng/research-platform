@@ -1212,7 +1212,7 @@ export default function CasesPage() {
               生成的研究想法
             </h2>
             <span className="text-xs text-muted-foreground">
-              按综合评分排序 · 前2名含模拟评审
+              按综合评分排序 · 第1名含模拟评审
               {genPhase === "reviewing" && " · 评审生成中..."}
             </span>
           </div>
@@ -1312,7 +1312,7 @@ export default function CasesPage() {
 
                       {/* Peer review loading */}
                       {!idea.peerReview &&
-                        rank < 2 &&
+                        rank < 1 &&
                         genPhase === "reviewing" && (
                           <div className="bg-muted/20 rounded-lg px-4 py-3 flex items-center gap-2 text-xs text-muted-foreground">
                             <span

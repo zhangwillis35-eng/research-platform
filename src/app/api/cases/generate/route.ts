@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireProjectAccess } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { callAI, setAIContext } from "@/lib/ai";
-import { buildTheoryPromptReference } from "@/lib/ob-knowledge-base";
+import { buildFilteredTheoryReference } from "@/lib/ob-knowledge-base";
 
 export const maxDuration = 300;
 
@@ -53,13 +53,13 @@ export async function POST(request: Request) {
     prisma.graphNode.findMany({
       where: { projectId },
       orderBy: { frequency: "desc" },
-      take: 30,
+      take: 15,
       select: { label: true, nodeType: true, frequency: true },
     }),
     prisma.graphEdge.findMany({
       where: { projectId },
       orderBy: { weight: "desc" },
-      take: 30,
+      take: 15,
       select: {
         fromNode: { select: { label: true } },
         toNode: { select: { label: true } },
@@ -99,7 +99,7 @@ export async function POST(request: Request) {
       `Key relationships: ${edgeStr}`;
   }
 
-  const theoryRef = buildTheoryPromptReference();
+  const theoryRef = buildFilteredTheoryReference(topic);
 
   // SSE streaming pipeline
   const encoder = new TextEncoder();
@@ -142,8 +142,8 @@ export async function POST(request: Request) {
             `  ]\n` +
             `}\n\n` +
             `Rules:\n` +
-            `- Dimensions: 4-8 items per category, at least 3 research gaps\n` +
-            `- Generate 5-8 ideas as novel theory × context × method combinations\n` +
+            `- Dimensions: 3-5 items per category, at least 2 research gaps\n` +
+            `- Generate 3-5 ideas as novel theory × context × method combinations\n` +
             `- Scoring (1-10): novelty (fewer similar studies = higher), feasibility (data availability), impact (theory/practice contribution)\n` +
             `- overall = novelty×0.4 + feasibility×0.3 + impact×0.3\n` +
             `- Sort ideas by overall score descending\n` +
@@ -159,7 +159,7 @@ export async function POST(request: Request) {
           jsonMode: true,
           noThinking: true,
           temperature: 0.5,
-          maxTokens: 6000,
+          maxTokens: 4000,
         });
 
         const parsed = JSON.parse(
@@ -187,8 +187,8 @@ export async function POST(request: Request) {
           ),
         );
 
-        // Step 2: Peer review top 2 ideas in parallel
-        const topIdeas = ideas.slice(0, 2);
+        // Step 2: Peer review top 1 idea only (speed optimization)
+        const topIdeas = ideas.slice(0, 1);
         if (topIdeas.length > 0) {
           const reviews = await Promise.all(
             topIdeas.map(async (idea: { id: string; title: string; theory: string; context: string; method: string; hypothesis: string; contribution: string }) => {
@@ -208,7 +208,7 @@ export async function POST(request: Request) {
                   jsonMode: true,
                   noThinking: true,
                   temperature: 0.3,
-                  maxTokens: 2048,
+                  maxTokens: 1024,
                 });
                 return {
                   ideaId: idea.id,

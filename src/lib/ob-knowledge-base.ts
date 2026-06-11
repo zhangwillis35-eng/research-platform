@@ -962,3 +962,54 @@ export function getAllTheoryNames(): string[] {
 export function getTheoriesByCategory(category: string): OBTheory[] {
   return OB_THEORY_KB.filter((t) => t.category === category);
 }
+
+// Mapping of Chinese/English keywords → OB categories for topic-based filtering
+const TOPIC_CATEGORY_MAP: Record<string, string[]> = {
+  "领导": ["leadership"], "leader": ["leadership"], "管理者": ["leadership"],
+  "激励": ["motivation"], "motivat": ["motivation"], "动机": ["motivation"],
+  "团队": ["team_dynamics"], "team": ["team_dynamics"], "群体": ["team_dynamics"],
+  "公平": ["organizational_justice"], "justice": ["organizational_justice"], "公正": ["organizational_justice"],
+  "冲突": ["conflict"], "conflict": ["conflict"],
+  "沟通": ["communication"], "communicat": ["communication"], "发言": ["communication"], "voice": ["communication"],
+  "权力": ["power_politics"], "power": ["power_politics"], "政治": ["power_politics"],
+  "文化": ["organizational_culture"], "culture": ["organizational_culture"],
+  "变革": ["change_management"], "change": ["change_management"],
+  "决策": ["decision_making"], "decision": ["decision_making"],
+  "情绪": ["emotions_stress"], "stress": ["emotions_stress"], "压力": ["emotions_stress"], "emotion": ["emotions_stress"],
+  "多样性": ["diversity_inclusion"], "divers": ["diversity_inclusion"], "包容": ["diversity_inclusion"],
+};
+
+/**
+ * Build a filtered theory reference based on topic keywords.
+ * Returns only theories from categories matching the topic, plus up to 3 cross-cutting theories.
+ * Falls back to full reference if no keywords match.
+ */
+export function buildFilteredTheoryReference(topic: string): string {
+  const topicLower = topic.toLowerCase();
+  const matchedCategories = new Set<string>();
+
+  for (const [keyword, categories] of Object.entries(TOPIC_CATEGORY_MAP)) {
+    if (topicLower.includes(keyword)) {
+      categories.forEach((c) => matchedCategories.add(c));
+    }
+  }
+
+  // No match → fall back to full (but compact) reference
+  if (matchedCategories.size === 0) {
+    return buildTheoryPromptReference();
+  }
+
+  // Always include cross-cutting theories (social cognitive, P-E fit, social learning)
+  matchedCategories.add("cross_cutting");
+
+  const matched = OB_THEORY_KB.filter((t) => matchedCategories.has(t.category));
+  // Cap at 15 theories max
+  const theories = matched.slice(0, 15);
+
+  return theories
+    .map(
+      (t) =>
+        `- ${t.name} [${t.seminalAuthors[0]}]: constructs={${t.coreConstructs.join(", ")}}; proposition="${t.keyPropositions[0]}"`,
+    )
+    .join("\n");
+}
