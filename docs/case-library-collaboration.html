@@ -3,1083 +3,574 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ScholarFlow — Human-AI 协作开发全历程</title>
+<title>ScholarFlow — 从零到一的 Human-AI 协作全历程</title>
 <style>
   :root {
-    --teal: #0d9488;
-    --teal-light: #ccfbf1;
-    --teal-dark: #115e59;
-    --bg: #fafaf9;
-    --card: #ffffff;
-    --text: #1c1917;
-    --text-muted: #78716c;
-    --border: #e7e5e4;
-    --amber: #d97706;
-    --amber-light: #fef3c7;
-    --blue: #2563eb;
-    --blue-light: #dbeafe;
-    --purple: #7c3aed;
-    --purple-light: #ede9fe;
-    --green: #16a34a;
-    --green-light: #dcfce7;
-    --red: #dc2626;
-    --red-light: #fee2e2;
-    --pink: #db2777;
-    --pink-light: #fce7f3;
-    --indigo: #4f46e5;
-    --indigo-light: #e0e7ff;
-    --cyan: #0891b2;
-    --cyan-light: #cffafe;
-    --orange: #ea580c;
-    --orange-light: #fff7ed;
+    --teal:#0d9488; --teal-l:#ccfbf1; --teal-d:#115e59;
+    --bg:#fafaf9; --card:#fff; --text:#1c1917; --muted:#78716c; --border:#e7e5e4;
+    --amber:#d97706; --amber-l:#fef3c7;
+    --blue:#2563eb; --blue-l:#dbeafe;
+    --purple:#7c3aed; --purple-l:#ede9fe;
+    --green:#16a34a; --green-l:#dcfce7;
+    --red:#dc2626; --red-l:#fee2e2;
+    --pink:#db2777; --pink-l:#fce7f3;
+    --indigo:#4f46e5; --indigo-l:#e0e7ff;
+    --cyan:#0891b2; --cyan-l:#cffafe;
+    --orange:#ea580c; --orange-l:#fff7ed;
+    --slate:#475569; --slate-l:#f1f5f9;
   }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    font-family: "宋体", "SimSun", "Times New Roman", serif;
-    background: var(--bg);
-    color: var(--text);
-    line-height: 1.8;
-    -webkit-font-smoothing: antialiased;
-  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:"宋体","SimSun","Times New Roman",serif;background:var(--bg);color:var(--text);line-height:1.85;-webkit-font-smoothing:antialiased}
+  code{font-family:"SF Mono","Fira Code","Menlo",monospace;font-size:.82em;background:#f5f5f4;padding:1px 5px;border-radius:4px}
 
-  /* ── Hero ── */
-  .hero {
-    background: linear-gradient(135deg, #0c4a6e 0%, var(--teal-dark) 30%, var(--teal) 60%, #0891b2 100%);
-    color: white;
-    padding: 90px 40px 70px;
-    text-align: center;
-    position: relative;
-    overflow: hidden;
-  }
-  .hero::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.04'%3E%3Cpath d='M50 50c0-5.523 4.477-10 10-10s10 4.477 10 10-4.477 10-10 10c0 5.523-4.477 10-10 10s-10-4.477-10-10 4.477-10 10-10zM10 10c0-5.523 4.477-10 10-10s10 4.477 10 10-4.477 10-10 10c0 5.523-4.477 10-10 10S0 25.523 0 20s4.477-10 10-10z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
-  }
-  .hero-content { position: relative; z-index: 1; max-width: 880px; margin: 0 auto; }
-  .hero h1 { font-size: 3rem; font-weight: 700; letter-spacing: 3px; margin-bottom: 12px; }
-  .hero .subtitle { font-size: 1.2rem; opacity: 0.92; font-family: "Times New Roman", "宋体", serif; }
-  .hero .meta-bar {
-    margin-top: 36px;
-    display: flex;
-    justify-content: center;
-    gap: 32px;
-    font-size: 0.88rem;
-    opacity: 0.85;
-    flex-wrap: wrap;
-  }
-  .hero .meta-bar span { display: flex; align-items: center; gap: 6px; }
+  /* Hero */
+  .hero{background:linear-gradient(135deg,#0c4a6e 0%,var(--teal-d) 35%,var(--teal) 65%,#0891b2 100%);color:#fff;padding:100px 40px 80px;text-align:center;position:relative;overflow:hidden}
+  .hero::before{content:"";position:absolute;inset:0;background:url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3z' fill='%23ffffff' fill-opacity='.03'/%3E%3C/svg%3E")}
+  .hero-c{position:relative;z-index:1;max-width:900px;margin:0 auto}
+  .hero h1{font-size:3.2rem;font-weight:700;letter-spacing:4px;margin-bottom:8px}
+  .hero .sub{font-size:1.15rem;opacity:.92}
+  .hero .desc{margin-top:14px;font-size:.95rem;opacity:.72;max-width:640px;margin-left:auto;margin-right:auto}
+  .hero .meta{margin-top:36px;display:flex;justify-content:center;gap:28px;font-size:.85rem;opacity:.8;flex-wrap:wrap}
 
-  /* ── Container ── */
-  .container { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+  .ctr{max-width:1080px;margin:0 auto;padding:0 24px}
 
-  /* ── Overview Stats ── */
-  .overview {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 16px;
-    margin: -36px auto 48px;
-    position: relative;
-    z-index: 2;
-  }
-  .stat-card {
-    background: var(--card);
-    border-radius: 12px;
-    padding: 22px 16px;
-    text-align: center;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
-    border: 1px solid var(--border);
-  }
-  .stat-card .number {
-    font-size: 2rem;
-    font-weight: 700;
-    color: var(--teal);
-    font-family: "Times New Roman", serif;
-  }
-  .stat-card .label { font-size: 0.82rem; color: var(--text-muted); margin-top: 4px; }
+  /* Stats */
+  .stats{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin:-38px auto 50px;position:relative;z-index:2}
+  .st{background:var(--card);border-radius:12px;padding:20px 14px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.07);border:1px solid var(--border)}
+  .st .n{font-size:1.9rem;font-weight:700;color:var(--teal);font-family:"Times New Roman",serif}
+  .st .l{font-size:.78rem;color:var(--muted);margin-top:3px}
 
-  /* ── Section Title ── */
-  .section-title { text-align: center; margin: 64px 0 36px; }
-  .section-title h2 {
-    font-size: 1.8rem;
-    font-weight: 700;
-    display: inline-flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .section-title h2::before,
-  .section-title h2::after {
-    content: "";
-    width: 40px;
-    height: 2px;
-    background: var(--teal);
-  }
-  .section-title p { color: var(--text-muted); margin-top: 8px; font-size: 0.92rem; }
+  /* Section */
+  .sec{text-align:center;margin:60px 0 32px}
+  .sec h2{font-size:1.7rem;font-weight:700;display:inline-flex;align-items:center;gap:12px}
+  .sec h2::before,.sec h2::after{content:"";width:36px;height:2px;background:var(--teal)}
+  .sec p{color:var(--muted);margin-top:6px;font-size:.9rem}
+  .sec-sm{margin:40px 0 20px;text-align:left}
+  .sec-sm h3{font-size:1.2rem;font-weight:700;color:var(--teal-d);border-left:4px solid var(--teal);padding-left:12px}
 
-  /* ── Session Card ── */
-  .session-header {
-    background: var(--card);
-    border-radius: 14px;
-    padding: 24px 28px;
-    margin-bottom: 8px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.05);
-    border: 1px solid var(--border);
-    border-left: 5px solid var(--teal);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 12px;
-    cursor: pointer;
-    transition: box-shadow 0.2s;
-  }
-  .session-header:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
-  .session-header h3 { font-size: 1.15rem; font-weight: 700; }
-  .session-header .session-meta {
-    display: flex;
-    gap: 16px;
-    font-size: 0.8rem;
-    color: var(--text-muted);
-  }
-  .session-body {
-    margin-bottom: 40px;
-  }
+  /* Phase Card */
+  .phase{background:var(--card);border-radius:14px;margin-bottom:16px;box-shadow:0 2px 12px rgba(0,0,0,.04);border:1px solid var(--border);overflow:hidden}
+  .phase-hd{padding:20px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--border)}
+  .phase-hd h4{font-size:1rem;font-weight:700}
+  .phase-hd .pm{display:flex;gap:14px;font-size:.78rem;color:var(--muted)}
+  .phase-bd{padding:20px 24px}
+  .phase-bd p{font-size:.88rem;color:var(--muted);margin-bottom:6px}
 
-  /* ── Feature Card ── */
-  .feature-card {
-    background: var(--card);
-    border-radius: 12px;
-    padding: 24px;
-    margin-bottom: 16px;
-    box-shadow: 0 1px 8px rgba(0,0,0,0.04);
-    border: 1px solid var(--border);
-    transition: transform 0.2s, box-shadow 0.2s;
-  }
-  .feature-card:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-  }
-  .feature-card h4 {
-    font-size: 1.05rem;
-    font-weight: 700;
-    margin-bottom: 10px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .feature-card p { font-size: 0.88rem; color: var(--text-muted); margin-bottom: 8px; }
+  /* Dialogue */
+  .dlg{margin:10px 0;padding:10px 14px;border-radius:10px;font-size:.84rem;line-height:1.7}
+  .dlg.u{background:var(--blue-l);border-left:3px solid var(--blue);color:#1e40af}
+  .dlg.a{background:var(--teal-l);border-left:3px solid var(--teal);color:var(--teal-d)}
+  .dlg b{font-size:.7rem;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:2px}
 
-  /* ── Dialogue ── */
-  .dialogue {
-    margin: 12px 0;
-    padding: 10px 14px;
-    border-radius: 10px;
-    font-size: 0.84rem;
-    line-height: 1.7;
-  }
-  .dialogue.user {
-    background: var(--blue-light);
-    border-left: 3px solid var(--blue);
-    color: #1e40af;
-  }
-  .dialogue.ai {
-    background: var(--teal-light);
-    border-left: 3px solid var(--teal);
-    color: var(--teal-dark);
-  }
-  .dialogue .role {
-    font-weight: 700;
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-bottom: 3px;
-  }
+  /* Tags */
+  .tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+  .tg{font-size:.68rem;padding:2px 8px;border-radius:16px;font-weight:500}
+  .tg-t{background:var(--teal-l);color:var(--teal-d)} .tg-b{background:var(--blue-l);color:#1e40af}
+  .tg-p{background:var(--purple-l);color:#5b21b6} .tg-a{background:var(--amber-l);color:#92400e}
+  .tg-g{background:var(--green-l);color:#166534} .tg-r{background:var(--red-l);color:#991b1b}
+  .tg-i{background:var(--indigo-l);color:#3730a3} .tg-c{background:var(--cyan-l);color:#155e75}
+  .tg-o{background:var(--orange-l);color:#9a3412} .tg-k{background:var(--pink-l);color:#9d174d}
+  .tg-s{background:var(--slate-l);color:var(--slate)}
 
-  /* ── Code Block ── */
-  .code-block {
-    background: #1e1e2e;
-    color: #cdd6f4;
-    border-radius: 8px;
-    padding: 12px 16px;
-    font-family: "SF Mono", "Fira Code", "Menlo", monospace;
-    font-size: 0.76rem;
-    line-height: 1.6;
-    overflow-x: auto;
-    margin: 8px 0;
-    white-space: pre;
-  }
-  .code-block .kw { color: #cba6f7; }
-  .code-block .str { color: #a6e3a1; }
-  .code-block .cm { color: #6c7086; font-style: italic; }
-  .code-block .fn { color: #89b4fa; }
-  .code-block .tp { color: #f9e2af; }
-  .code-block .num { color: #fab387; }
+  /* Bug Fix */
+  .bf{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0}
+  .bf>div{padding:10px 12px;border-radius:8px;font-size:.82rem}
+  .bf .bug{background:var(--red-l);border-left:3px solid var(--red);color:#7f1d1d}
+  .bf .fix{background:var(--green-l);border-left:3px solid var(--green);color:#14532d}
+  .bf>div strong{display:block;font-size:.7rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px}
 
-  /* ── Tags ── */
-  .tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
-  .tag {
-    font-size: 0.7rem;
-    padding: 2px 9px;
-    border-radius: 20px;
-    font-weight: 500;
-  }
-  .tag-teal { background: var(--teal-light); color: var(--teal-dark); }
-  .tag-blue { background: var(--blue-light); color: #1e40af; }
-  .tag-purple { background: var(--purple-light); color: #5b21b6; }
-  .tag-amber { background: var(--amber-light); color: #92400e; }
-  .tag-green { background: var(--green-light); color: #166534; }
-  .tag-red { background: var(--red-light); color: #991b1b; }
-  .tag-pink { background: var(--pink-light); color: #9d174d; }
-  .tag-indigo { background: var(--indigo-light); color: #3730a3; }
-  .tag-cyan { background: var(--cyan-light); color: #155e75; }
-  .tag-orange { background: var(--orange-light); color: #9a3412; }
+  /* Architecture */
+  .arch{background:var(--card);border-radius:14px;padding:28px;margin:20px 0;box-shadow:0 2px 12px rgba(0,0,0,.05);border:1px solid var(--border)}
+  .arch h3{text-align:center;font-size:1rem;margin-bottom:18px;color:var(--teal-d)}
+  .af{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;padding:12px 0}
+  .ab{padding:10px 14px;border-radius:10px;font-size:.78rem;font-weight:600;text-align:center;min-width:80px;border:2px solid}
+  .aa{font-size:1.2rem;color:var(--muted)}
 
-  /* ── Architecture Diagram ── */
-  .arch-diagram {
-    background: var(--card);
-    border-radius: 14px;
-    padding: 28px;
-    margin: 24px 0;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.05);
-    border: 1px solid var(--border);
-  }
-  .arch-diagram h3 { text-align: center; font-size: 1.05rem; margin-bottom: 20px; color: var(--teal-dark); }
-  .arch-flow {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    flex-wrap: wrap;
-    padding: 16px 0;
-  }
-  .arch-box {
-    padding: 10px 16px;
-    border-radius: 10px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    text-align: center;
-    min-width: 90px;
-    border: 2px solid;
-  }
-  .arch-arrow { font-size: 1.3rem; color: var(--text-muted); }
+  /* Module Grid */
+  .mgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:16px 0}
+  .mcard{background:var(--card);border-radius:12px;padding:18px;border:1px solid var(--border);transition:transform .2s,box-shadow .2s}
+  .mcard:hover{transform:translateY(-2px);box-shadow:0 4px 16px rgba(0,0,0,.08)}
+  .mcard h5{font-size:.9rem;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+  .mcard p{font-size:.8rem;color:var(--muted)}
+  .mcard .num{display:inline-flex;width:22px;height:22px;border-radius:6px;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;color:#fff;flex-shrink:0}
 
-  /* ── Table ── */
-  .perf-table {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
-    border-radius: 10px;
-    overflow: hidden;
-    margin: 12px 0;
-    font-size: 0.82rem;
-  }
-  .perf-table th {
-    background: var(--teal);
-    color: white;
-    padding: 9px 14px;
-    text-align: left;
-    font-weight: 600;
-  }
-  .perf-table td { padding: 9px 14px; border-bottom: 1px solid var(--border); }
-  .perf-table tr:nth-child(even) td { background: #fafaf9; }
-  .perf-table tr:last-child td { border-bottom: none; }
-  .perf-table .old { color: var(--red); text-decoration: line-through; opacity: 0.7; }
-  .perf-table .new { color: var(--green); font-weight: 600; }
+  /* Table */
+  .tb{width:100%;border-collapse:separate;border-spacing:0;border-radius:10px;overflow:hidden;margin:12px 0;font-size:.82rem}
+  .tb th{background:var(--teal);color:#fff;padding:9px 14px;text-align:left;font-weight:600}
+  .tb td{padding:9px 14px;border-bottom:1px solid var(--border)}
+  .tb tr:nth-child(even) td{background:#fafaf9}
+  .tb tr:last-child td{border-bottom:none}
+  .tb .old{color:var(--red);text-decoration:line-through;opacity:.7}
+  .tb .new{color:var(--green);font-weight:600}
 
-  /* ── Bug/Fix ── */
-  .bug-fix {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    margin: 10px 0;
-  }
-  .bug-box, .fix-box {
-    padding: 12px 14px;
-    border-radius: 8px;
-    font-size: 0.82rem;
-  }
-  .bug-box { background: var(--red-light); border-left: 3px solid var(--red); color: #7f1d1d; }
-  .fix-box { background: var(--green-light); border-left: 3px solid var(--green); color: #14532d; }
-  .bug-box strong, .fix-box strong { display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+  /* Code */
+  .cb{background:#1e1e2e;color:#cdd6f4;border-radius:8px;padding:12px 16px;font-family:"SF Mono","Fira Code","Menlo",monospace;font-size:.74rem;line-height:1.6;overflow-x:auto;margin:8px 0;white-space:pre}
+  .cb .kw{color:#cba6f7} .cb .s{color:#a6e3a1} .cb .c{color:#6c7086;font-style:italic} .cb .fn{color:#89b4fa} .cb .n{color:#fab387}
 
-  /* ── Insight Grid ── */
-  .insight-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin: 24px 0;
-  }
-  .insight-card {
-    background: var(--card);
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.05);
-    border: 1px solid var(--border);
-  }
-  .insight-card h4 { font-size: 0.95rem; margin-bottom: 10px; }
-  .insight-card p, .insight-card li { font-size: 0.85rem; color: var(--text-muted); }
-  .insight-card ul { padding-left: 16px; }
-  .insight-card li { margin-bottom: 4px; }
+  /* Grid 2 col */
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:20px 0}
+  .g2 .ic{background:var(--card);border-radius:12px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,.05);border:1px solid var(--border)}
+  .g2 .ic h4{font-size:.95rem;margin-bottom:8px}
+  .g2 .ic p,.g2 .ic li{font-size:.84rem;color:var(--muted)}
+  .g2 .ic ul{padding-left:16px}
+  .g2 .ic li{margin-bottom:3px}
 
-  /* ── Footer ── */
-  .footer {
-    text-align: center;
-    padding: 48px 24px;
-    color: var(--text-muted);
-    font-size: 0.85rem;
-    border-top: 1px solid var(--border);
-    margin-top: 64px;
-  }
-  .footer .logo { font-size: 1.2rem; font-weight: 700; color: var(--teal); margin-bottom: 8px; }
+  /* Footer */
+  .ft{text-align:center;padding:48px 24px;color:var(--muted);font-size:.82rem;border-top:1px solid var(--border);margin-top:60px}
+  .ft .logo{font-size:1.2rem;font-weight:700;color:var(--teal);margin-bottom:6px}
 
-  /* ── Responsive ── */
-  @media (max-width: 768px) {
-    .hero h1 { font-size: 1.8rem; }
-    .hero .meta-bar { flex-direction: column; gap: 6px; }
-    .overview { grid-template-columns: repeat(2, 1fr); }
-    .bug-fix, .insight-grid { grid-template-columns: 1fr; }
-    .session-header { flex-direction: column; align-items: flex-start; }
-  }
-  @media (max-width: 480px) {
-    .overview { grid-template-columns: 1fr 1fr; }
+  /* Timeline dots */
+  .tl{position:relative;padding-left:28px;margin:12px 0}
+  .tl::before{content:"";position:absolute;left:8px;top:4px;bottom:4px;width:2px;background:var(--border)}
+  .tl-i{position:relative;margin-bottom:14px;padding-left:16px}
+  .tl-i::before{content:"";position:absolute;left:-22px;top:8px;width:10px;height:10px;border-radius:50%;background:var(--teal);border:2px solid var(--card);box-shadow:0 0 0 2px var(--teal)}
+  .tl-i h5{font-size:.88rem;font-weight:700;margin-bottom:2px}
+  .tl-i p{font-size:.82rem;color:var(--muted)}
+
+  @media(max-width:768px){
+    .hero h1{font-size:1.8rem} .hero .meta{flex-direction:column;gap:6px}
+    .stats{grid-template-columns:repeat(3,1fr)} .mgrid{grid-template-columns:1fr}
+    .bf,.g2{grid-template-columns:1fr} .phase-hd{flex-direction:column;align-items:flex-start}
   }
 </style>
 </head>
 <body>
 
-<!-- ═══════════════════════ Hero ═══════════════════════ -->
+<!-- ═══════════════════ HERO ═══════════════════ -->
 <section class="hero">
-  <div class="hero-content">
+  <div class="hero-c">
     <h1>ScholarFlow</h1>
-    <div class="subtitle">Human-AI 协作开发全历程</div>
-    <p style="margin-top: 12px; opacity: 0.75; font-size: 0.95rem;">
-      一个 AI 驱动的学术研究平台，从零到产品的每一步决策与迭代
-    </p>
-    <div class="meta-bar">
-      <span>2026.05.02 &mdash; 2026.06.11</span>
-      <span>4 个会话 &middot; 40 天</span>
-      <span>477+ 轮用户指令</span>
-      <span>11 个功能模块</span>
+    <div class="sub">从零到一的 Human-AI 协作开发全历程</div>
+    <p class="desc">一个覆盖学术研究全流程的 AI 驱动平台——从文献检索到研究提案，11 个功能模块，如何在 40 天内通过人机协作完成设计、实现与优化</p>
+    <div class="meta">
+      <span>2026.05.02 — 06.11</span>
+      <span>4 个开发会话</span>
+      <span>477+ 轮交互</span>
+      <span>11 功能模块</span>
+      <span>15+ 外部 API</span>
     </div>
   </div>
 </section>
 
-<!-- ═══════════════════════ Overview ═══════════════════════ -->
-<div class="container">
-  <div class="overview">
-    <div class="stat-card">
-      <div class="number">4</div>
-      <div class="label">开发会话</div>
+<!-- ═══════════════════ STATS ═══════════════════ -->
+<div class="ctr">
+<div class="stats">
+  <div class="st"><div class="n">11</div><div class="l">功能模块</div></div>
+  <div class="st"><div class="n">6</div><div class="l">AI 模型</div></div>
+  <div class="st"><div class="n">15+</div><div class="l">学术数据源</div></div>
+  <div class="st"><div class="n">35+</div><div class="l">OB 理论</div></div>
+  <div class="st"><div class="n">50+</div><div class="l">API 路由</div></div>
+  <div class="st"><div class="n">20+</div><div class="l">Prisma 模型</div></div>
+</div>
+
+<!-- ═══════════════════ PART 0: VISION ═══════════════════ -->
+<div class="sec"><h2>Phase 0 &mdash; 产品愿景</h2><p>为什么要做 ScholarFlow？它要解决什么问题？</p></div>
+
+<div class="phase">
+  <div class="phase-bd">
+    <div class="dlg u"><b>User</b>我需要一个平台，覆盖管理学研究的完整流程：从文献检索、综述撰写、知识图谱构建、研究想法生成、理论整合到最终的研究提案——每一步都有 AI 辅助，但研究者保持主导权。</div>
+    <div class="dlg a"><b>Claude</b>核心设计原则确定：AI 作为「研究副驾驶」而非自动驾驶——每个模块提供 AI 分析结果，但研究者可以审阅、修改、选择性采纳。采用 Next.js App Router 全栈架构，DeepSeek V4 Flash 作为默认 AI 引擎（成本低、速度快），所有 LLM 调用使用 SSE 流式传输实时展示结果。</div>
+    <p style="margin-top:12px"><strong>核心决策：</strong>LLM 系统 prompt 统一使用英文（提高推理质量），输出统一中文（面向中文用户）。所有检索关键词必须翻译为英文（中文仅用于 CNKI）。</p>
+  </div>
+</div>
+
+<!-- ═══════════════════ ARCHITECTURE ═══════════════════ -->
+<div class="sec"><h2>Phase 1 &mdash; 架构设计</h2><p>技术选型与系统骨架</p></div>
+
+<div class="arch">
+  <h3>技术栈全景 Tech Stack Overview</h3>
+  <div class="af">
+    <div class="ab" style="border-color:var(--blue);background:var(--blue-l);color:#1e40af">Next.js 16<br><small>App Router + Turbopack</small></div>
+    <div class="aa">+</div>
+    <div class="ab" style="border-color:var(--purple);background:var(--purple-l);color:#5b21b6">React 19<br><small>TypeScript 5</small></div>
+    <div class="aa">+</div>
+    <div class="ab" style="border-color:var(--green);background:var(--green-l);color:#166534">Prisma 7<br><small>PostgreSQL (Neon)</small></div>
+    <div class="aa">+</div>
+    <div class="ab" style="border-color:var(--amber);background:var(--amber-l);color:#92400e">DeepSeek V4<br><small>6 AI Providers</small></div>
+    <div class="aa">+</div>
+    <div class="ab" style="border-color:var(--cyan);background:var(--cyan-l);color:#155e75">Docker<br><small>GROBID + STORM</small></div>
+  </div>
+</div>
+
+<div class="arch">
+  <h3>三引擎分析架构 Triple Engine Architecture</h3>
+  <p style="text-align:center;font-size:.85rem;color:var(--muted);margin-bottom:16px">用户的一个追问催生了这个架构——原计划双引擎，用户问到 STORM 后演变为三引擎</p>
+  <div class="af">
+    <div class="ab" style="border-color:var(--blue);background:var(--blue-l);color:#1e40af">Built-in AI<br><small>DeepSeek V4 Flash</small></div>
+    <div style="font-size:.85rem;color:var(--muted);padding:0 6px">/</div>
+    <div class="ab" style="border-color:var(--purple);background:var(--purple-l);color:#5b21b6">Stanford STORM<br><small>Python Bridge</small></div>
+    <div style="font-size:.85rem;color:var(--muted);padding:0 6px">/</div>
+    <div class="ab" style="border-color:var(--amber);background:var(--amber-l);color:#92400e">NotebookLM<br><small>MCP Client</small></div>
+    <div class="aa">&rarr;</div>
+    <div class="ab" style="border-color:var(--teal);background:var(--teal-l);color:var(--teal-d)">6 个分析页面<br><small>统一引擎选择器</small></div>
+  </div>
+  <div class="dlg u" style="margin-top:16px"><b>User</b>Is there any integration with other functions on the website, such as STORM?</div>
+  <div class="dlg a"><b>Claude</b>设计 AnalysisEngineSelect 组件，接入综述/想法/理论/图谱/模型/提案全部 6 个分析页面。用户可在每个页面自由切换分析引擎。</div>
+</div>
+
+<div class="arch">
+  <h3>多源文献检索管道 Multi-Source Search Pipeline</h3>
+  <div class="af">
+    <div class="ab" style="border-color:var(--cyan);background:var(--cyan-l);color:#155e75">用户关键词<br><small>中文/英文</small></div>
+    <div class="aa">&rarr;</div>
+    <div class="ab" style="border-color:var(--indigo);background:var(--indigo-l);color:#3730a3">LLM 扩展<br><small>同义词 + 多查询</small></div>
+    <div class="aa">&rarr;</div>
+    <div class="ab" style="border-color:var(--orange);background:var(--orange-l);color:#9a3412">5+ 数据源<br><small>并行检索</small></div>
+    <div class="aa">&rarr;</div>
+    <div class="ab" style="border-color:var(--purple);background:var(--purple-l);color:#5b21b6">去重 &middot; 评分<br><small>AI 相关性打分</small></div>
+    <div class="aa">&rarr;</div>
+    <div class="ab" style="border-color:var(--green);background:var(--green-l);color:#166534">排序输出<br><small>期刊 + 引用</small></div>
+  </div>
+</div>
+
+<!-- DB Schema -->
+<div class="sec-sm"><h3>数据库设计 — 20+ Prisma 模型</h3></div>
+<div class="arch" style="padding:20px 24px">
+  <table class="tb" style="margin:0">
+    <thead><tr><th>模型类</th><th>核心模型</th><th>关键字段</th></tr></thead>
+    <tbody>
+      <tr><td>用户管理</td><td>User, PendingRegistration, Contributor</td><td>phone, email, password (bcrypt), inviteCode</td></tr>
+      <tr><td>项目与文献</td><td>ResearchProject, Paper, PaperChunk</td><td>fullText, aiAnalysis, journalRanking, isSelected, category</td></tr>
+      <tr><td>分析输出</td><td>LiteratureReview, ResearchIdea, Theory</td><td>themes, gaps, scores, peerReview, status (enum)</td></tr>
+      <tr><td>知识图谱</td><td>GraphNode, GraphEdge, VariableRelation</td><td>nodeType (IV/DV/Med/Mod), relationType, direction, weight</td></tr>
+      <tr><td>案例库</td><td>Story, CaseBookmark, Contributor</td><td>anonymizedContent, theoryTags, obCategory, followUpMessages</td></tr>
+      <tr><td>交互历史</td><td>ChatHistory, SearchHistory</td><td>messages (JSON), translatedQuery, keyTerms, stats</td></tr>
+      <tr><td>监控日志</td><td>ApiLog, TokenUsage, AdminSession</td><td>inputTokens, outputTokens, provider, duration</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════════ 11 MODULES ═══════════════════ -->
+<div class="sec"><h2>Phase 2 &mdash; 11 个功能模块</h2><p>每个模块的设计思路、人机协作过程与关键技术决策</p></div>
+
+<!-- Module Overview Grid -->
+<div class="mgrid">
+  <div class="mcard"><h5><span class="num" style="background:var(--blue)">1</span>文献检索</h5><p>多源聚合 &middot; AI 关键词扩展 &middot; 相关性评分 &middot; 期刊分级</p></div>
+  <div class="mcard"><h5><span class="num" style="background:var(--green)">2</span>文献库</h5><p>PDF 上传 &middot; GROBID 解析 &middot; AI 批量分析 &middot; 领域要点</p></div>
+  <div class="mcard"><h5><span class="num" style="background:var(--purple)">3</span>文献综述</h5><p>自动生成 &middot; Word 增强 &middot; STORM 多视角 &middot; 引文追踪</p></div>
+  <div class="mcard"><h5><span class="num" style="background:var(--amber)">4</span>知识图谱</h5><p>变量提取 &middot; 关系可视化 &middot; 元分析摘要 &middot; Cytoscape</p></div>
+  <div class="mcard"><h5><span class="num" style="background:var(--teal)">5</span>研究想法</h5><p>维度矩阵 &middot; 理论 &times; 情境 &times; 方法 &middot; 模拟同行评审</p></div>
+  <div class="mcard"><h5><span class="num" style="background:var(--indigo)">6</span>理论整合</h5><p>理论提取 &middot; 构念映射 &middot; 整合框架 &middot; 强度评估</p></div>
+  <div class="mcard"><h5><span class="num" style="background:var(--orange)">7</span>概念模型</h5><p>ReactFlow 拖拽 &middot; IV/DV/中介/调节 &middot; PNG 导出</p></div>
+  <div class="mcard"><h5><span class="num" style="background:var(--pink)">8</span>案例库</h5><p>故事脱敏 &middot; OB 理论标签 &middot; 想法生成 &middot; 对话记忆</p></div>
+  <div class="mcard"><h5><span class="num" style="background:var(--cyan)">9</span>Proposal</h5><p>研究提案自动生成 &middot; 7 大章节 &middot; STORM 深度分析</p></div>
+  <div class="mcard"><h5><span class="num" style="background:var(--slate)">10</span>参考文献</h5><p>APA/MLA/Chicago/GB-T/BibTeX &middot; Zotero 导出</p></div>
+  <div class="mcard"><h5><span class="num" style="background:var(--red)">11</span>文献翻译</h5><p>PDF 翻译 &middot; 术语提取 &middot; 结构化分析 &middot; Word 导出</p></div>
+</div>
+
+<!-- ═══ Module 1: Search ═══ -->
+<div class="sec-sm"><h3>① 文献检索 — 多源聚合与 AI 评分</h3></div>
+
+<div class="phase"><div class="phase-hd"><h4>设计与实现</h4><div class="pm"><span>smart-search.ts &middot; 1200+ 行</span><span>5 个数据源</span></div></div>
+<div class="phase-bd">
+  <div class="dlg u"><b>User</b>需要一个智能检索系统，能从多个学术数据库同时搜索，自动翻译中文关键词，按相关性和期刊等级排序。</div>
+  <div class="dlg a"><b>Claude</b>设计多源检索管道：用户输入 &rarr; LLM 提取关键词 + 同义词扩展 + 生成精确/宽泛双模式查询 &rarr; 并行检索 Google Scholar / Semantic Scholar / OpenAlex / arXiv / CORE &rarr; 去重（DOI + 外部 ID + 标题模糊匹配）&rarr; 期刊元数据富化（JCR、IF、SSCI/SCI）&rarr; AI 相关性评分（1-10）&rarr; 分级排序输出。</div>
+  <p><strong>AI 评分维度：</strong>关键匹配度、学术贡献、方法论创新、数据来源质量。每篇论文附带评分理由。</p>
+  <p><strong>期刊标识：</strong>FT50（50 刊）、UTD24（24 刊）、ABS 4*（46 刊）徽章实时显示，经 CEIBS LibGuides / UT Dallas / AJG 2024 逐一校验。</p>
+  <div class="tags">
+    <span class="tg tg-b">Google Scholar</span><span class="tg tg-p">Semantic Scholar</span>
+    <span class="tg tg-g">OpenAlex</span><span class="tg tg-a">arXiv</span><span class="tg tg-c">CORE</span>
+    <span class="tg tg-i">SSE Streaming</span><span class="tg tg-t">AI Scoring</span>
+  </div>
+</div></div>
+
+<div class="phase"><div class="phase-hd"><h4>检索管道优化战（跨 3 个会话反复调试）</h4><div class="pm"><span>平台最频繁调试的组件</span></div></div>
+<div class="phase-bd">
+  <div class="tl">
+    <div class="tl-i"><h5>Bug 1: 评分上限失控</h5><p>200+ 篇论文全部做 AI 评分，极慢。添加预截断：按期刊等级排序后取 limit&times;3 再评分。但这又导致小众高质量论文（CHI/CSCW）被丢弃，最终设计「质量源优先」策略：ABS 3+、JCR Q1、arXiv 优先保留。</p></div>
+    <div class="tl-i"><h5>Bug 2: 期刊过滤 AND &rarr; OR</h5><p>用户发现 80 篇论文过滤后仅剩 1 篇。根因：targetJournals 和 requireUTD24 是 AND 条件。改为 OR 逻辑。</p></div>
+    <div class="tl-i"><h5>Bug 3: 覆盖率不足</h5><p>用户指出 Energy Economics 和 TFSC 期刊的论文搜不到。OpenAlex 单次仅取 30 条 &rarr; 扩展到 200 条。</p></div>
+    <div class="tl-i"><h5>Bug 4: 结果前后不一致</h5><p>LLM 关键词提取 temperature=0.2 引入随机性 &rarr; 降为 0。排序添加 title-based tie-breaking。</p></div>
+    <div class="tl-i"><h5>Bug 5: 双重过滤导致 0 结果</h5><p>filterByRelevance(score&ge;3) + applyTieredLimit(score&ge;5) 双重过滤。评分 3-4 的论文通过第一关被第二关杀掉。移除预过滤。</p></div>
+  </div>
+  <p style="font-size:.85rem;color:var(--amber);margin-top:8px"><strong>反复出现的模式：</strong>扩大覆盖 &rarr; 超时/限流 &rarr; 缩小覆盖 &rarr; 漏论文 &rarr; 再扩大。最终平衡点：OpenAlex 200条 + 质量源优先排序 + enrichment cap = limit+20。</p>
+</div></div>
+
+<!-- ═══ Module 2: Library ═══ -->
+<div class="sec-sm"><h3>② 文献库 — PDF 管理与批量分析</h3></div>
+
+<div class="phase"><div class="phase-hd"><h4>核心功能</h4><div class="pm"><span>Catalog + Weekly Digest + Analysis</span></div></div>
+<div class="phase-bd">
+  <div class="dlg u"><b>User</b>在 database 中，批量导入文件夹内的 PDF</div>
+  <div class="dlg a"><b>Claude</b>使用 webkitdirectory 支持文件夹选择。性能迭代：顺序上传 &rarr; 5 并发 &rarr; 跳过 OSS &rarr; 最终切换到 GROBID（Docker 中运行的 ML PDF 解析器），自动提取标题、摘要、作者、章节、参考文献。</div>
+  <p><strong>智能匹配：</strong>上传 PDF 的标题与已有论文对比（&gt;85% 标准化重叠），关联全文而非创建重复条目。</p>
+  <p><strong>三标签页设计：</strong>Catalog（浏览论文元数据 + 核心/支撑分类 + 文件夹）→ Weekly Digest（AI 领域要点提取）→ Analysis（逐篇 AI 分析：变量、方法、贡献）。</p>
+  <div class="tags">
+    <span class="tg tg-c">GROBID Docker</span><span class="tg tg-p">Smart Matching</span>
+    <span class="tg tg-a">Batch Upload</span><span class="tg tg-t">Field Analysis</span>
+  </div>
+</div></div>
+
+<!-- ═══ Module 3: Review ═══ -->
+<div class="sec-sm"><h3>③ 文献综述 — 自动生成与 Word 增强</h3></div>
+
+<div class="phase"><div class="phase-bd">
+  <p><strong>生成模式：</strong>选择论文 &rarr; AI 自动生成结构化综述（引言 / 核心发现 / 理论景观 / 方法论概况 / 研究空白 / 新兴趋势 / 未来方向）&rarr; Markdown 输出，引文追踪到源论文。</p>
+  <p><strong>增强模式：</strong>上传已有 Word 文档 &rarr; AI 分析空白检测（缺失章节、覆盖率评估）&rarr; 自动搜索互补文献 &rarr; 生成修订计划 &rarr; 输出增强版 .docx，含跟踪修改。</p>
+  <p><strong>STORM 集成：</strong>多视角文献分析，模拟不同学者对同一主题的解读，产生更全面的综述框架。</p>
+  <div class="tags">
+    <span class="tg tg-p">STORM Multi-Perspective</span><span class="tg tg-b">Gap Detection</span>
+    <span class="tg tg-g">.docx Export</span><span class="tg tg-a">Citation Tracking</span>
+  </div>
+</div></div>
+
+<!-- ═══ Module 4: Graph ═══ -->
+<div class="sec-sm"><h3>④ 知识图谱 — 变量关系可视化</h3></div>
+
+<div class="phase"><div class="phase-bd">
+  <div class="dlg u"><b>User</b>The visualization effect of extracting variables is too poor.（变量提取展示效果太差了——显示原始 JSON）</div>
+  <div class="dlg a"><b>Claude</b>构建交互式知识图谱（Cytoscape），色彩编码变量类型：IV（翡翠绿）、DV（蓝）、Mediators（琥珀）、Moderators（紫）、Control（灰）。边线表示直接效应/中介/调节关系，支持正向/负向/混合方向。</div>
+  <p><strong>可点击引用：</strong>每个变量/关系标注支撑论文 [1][3]，点击滚动到论文卡片并高亮。</p>
+  <p><strong>元分析摘要：</strong>自动生成核心发现、理论景观、方法论概况、研究空白、新兴趋势。</p>
+  <div class="tags">
+    <span class="tg tg-t">Cytoscape/D3</span><span class="tg tg-g">Color-coded Nodes</span>
+    <span class="tg tg-b">Clickable References</span><span class="tg tg-a">Meta-analysis</span>
+  </div>
+</div></div>
+
+<!-- ═══ Module 5: Ideas ═══ -->
+<div class="sec-sm"><h3>⑤ 研究想法 — 维度矩阵与同行评审</h3></div>
+
+<div class="phase"><div class="phase-hd"><h4>SSE 流式想法生成管道</h4><div class="pm"><span>idea-pipeline.ts</span><span>SSE Streaming</span></div></div>
+<div class="phase-bd">
+  <p><strong>生成流程：</strong>选择文献 &rarr; AI 提取维度矩阵（理论 / 情境 / 方法 / 研究空白）&rarr; 组合生成 5-8 个新颖研究想法 &rarr; 评分排序（novelty&times;0.4 + feasibility&times;0.3 + impact&times;0.3）&rarr; 模拟同行评审（AMJ/ASQ/JAP 匿名审稿人视角，给出优点/不足/问题/verdict）。</p>
+  <p><strong>SSE 事件流：</strong>ideas（维度+想法立即展示）&rarr; review（逐一推送评审结果）&rarr; done。用户无需等待全部完成即可看到初步结果。</p>
+  <p><strong>Bug 修复：</strong>页面崩溃 <code>undefined is not an object (evaluating 'e.theory.split')</code>。根因：sessionStorage 中缓存的旧想法数据某些字段为 undefined，调用 .split() 崩溃。添加 <code>??</code> 空值保护。</p>
+  <div class="tags">
+    <span class="tg tg-t">Dimensions Matrix</span><span class="tg tg-p">Peer Review Sim</span>
+    <span class="tg tg-a">SSE Streaming</span><span class="tg tg-b">Cross-feature Data</span>
+  </div>
+</div></div>
+
+<!-- ═══ Module 6: Theories ═══ -->
+<div class="sec-sm"><h3>⑥ 理论整合 — 构念映射与框架生成</h3></div>
+
+<div class="phase"><div class="phase-bd">
+  <p><strong>流程：</strong>从文献中提取核心理论 &rarr; 识别理论间的共享构念和整合潜力 &rarr; 可视化整合框架（中心理论 + 支撑层）&rarr; 评估连接强度（strong / moderate / weak）。</p>
+  <p><strong>数据模型：</strong>Theory（name, coreConstructs, assumptions, boundaries, seminalPapers）+ PaperTheory 连接表（usage: extends / tests / challenges）。</p>
+  <div class="tags">
+    <span class="tg tg-i">Theory Extraction</span><span class="tg tg-p">Construct Mapping</span>
+    <span class="tg tg-g">Framework Synthesis</span>
+  </div>
+</div></div>
+
+<!-- ═══ Module 7: Model ═══ -->
+<div class="sec-sm"><h3>⑦ 概念模型 — 拖拽式可视化编辑</h3></div>
+
+<div class="phase"><div class="phase-bd">
+  <p><strong>技术选型：</strong>@xyflow/react（ReactFlow）构建交互式节点-边图。拖拽创建变量节点（IV / DV / 中介 / 调节 / 控制），连线表示变量间关系。</p>
+  <p><strong>视觉设计：</strong>色彩编码节点类型，四方向连接手柄，缩略图导航，PNG 导出。数据保存在 localStorage。</p>
+  <div class="tags">
+    <span class="tg tg-c">@xyflow/react</span><span class="tg tg-a">Drag & Drop</span>
+    <span class="tg tg-g">PNG Export</span>
+  </div>
+</div></div>
+
+<!-- ═══ Module 8: Cases ═══ -->
+<div class="sec-sm"><h3>⑧ 案例库 — OB 洞察交换平台（9 轮迭代）</h3></div>
+
+<div class="phase"><div class="phase-hd"><h4>从双身份到统一平台</h4><div class="pm"><span>~1500 行代码</span><span>9 轮迭代</span></div></div>
+<div class="phase-bd">
+  <div class="tl">
+    <div class="tl-i"><h5>R1: 统一身份 + 两栏布局</h5>
+      <div class="dlg u"><b>User</b>不用区分是学术研究者还是员工的身份，统一在案例库里操作，左侧页面是实际案例讲述，右边是公开的且经过处理的研究洞察</div>
+      <p>取消研究者/员工双重身份体系，Story 模型新增 userId 关联。</p>
     </div>
-    <div class="stat-card">
-      <div class="number">11</div>
-      <div class="label">功能模块</div>
+    <div class="tl-i"><h5>R2: 降低门槛 + 话题前置</h5><p>提交最低字数 50 &rarr; 5。想法生成前必须输入研究方向。</p></div>
+    <div class="tl-i"><h5>R3: Bug — 案例不更新</h5><p>fetchCases 仅查 PUBLISHED，新故事从 PENDING 开始，AI 需 10-30 秒。实现 pollUntilPublished() 轮询。</p></div>
+    <div class="tl-i"><h5>R4: OB 理论知识库</h5>
+      <div class="dlg u"><b>User</b>通过 GitHub 等找有关组织行为学相关的知识库或者理论库，加入到案例库的分析</div>
+      <p>构建 ob-knowledge-base.ts（964 行）：35+ 理论、12 类别，每条含核心构念、奠基作者、边界条件。</p>
     </div>
-    <div class="stat-card">
-      <div class="number">477+</div>
-      <div class="label">用户指令</div>
+    <div class="tl-i"><h5>R5-6: SSE 想法生成 + 同行评审</h5><p>从研究想法模块移植完整 SSE 管道：维度提取 &rarr; 组合生成 &rarr; 评分排序 &rarr; 模拟同行评审。</p></div>
+    <div class="tl-i"><h5>R7: 对话记忆</h5>
+      <div class="dlg u"><b>User</b>案例库里的对话需要有记忆功能，用户下一次打开或者切换回该界面，都要能展示原来的对话</div>
+      <p>followUpMessages 存入 DB &rarr; API 返回 &rarr; 前端加载 &rarr; 实时同步。</p>
     </div>
-    <div class="stat-card">
-      <div class="number">35+</div>
-      <div class="label">OB 理论集成</div>
-    </div>
-    <div class="stat-card">
-      <div class="number">5</div>
-      <div class="label">数据源接入</div>
+    <div class="tl-i"><h5>R8-9: 性能优化</h5>
+      <div class="dlg u"><b>User</b>案例库的想法生成太慢了，能否改变策略，提升调用速度</div>
+      <p>按 topic 关键词筛选理论子集（35+ &rarr; &le;15）、想法数 5-8 &rarr; 3-5、maxTokens 6000 &rarr; 4000、同行评审 2 &rarr; 1。</p>
     </div>
   </div>
-
-  <!-- ═══════════════════════ Architecture Overview ═══════════════════════ -->
-  <div class="section-title">
-    <h2>平台架构全景</h2>
-    <p>Next.js 16 + DeepSeek V4 Flash + Prisma 7 + PostgreSQL &middot; 三引擎分析架构</p>
+  <div class="tags">
+    <span class="tg tg-k">Story Pipeline</span><span class="tg tg-p">OB Knowledge Base</span>
+    <span class="tg tg-a">SSE Streaming</span><span class="tg tg-b">Chat Memory</span>
+    <span class="tg tg-g">Performance</span>
   </div>
+</div></div>
 
-  <div class="arch-diagram">
-    <h3>三引擎分析架构 Triple Engine Architecture</h3>
-    <div class="arch-flow">
-      <div class="arch-box" style="border-color: var(--blue); background: var(--blue-light); color: #1e40af;">
-        Built-in AI<br><small>DeepSeek V4 Flash</small>
-      </div>
-      <div style="font-size: 0.85rem; color: var(--text-muted); padding: 0 8px;">/</div>
-      <div class="arch-box" style="border-color: var(--purple); background: var(--purple-light); color: #5b21b6;">
-        Stanford STORM<br><small>Python Bridge</small>
-      </div>
-      <div style="font-size: 0.85rem; color: var(--text-muted); padding: 0 8px;">/</div>
-      <div class="arch-box" style="border-color: var(--amber); background: var(--amber-light); color: #92400e;">
-        NotebookLM<br><small>MCP Client</small>
-      </div>
-      <div class="arch-arrow">&rarr;</div>
-      <div class="arch-box" style="border-color: var(--teal); background: var(--teal-light); color: var(--teal-dark);">
-        6 个分析页面<br><small>统一引擎选择器</small>
-      </div>
-    </div>
-    <h3 style="margin-top: 24px;">多源文献检索管道 Multi-Source Search Pipeline</h3>
-    <div class="arch-flow">
-      <div class="arch-box" style="border-color: var(--cyan); background: var(--cyan-light); color: #155e75;">用户关键词</div>
-      <div class="arch-arrow">&rarr;</div>
-      <div class="arch-box" style="border-color: var(--indigo); background: var(--indigo-light); color: #3730a3;">
-        LLM 扩展<br><small>英文查询生成</small>
-      </div>
-      <div class="arch-arrow">&rarr;</div>
-      <div class="arch-box" style="border-color: var(--orange); background: var(--orange-light); color: #9a3412;">
-        5 个数据源<br><small>Scholar / S2 / OA / arXiv / CORE</small>
-      </div>
-      <div class="arch-arrow">&rarr;</div>
-      <div class="arch-box" style="border-color: var(--purple); background: var(--purple-light); color: #5b21b6;">
-        去重 &middot; 评分<br><small>AI Relevance Scoring</small>
-      </div>
-      <div class="arch-arrow">&rarr;</div>
-      <div class="arch-box" style="border-color: var(--green); background: var(--green-light); color: #166534;">
-        排序输出<br><small>期刊 + 引用 + 相关度</small>
-      </div>
-    </div>
+<!-- ═══ Module 9: Proposal ═══ -->
+<div class="sec-sm"><h3>⑨ Proposal — 研究提案自动生成</h3></div>
+
+<div class="phase"><div class="phase-bd">
+  <p><strong>输入：</strong>研究主题（必填）+ 文献库论文（必选）+ 可选的研究想法（跨功能数据流）+ 可选 STORM 深度分析。</p>
+  <p><strong>输出：</strong>7 大章节自动生成（引言 / 文献综述 / 理论框架 / 假设推导 / 研究方法 / 预期贡献 / 参考文献），Markdown 格式 ~2000 字，完整引文。SSE 流式传输，逐章节推送。</p>
+  <p><strong>AI 聊天：</strong>生成后可对提案进行追问和优化，LLM 接收完整提案上下文。</p>
+  <div class="tags">
+    <span class="tg tg-c">7 Sections</span><span class="tg tg-a">SSE Streaming</span>
+    <span class="tg tg-p">Cross-feature Input</span><span class="tg tg-g">AI Chat Refinement</span>
   </div>
+</div></div>
 
-  <!-- ═══════════════════════ Session 1 ═══════════════════════ -->
-  <div class="section-title">
-    <h2>Session 1 &mdash; 平台主体构建</h2>
-    <p>2026.05.02 &ndash; 05.13 &middot; 11 天 &middot; 477 轮指令 &middot; 13 个实现单元</p>
+<!-- ═══ Module 10: References ═══ -->
+<div class="sec-sm"><h3>⑩ 参考文献 — 多格式引用生成</h3></div>
+
+<div class="phase"><div class="phase-bd">
+  <p><strong>5 种引用格式：</strong>APA 7th、MLA 9th、Chicago、GB/T 7714（中国国标）、BibTeX。</p>
+  <p><strong>批量操作：</strong>全选/多选论文 &rarr; 一键生成引用列表 &rarr; 复制/导出。Zotero API 批量导出（带元数据和集合管理）。</p>
+  <p><strong>参考文献检索：</strong>用户上传任意格式的引用列表（APA/MLA/Chicago），LLM 提取标题 &rarr; 逐一在 Semantic Scholar + OpenAlex 精确检索 &rarr; SSE 流式返回，保持输入顺序。</p>
+  <div class="tags">
+    <span class="tg tg-s">APA / MLA / Chicago / GB-T / BibTeX</span>
+    <span class="tg tg-i">Zotero API</span><span class="tg tg-a">Ref Search</span>
   </div>
+</div></div>
 
-  <div class="session-header" style="border-left-color: var(--blue);">
-    <div>
-      <h3>Phase 1: 项目规划与三引擎架构</h3>
-      <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
-        从文件夹清理到 13 个实现单元的完整规划
-      </p>
-    </div>
-    <div class="session-meta">
-      <span>May 2-3</span>
-      <span>4 个新功能需求</span>
-    </div>
+<!-- ═══ Module 11: Translate ═══ -->
+<div class="sec-sm"><h3>⑪ 文献翻译 — PDF 到 Word 的学术翻译</h3></div>
+
+<div class="phase"><div class="phase-bd">
+  <p><strong>流程：</strong>上传英文 PDF &rarr; 客户端 pdf.js 提取文本 &rarr; AI 逐句高质量翻译（英 &rarr; 中）&rarr; 提取学术术语对照表（英-中）&rarr; 结构化分析（核心发现 / 方法论 / 启示）&rarr; 图表 OCR &rarr; 导出 .docx。</p>
+  <p><strong>多标签展示：</strong>翻译全文 / 术语表 / 结构化分析 / 图表。全流程 SSE 流式传输，逐阶段推送。</p>
+  <div class="tags">
+    <span class="tg tg-b">pdf.js Extraction</span><span class="tg tg-a">Sentence-level Translation</span>
+    <span class="tg tg-g">.docx Export</span><span class="tg tg-p">Term Table</span>
   </div>
-  <div class="session-body">
+</div></div>
 
-    <div class="feature-card">
-      <h4><span class="tag tag-blue">架构决策</span> 三引擎分析选择器</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        New Feature 3: Support users in connecting to NotebookLM... Is there any integration with other functions on the website, such as STORM?
-      </div>
-      <div class="dialogue ai">
-        <div class="role">Claude</div>
-        设计三引擎架构：Built-in AI / STORM / NotebookLM，创建统一的 AnalysisEngineSelect 组件，接入所有 6 个分析页面（综述、想法、理论、图谱、模型、提案）。用户可在每个页面自由切换分析引擎。
-      </div>
-      <p>这个决策源于用户的一个追问——原本只计划 Built-in + NotebookLM 双引擎，用户问到 STORM 后演变为三引擎架构。</p>
-      <div class="tags">
-        <span class="tag tag-blue">AnalysisEngineSelect</span>
-        <span class="tag tag-purple">STORM Bridge</span>
-        <span class="tag tag-amber">NotebookLM MCP</span>
-        <span class="tag tag-green">6 Pages Wired</span>
-      </div>
-    </div>
+<!-- ═══════════════════ INTEGRATIONS ═══════════════════ -->
+<div class="sec"><h2>Phase 3 &mdash; 外部集成</h2><p>6 个 AI 模型 &middot; 15+ 学术数据源 &middot; 4 个研究工具</p></div>
 
-    <div class="feature-card">
-      <h4><span class="tag tag-purple">新功能</span> 领域分析：要点提取 + 假设检验</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        New Feature 1: Incorporate all related papers within a specific field... New Feature 2: Summarize the assumptions...
-      </div>
-      <div class="dialogue ai">
-        <div class="role">Claude</div>
-        创建 Field Takeaways API（按主题聚类提取领域关键发现）和 Assumptions Analysis API（提取并评估研究假设的合理性）。两者均支持 SSE 流式输出和三引擎切换。
-      </div>
-      <div class="tags">
-        <span class="tag tag-purple">field-analysis.ts</span>
-        <span class="tag tag-amber">SSE Streaming</span>
-        <span class="tag tag-teal">Triple Engine</span>
-      </div>
-    </div>
-
-    <div class="feature-card">
-      <h4><span class="tag tag-green">新功能</span> 期刊过滤器 + 跨功能数据流</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        New Feature 4: journal blacklist/whitelist...
-      </div>
-      <div class="dialogue ai">
-        <div class="role">Claude</div>
-        创建 JournalFilter Prisma 模型，支持 FT50 / UTD24 / 自定义期刊列表的 CRUD。构建 cross-feature.ts 跨功能数据流工具——用户可将「领域要点」的研究空白一键发送到「研究想法」页面作为生成种子。
-      </div>
-      <div class="tags">
-        <span class="tag tag-green">Journal Filter CRUD</span>
-        <span class="tag tag-indigo">cross-feature.ts</span>
-        <span class="tag tag-cyan">Data Flow Buttons</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Search Pipeline -->
-  <div class="session-header" style="border-left-color: var(--red);">
-    <div>
-      <h3>Phase 2: 检索管道优化战</h3>
-      <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
-        覆盖率 vs 速度的反复拉锯 — 平台最频繁调试的组件
-      </p>
-    </div>
-    <div class="session-meta">
-      <span>May 2-3</span>
-      <span>5 轮 Bug 修复</span>
-    </div>
-  </div>
-  <div class="session-body">
-
-    <div class="feature-card">
-      <h4><span class="tag tag-red">Bug</span> 评分上限失控 &rarr; 预截断策略</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        Search limit not respected — scoring 200+ papers even when user selected 20.
-      </div>
-      <div class="bug-fix">
-        <div class="bug-box">
-          <strong>Root Cause</strong>
-          管道在截断前对全部论文进行 AI 评分，200+ 篇论文 &times; DeepSeek 调用 = 极慢
-        </div>
-        <div class="fix-box">
-          <strong>Fix</strong>
-          添加预评分截断：按期刊等级排序 &rarr; 截取 limit &times; 3 &rarr; 再进行 AI 评分
-        </div>
-      </div>
-      <div class="dialogue ai">
-        <div class="role">Claude</div>
-        但这个修复引入了新 Bug：按引用数排序丢弃了小众但高质量的论文（如 CHI、CSCW 会议论文），用户搜索"情感AI"时返回 0 结果。最终方案：定义"质量源"（ABS 3+、JCR Q1、arXiv、SSCI/SCI）优先保留，再按引用数排序。
-      </div>
-      <div class="tags">
-        <span class="tag tag-red">Cascading Bug</span>
-        <span class="tag tag-amber">Quality-Source-First</span>
-        <span class="tag tag-teal">SSE Keepalive</span>
-      </div>
-    </div>
-
-    <div class="feature-card">
-      <h4><span class="tag tag-amber">Bug</span> AI 评分字段不一致</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        AI评分环节要把5分及以上的文章都按照"相关性"、"贡献"、"方法"、"创新"来分析
-      </div>
-      <div class="bug-fix">
-        <div class="bug-box">
-          <strong>Root Cause 1</strong>
-          search-manager.ts 存储 p.contribution，前端读取 p.relevanceContribution — 字段名不匹配
-        </div>
-        <div class="fix-box">
-          <strong>Root Cause 2</strong>
-          80 篇论文 &rarr; 仅 24 篇有评分。10 并发触发 DeepSeek 限流 &rarr; 批量失败 &rarr; 默认 5 分但无分析。降并发至 5 + 加重试
-        </div>
-      </div>
-      <div class="tags">
-        <span class="tag tag-red">Field Mismatch</span>
-        <span class="tag tag-amber">Rate Limiting</span>
-        <span class="tag tag-green">Concurrency: 10 &rarr; 5</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Variable Extraction + Reference Search + PDF Upload -->
-  <div class="session-header" style="border-left-color: var(--purple);">
-    <div>
-      <h3>Phase 3: 变量可视化 + 参考文献检索 + 批量 PDF</h3>
-      <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
-        从原始 JSON 到色彩编码徽章，从手动上传到 GROBID 自动解析
-      </p>
-    </div>
-    <div class="session-meta">
-      <span>May 3</span>
-      <span>3 个新功能</span>
-    </div>
-  </div>
-  <div class="session-body">
-
-    <div class="feature-card">
-      <h4><span class="tag tag-purple">UI 重构</span> 变量提取可视化</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        The visualization effect of extracting variables is too poor.（变量提取展示效果太差了——显示原始 JSON）
-      </div>
-      <div class="dialogue ai">
-        <div class="role">Claude</div>
-        构建 AnalysisResultView 组件，用色彩编码徽章区分变量类型：IV（翡翠绿）、DV（蓝）、Mediators（琥珀）、Moderators（紫）。添加可点击的论文来源引用标记 [1] [3]，点击后滚动到对应论文卡片并高亮。
-      </div>
-      <div class="tags">
-        <span class="tag tag-purple">Color-coded Badges</span>
-        <span class="tag tag-blue">Clickable References</span>
-        <span class="tag tag-teal">Scroll-to-highlight</span>
-      </div>
-    </div>
-
-    <div class="feature-card">
-      <h4><span class="tag tag-indigo">新功能</span> 参考文献批量检索</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        Based on the references uploaded by the user, a batch search for the corresponding articles is conducted.（根据用户上传的参考文献列表，批量检索对应文章）
-      </div>
-      <div class="dialogue ai">
-        <div class="role">Claude</div>
-        创建 /api/papers/reference-search：LLM 从任意引用格式（APA/MLA/Chicago）提取标题 &rarr; 逐一在 Semantic Scholar + OpenAlex 精确检索 &rarr; SSE 流式返回。
-      </div>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        Results will be in the same order as the ones I inputted.（结果要保持和我输入的顺序一致）
-      </div>
-      <p>多轮 Bug 修复：auth check 移到 streaming 前、LLM 调用移到 stream 创建前、并发降低、前端替换（非合并）结果以保持输入顺序。</p>
-      <div class="tags">
-        <span class="tag tag-indigo">Any Citation Format</span>
-        <span class="tag tag-amber">SSE Streaming</span>
-        <span class="tag tag-green">Order Preserved</span>
-      </div>
-    </div>
-
-    <div class="feature-card">
-      <h4><span class="tag tag-cyan">新功能</span> 批量 PDF 上传 + GROBID 解析</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        在 database 中，批量导入文件夹内的 PDF
-      </div>
-      <div class="dialogue ai">
-        <div class="role">Claude</div>
-        使用 webkitdirectory 支持文件夹选择。性能迭代：顺序上传 &rarr; 5 并发 &rarr; 跳过 OSS &rarr; 切换到 GROBID（Docker 中已运行的 ML PDF 解析器），自动提取标题、摘要、作者、章节、参考文献。智能匹配：上传 PDF 的标题与已有论文对比（&gt;85% 标准化重叠），关联全文而非创建重复条目。
-      </div>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        平均一篇 PDF 要上传1分钟（太慢了）
-      </div>
-      <div class="tags">
-        <span class="tag tag-cyan">GROBID Docker</span>
-        <span class="tag tag-purple">Smart Matching &gt;85%</span>
-        <span class="tag tag-red">Performance Concern</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Performance -->
-  <div class="session-header" style="border-left-color: var(--orange);">
-    <div>
-      <h3>Phase 4: 性能危机 — usePersistedState</h3>
-      <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
-        85 个 hooks 同时解析 JSON，导致 Mac 鼠标失灵
-      </p>
-    </div>
-    <div class="session-meta">
-      <span>May 11</span>
-      <span>系统级 Bug</span>
-    </div>
-  </div>
-  <div class="session-body">
-    <div class="feature-card">
-      <h4><span class="tag tag-red">性能危机</span> 浏览器卡死</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        打开网页还是会卡，Mac 经常鼠标失灵
-      </div>
-      <div class="bug-fix">
-        <div class="bug-box">
-          <strong>Root Cause</strong>
-          85 个 usePersistedState hooks 在组件挂载时同时从 sessionStorage 读取和解析 JSON，阻塞主线程
-        </div>
-        <div class="fix-box">
-          <strong>Fix</strong>
-          将 sessionStorage 读取包裹在 requestIdleCallback 中，延迟到浏览器空闲时执行，结合 prefetch={false} 减少预加载
-        </div>
-      </div>
-      <div class="code-block"><span class="cm">// Before: 阻塞主线程</span>
-<span class="kw">const</span> stored = sessionStorage.<span class="fn">getItem</span>(key);
-<span class="kw">const</span> parsed = <span class="fn">JSON.parse</span>(stored); <span class="cm">// x85 同时执行</span>
-
-<span class="cm">// After: 延迟到空闲时</span>
-<span class="fn">requestIdleCallback</span>(() => {
-  <span class="kw">const</span> stored = sessionStorage.<span class="fn">getItem</span>(key);
-  <span class="kw">if</span> (stored) <span class="fn">setState</span>(<span class="fn">JSON.parse</span>(stored));
-});</div>
-      <div class="tags">
-        <span class="tag tag-red">UI Freeze</span>
-        <span class="tag tag-green">requestIdleCallback</span>
-        <span class="tag tag-amber">prefetch={false}</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══════════════════════ Session 2 ═══════════════════════ -->
-  <div class="section-title">
-    <h2>Session 2 &mdash; 检索过滤与一致性</h2>
-    <p>2026.05.14 &middot; 期刊过滤逻辑 &middot; 覆盖率 &middot; 结果一致性</p>
-  </div>
-
-  <div class="session-header" style="border-left-color: var(--amber);">
-    <div>
-      <h3>检索质量深度修复</h3>
-      <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
-        从 AND 到 OR、从 30 到 200、从 0.2 到 0 — 三个关键数字的变更
-      </p>
-    </div>
-    <div class="session-meta">
-      <span>May 14</span>
-      <span>4 个修复</span>
-    </div>
-  </div>
-  <div class="session-body">
-
-    <div class="feature-card">
-      <h4><span class="tag tag-red">Bug</span> 期刊过滤 AND &rarr; OR</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        我的检索要求对应的文章绝对不止这一篇（截图：80 篇 &rarr; 过滤后仅 1 篇）
-      </div>
-      <div class="bug-fix">
-        <div class="bug-box">
-          <strong>Root Cause</strong>
-          targetJournals 和 requireUTD24 是 AND 条件 — 论文需要同时在自定义列表和 UTD24 中
-        </div>
-        <div class="fix-box">
-          <strong>Fix</strong>
-          改为 OR 逻辑：匹配 targetJournals / requireUTD24 / requireFT50 任一即可通过。"Science" 仅匹配期刊名开头，防止 "Management Science" 误匹配
-        </div>
-      </div>
-    </div>
-
-    <div class="feature-card">
-      <h4><span class="tag tag-amber">修复</span> 检索覆盖率不足</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        检索功能依然存在文献不全面的问题... Energy Economy 和 Technology and Social Forecasting Change 期刊中一定存在相关文章
-      </div>
-      <div class="dialogue ai">
-        <div class="role">Claude</div>
-        验证发现：OpenAlex 每次查询仅取 30 条，总覆盖 ~100-150 篇。扩展到 200 条后找到 3 篇 Energy Economics + 3 篇 TFSC 论文。
-      </div>
-      <table class="perf-table">
-        <thead><tr><th>参数</th><th>修改前</th><th>修改后</th></tr></thead>
-        <tbody>
-          <tr><td>OpenAlex Broad Search</td><td class="old">100</td><td class="new">200</td></tr>
-          <tr><td>Per-query Limit</td><td class="old">~30</td><td class="new">50</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="feature-card">
-      <h4><span class="tag tag-amber">修复</span> 检索结果前后不一致</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        文献检索的前后一致性不够高，一模一样的提示词输入进去，前后两次的检索结果差别较大
-      </div>
-      <div class="bug-fix">
-        <div class="bug-box">
-          <strong>Root Cause</strong>
-          LLM 关键词提取 temperature=0.2 引入随机性；排序的平分情况下无确定性 tie-breaking
-        </div>
-        <div class="fix-box">
-          <strong>Fix</strong>
-          temperature 降为 0；添加 title-based tie-breaking 确保稳定排序；OpenAlex 使用 cited_by_count:desc 作为二级排序
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══════════════════════ Session 3 ═══════════════════════ -->
-  <div class="section-title">
-    <h2>Session 3 &mdash; 期刊审计与深层 Bug</h2>
-    <p>2026.05.16 &ndash; 06.11 &middot; 官方期刊列表校验 &middot; 双重过滤 Bug &middot; 案例库规划</p>
-  </div>
-
-  <div class="session-header" style="border-left-color: var(--indigo);">
-    <div>
-      <h3>期刊排名审计 + Google Scholar 扩容</h3>
-      <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
-        对照 CEIBS LibGuides、UT Dallas、AJG 2024 逐一校验
-      </p>
-    </div>
-    <div class="session-meta">
-      <span>May 16</span>
-      <span>3 个列表修正</span>
-    </div>
-  </div>
-  <div class="session-body">
-
-    <div class="feature-card">
-      <h4><span class="tag tag-indigo">审计</span> FT50 / UTD24 / ABS 4* 官方校验</h4>
-      <div class="dialogue ai">
-        <div class="role">Claude</div>
-        对照 CEIBS LibGuides、UT Dallas 官方页面、AJG 2024 逐一核实。发现并修正：
-      </div>
-      <table class="perf-table">
-        <thead><tr><th>列表</th><th>问题</th><th>修正</th></tr></thead>
-        <tbody>
-          <tr><td>FT50</td><td class="old">含 Journal of World Business（2016 年已移除）</td><td class="new">替换为 Review of Finance</td></tr>
-          <tr><td>UTD24</td><td>注释错误："Management (4)"实际含 5 条</td><td class="new">修正注释</td></tr>
-          <tr><td>ABS 4*</td><td>注释称 "45 journals" 实际 46 条</td><td class="new">修正为 46</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="feature-card">
-      <h4><span class="tag tag-teal">扩容</span> Google Scholar 检索上限</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        Increase the search limit of Google Scholar to 100
-      </div>
-      <div class="dialogue ai">
-        <div class="role">Claude</div>
-        Serper：4 页硬编码 &rarr; 动态循环最多 5 页 &times; 20 = 100 条。SerpAPI 备用：添加分页支持（原来仅取 1 页 20 条）。Smart-search 调用端：Math.max(40, limit) &rarr; Math.max(100, limit)。
-      </div>
-      <div class="tags">
-        <span class="tag tag-teal">5 Pages Dynamic</span>
-        <span class="tag tag-blue">SerpAPI Pagination</span>
-      </div>
-    </div>
-
-    <div class="feature-card">
-      <h4><span class="tag tag-red">Bug</span> 双重过滤：检索完成但 0 结果</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        文献检索又出错了，检索完不显示结果（截图显示搜索完成但 0 篇论文）
-      </div>
-      <div class="bug-fix">
-        <div class="bug-box">
-          <strong>Root Cause</strong>
-          双重过滤：filterByRelevance(scoredPapers, 3) 先过一次，applyTieredLimit 再按 score &ge; 5 过一次。评分 3-4 的论文通过了第一关，被第二关杀掉。
-        </div>
-        <div class="fix-box">
-          <strong>Fix</strong>
-          移除 filterByRelevance 预过滤，简化 applyTieredLimit 在无限模式下返回全部已评分论文
-        </div>
-      </div>
-      <div class="tags">
-        <span class="tag tag-red">Double Filter</span>
-        <span class="tag tag-green">Simplified Pipeline</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══════════════════════ Session 4 ═══════════════════════ -->
-  <div class="section-title">
-    <h2>Session 4 &mdash; 案例库：从设计到优化</h2>
-    <p>2026.06.11 &middot; OB 洞察交换平台 &middot; 9 轮迭代 &middot; 完整生命周期</p>
-  </div>
-
-  <div class="session-header" style="border-left-color: var(--green);">
-    <div>
-      <h3>案例库完整生命周期（9 轮迭代）</h3>
-      <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
-        统一身份 &rarr; 两栏布局 &rarr; 理论知识库 &rarr; SSE 想法生成 &rarr; 对话记忆 &rarr; 性能优化
-      </p>
-    </div>
-    <div class="session-meta">
-      <span>Jun 11</span>
-      <span>~1500 行代码</span>
-    </div>
-  </div>
-  <div class="session-body">
-
-    <div class="feature-card">
-      <h4><span class="tag tag-blue">R1</span> 统一身份 &middot; 两栏布局</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        不用区分是学术研究者还是员工的身份，统一在案例库里操作，左侧页面是实际案例讲述，右边是公开的且经过处理的研究洞察
-      </div>
-      <div class="dialogue ai">
-        <div class="role">Claude</div>
-        Story 模型 contributorId 改为可选，新增 userId 关联。创建统一提交 API，构建两栏 master-detail 布局。
-      </div>
-    </div>
-
-    <div class="feature-card">
-      <h4><span class="tag tag-green">R2</span> 降低门槛 + 话题前置</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        分享的字数大于5个字就可以。生成研究问题前，让用户先给出研究方向或者话题。
-      </div>
-      <p>提交最低字数 50 &rarr; 5。话题作为必填项传递给 LLM，引导生成方向。</p>
-    </div>
-
-    <div class="feature-card">
-      <h4><span class="tag tag-red">R3</span> 案例列表不更新</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        提交完故事，无法在案例库里更新，请修正
-      </div>
-      <div class="bug-fix">
-        <div class="bug-box">
-          <strong>Root Cause</strong>
-          fetchCases 仅查询 PUBLISHED，新故事从 PENDING 开始，AI 处理需 10-30 秒，3 秒 setTimeout 不够
-        </div>
-        <div class="fix-box">
-          <strong>Fix</strong>
-          实现 pollUntilPublished() 每 3 秒轮询，直到状态变为 PUBLISHED
-        </div>
-      </div>
-    </div>
-
-    <div class="feature-card">
-      <h4><span class="tag tag-purple">R4</span> OB 理论知识库集成</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        通过 GitHub 等找有关组织行为学相关的知识库或者理论库，加入到案例库的分析，用于提高 AI 的分析质量与理论标签的水平
-      </div>
-      <div class="dialogue ai">
-        <div class="role">Claude</div>
-        调研 CPCRN、IS Theory Wiki、Serrat 分类体系，构建结构化知识库 ob-knowledge-base.ts（964 行）：35+ 理论、12 类别，每条含核心构念、关键命题、奠基作者、边界条件。注入分析 prompt 要求构念级匹配和奠基作者引用。
-      </div>
-      <div class="tags">
-        <span class="tag tag-purple">35+ Theories</span>
-        <span class="tag tag-blue">12 Categories</span>
-        <span class="tag tag-teal">964 Lines</span>
-      </div>
-    </div>
-
-    <div class="feature-card">
-      <h4><span class="tag tag-amber">R5-6</span> SSE 流式想法生成 + 同行评审</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        ScholarFlow 的研究想法模块不能用了，修复它，并把里面的想法生成策略和页面布局充分运用到案例库里的想法生成部分
-      </div>
-      <div class="dialogue ai">
-        <div class="role">Claude</div>
-        移植完整 SSE 管道：维度提取 &rarr; 理论 &times; 情境 &times; 方法组合 &rarr; 评分排序（novelty&times;0.4 + feasibility&times;0.3 + impact&times;0.3）&rarr; 模拟同行评审。重写 API（264 行）+ 前端（750 行）。
-      </div>
-      <div class="arch-diagram" style="margin: 12px 0; padding: 16px 20px;">
-        <div class="arch-flow">
-          <div class="arch-box" style="border-color: var(--teal); background: var(--teal-light); color: var(--teal-dark); font-size: 0.75rem;">
-            案例 + 话题
-          </div>
-          <div class="arch-arrow">&rarr;</div>
-          <div class="arch-box" style="border-color: var(--purple); background: var(--purple-light); color: #5b21b6; font-size: 0.75rem;">
-            维度 + 想法<br><small>单次 LLM</small>
-          </div>
-          <div class="arch-arrow">&rarr;</div>
-          <div class="arch-box" style="border-color: var(--amber); background: var(--amber-light); color: #92400e; font-size: 0.75rem;">
-            同行评审<br><small>Top 1</small>
-          </div>
-          <div class="arch-arrow">&rarr;</div>
-          <div class="arch-box" style="border-color: var(--green); background: var(--green-light); color: #166534; font-size: 0.75rem;">
-            SSE 实时<br><small>Phase Events</small>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="feature-card">
-      <h4><span class="tag tag-blue">R7</span> 对话记忆持久化</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        案例库里的对话需要有记忆功能，用户下一次打开或者切换回该界面，都要能展示原来的对话
-      </div>
-      <p>followUpMessages 存入 DB &rarr; API 返回 &rarr; 前端加载 &rarr; 实时同步，跨页面导航不丢失。</p>
-    </div>
-
-    <div class="feature-card">
-      <h4><span class="tag tag-green">R8-9</span> 想法生成提速</h4>
-      <div class="dialogue user">
-        <div class="role">User</div>
-        案例库的想法生成太慢了，能否改变策略，提升调用速度
-      </div>
-      <div class="dialogue ai">
-        <div class="role">Claude</div>
-        新增 buildFilteredTheoryReference(topic)，按中英文关键词映射 OB 类别，精准裁剪 prompt。五项并行优化：
-      </div>
-      <table class="perf-table">
-        <thead><tr><th>优化项</th><th>之前</th><th>之后</th></tr></thead>
-        <tbody>
-          <tr><td>理论知识库</td><td class="old">全部 35+</td><td class="new">按 topic &le;15</td></tr>
-          <tr><td>想法数量</td><td class="old">5-8</td><td class="new">3-5</td></tr>
-          <tr><td>maxTokens</td><td class="old">6000</td><td class="new">4000</td></tr>
-          <tr><td>同行评审</td><td class="old">Top 2</td><td class="new">Top 1</td></tr>
-          <tr><td>图谱上下文</td><td class="old">30+30</td><td class="new">15+15</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- ═══════════════════════ Patterns & Insights ═══════════════════════ -->
-  <div class="section-title">
-    <h2>协作模式复盘</h2>
-    <p>4 个会话中浮现的角色分工、反复出现的模式与关键决策</p>
-  </div>
-
-  <div class="insight-grid">
-    <div class="insight-card">
-      <h4 style="color: var(--blue);">User 的角色</h4>
-      <ul>
-        <li><strong>产品定义者</strong> &mdash; 统一身份、两栏布局、三引擎架构等方向性决策</li>
-        <li><strong>质量哨兵</strong> &mdash; 发现案例不更新、检索不全面、评分不一致等真实场景 Bug</li>
-        <li><strong>策略指引者</strong> &mdash; 集成理论知识库、移植想法模块等高层策略</li>
-        <li><strong>体验守护者</strong> &mdash; 检索结果要有序、鼠标不能卡、速度要快</li>
-      </ul>
-    </div>
-    <div class="insight-card">
-      <h4 style="color: var(--teal);">Claude 的角色</h4>
-      <ul>
-        <li><strong>架构实现者</strong> &mdash; 数据模型、API 路由、前端组件、SSE 管道</li>
-        <li><strong>根因诊断者</strong> &mdash; AND/OR 逻辑、双重过滤、字段名不匹配、85 hooks 并发</li>
-        <li><strong>知识工程师</strong> &mdash; 35+ OB 理论知识库、期刊列表官方校验</li>
-        <li><strong>性能调优者</strong> &mdash; 并发控制、token 裁剪、idle callback、预截断</li>
-      </ul>
-    </div>
-  </div>
-
-  <div class="insight-grid">
-    <div class="insight-card" style="border-left: 3px solid var(--red);">
-      <h4 style="color: var(--red);">反复出现的模式</h4>
-      <ul>
-        <li><strong>覆盖率 vs 速度拉锯</strong> &mdash; 检索管道是跨会话最频繁调试的组件：扩大覆盖 &rarr; 超时/限流 &rarr; 缩小覆盖 &rarr; 漏论文 &rarr; 再扩大</li>
-        <li><strong>级联 Bug</strong> &mdash; 修一个 Bug 引入另一个（预截断修复 &rarr; 丢弃小众论文 &rarr; 0 结果）</li>
-        <li><strong>字段名不一致</strong> &mdash; 管道和前端之间的命名不匹配（contribution vs relevanceContribution）</li>
-      </ul>
-    </div>
-    <div class="insight-card" style="border-left: 3px solid var(--green);">
-      <h4 style="color: var(--green);">关键架构决策</h4>
-      <ul>
-        <li><strong>三引擎并存</strong> &mdash; 从用户追问自然演化，非预设方案</li>
-        <li><strong>GROBID 替代 unpdf</strong> &mdash; Docker 本地部署的 ML 解析器，质量远超规则解析</li>
-        <li><strong>理论知识库分层筛选</strong> &mdash; 全量知识库用于分析，按 topic 裁剪版用于快速生成</li>
-        <li><strong>质量源优先排序</strong> &mdash; ABS 3+、JCR Q1、arXiv 在预截断中优先保留</li>
-      </ul>
-    </div>
-  </div>
-
-  <!-- ═══════════════════════ Files Map ═══════════════════════ -->
-  <div class="section-title">
-    <h2>核心文件全景</h2>
-    <p>4 个会话中创建和修改的关键文件</p>
-  </div>
-
-  <div class="arch-diagram" style="padding: 20px 24px;">
-    <table class="perf-table" style="margin: 0; font-size: 0.8rem;">
-      <thead>
-        <tr><th>文件路径</th><th>类型</th><th>职责</th><th>会话</th></tr>
-      </thead>
+<div class="g2">
+  <div class="ic">
+    <h4 style="color:var(--amber)">AI 模型 (6 providers)</h4>
+    <table class="tb" style="font-size:.78rem">
+      <thead><tr><th>Provider</th><th>Model</th><th>状态</th></tr></thead>
       <tbody>
-        <tr><td><code>src/lib/ob-knowledge-base.ts</code></td><td><span class="tag tag-green" style="font-size:0.65rem">Created</span></td><td>35+ OB 理论结构化知识库 (964 行)</td><td>S4</td></tr>
-        <tr><td><code>src/lib/story-processor.ts</code></td><td><span class="tag tag-green" style="font-size:0.65rem">Created</span></td><td>AI 故事处理管道（脱敏 + 理论分析 + 追问）</td><td>S3-4</td></tr>
-        <tr><td><code>src/lib/research/idea-pipeline.ts</code></td><td><span class="tag tag-green" style="font-size:0.65rem">Created</span></td><td>研究想法生成管道（SSE async generator）</td><td>S1</td></tr>
-        <tr><td><code>src/lib/research/field-analysis.ts</code></td><td><span class="tag tag-green" style="font-size:0.65rem">Created</span></td><td>领域要点提取 + 假设分析</td><td>S1</td></tr>
-        <tr><td><code>src/lib/cross-feature.ts</code></td><td><span class="tag tag-green" style="font-size:0.65rem">Created</span></td><td>跨功能数据流工具</td><td>S1</td></tr>
-        <tr><td><code>src/lib/research/relevance-scorer.ts</code></td><td><span class="tag tag-amber" style="font-size:0.65rem">Modified</span></td><td>AI 相关性评分（并发/截断/双重过滤修复）</td><td>S1-3</td></tr>
-        <tr><td><code>src/lib/search-manager.ts</code></td><td><span class="tag tag-amber" style="font-size:0.65rem">Modified</span></td><td>后台检索单例（SSE keepalive/字段名修复）</td><td>S1-2</td></tr>
-        <tr><td><code>src/lib/sources/google-scholar.ts</code></td><td><span class="tag tag-amber" style="font-size:0.65rem">Modified</span></td><td>Google Scholar 分页扩容至 100</td><td>S3</td></tr>
-        <tr><td><code>src/lib/sources/journal-data.ts</code></td><td><span class="tag tag-amber" style="font-size:0.65rem">Modified</span></td><td>FT50/UTD24/ABS4* 官方审计修正</td><td>S2-3</td></tr>
-        <tr><td><code>src/hooks/use-persisted-state.ts</code></td><td><span class="tag tag-amber" style="font-size:0.65rem">Modified</span></td><td>requestIdleCallback 性能修复</td><td>S1</td></tr>
-        <tr><td><code>src/components/analysis-engine-select.tsx</code></td><td><span class="tag tag-green" style="font-size:0.65rem">Created</span></td><td>三引擎统一选择器组件</td><td>S1</td></tr>
-        <tr><td><code>src/app/api/cases/generate/route.ts</code></td><td><span class="tag tag-red" style="font-size:0.65rem">Rewritten</span></td><td>SSE 流式想法生成 + 同行评审</td><td>S4</td></tr>
-        <tr><td><code>src/app/projects/[id]/cases/page.tsx</code></td><td><span class="tag tag-red" style="font-size:0.65rem">Rewritten</span></td><td>两栏布局 + 想法 UI (~750 行)</td><td>S4</td></tr>
-        <tr><td><code>src/app/projects/[id]/ideas/generate/page.tsx</code></td><td><span class="tag tag-green" style="font-size:0.65rem">Created</span></td><td>研究想法生成页面 (628 行)</td><td>S1</td></tr>
-        <tr><td><code>scripts/notebooklm-bridge.py</code></td><td><span class="tag tag-green" style="font-size:0.65rem">Created</span></td><td>NotebookLM Python 桥接</td><td>S1</td></tr>
+        <tr><td>DeepSeek</td><td>V4 Flash / Pro / Reasoner</td><td><span class="tg tg-g">默认</span></td></tr>
+        <tr><td>Google Gemini</td><td>3 Flash / 3.1 Pro</td><td><span class="tg tg-g">可用</span></td></tr>
+        <tr><td>OpenAI</td><td>GPT-4o</td><td><span class="tg tg-a">暂停</span></td></tr>
+        <tr><td>Anthropic</td><td>Claude Sonnet 4</td><td><span class="tg tg-a">暂停</span></td></tr>
+        <tr><td>Alibaba Qwen</td><td>Qwen Plus</td><td><span class="tg tg-g">可用</span></td></tr>
+        <tr><td>Zhipu GLM</td><td>GLM-4 Plus</td><td><span class="tg tg-g">可用</span></td></tr>
       </tbody>
     </table>
   </div>
+  <div class="ic">
+    <h4 style="color:var(--blue)">研究工具集成</h4>
+    <ul>
+      <li><strong>Obsidian</strong> — 本地 REST API，笔记同步，想法推送到 Vault</li>
+      <li><strong>Zotero</strong> — API v3，批量论文导出，集合管理</li>
+      <li><strong>NotebookLM</strong> — Google 笔记本，PDF 批量上传，领域分析查询</li>
+      <li><strong>STORM</strong> — Stanford 多视角文献分析，Python Bridge</li>
+      <li><strong>GROBID</strong> — Docker 部署的 ML PDF 解析器，结构化提取</li>
+      <li><strong>EZproxy</strong> — 校园网代理，机构级全文访问</li>
+    </ul>
+  </div>
+</div>
 
-</div><!-- /container -->
+<!-- ═══════════════════ BUGS & PERFORMANCE ═══════════════════ -->
+<div class="sec"><h2>Phase 4 &mdash; Bug 修复与性能优化</h2><p>从级联 Bug 到系统性能危机——每一次故障如何推动架构进化</p></div>
 
-<!-- ═══════════════════════ Footer ═══════════════════════ -->
-<footer class="footer">
+<div class="phase"><div class="phase-hd"><h4>性能危机：85 个 Hooks 导致浏览器卡死</h4><div class="pm"><span>系统级 Bug</span></div></div>
+<div class="phase-bd">
+  <div class="dlg u"><b>User</b>打开网页还是会卡，Mac 经常鼠标失灵</div>
+  <div class="bf">
+    <div class="bug"><strong>Root Cause</strong>85 个 usePersistedState hooks 在组件挂载时同时从 sessionStorage 读取和解析 JSON，阻塞主线程数百毫秒</div>
+    <div class="fix"><strong>Fix</strong>将 sessionStorage 读取包裹在 requestIdleCallback 中，延迟到浏览器空闲时执行。结合 prefetch={false} 减少页面预加载</div>
+  </div>
+</div></div>
+
+<div class="phase"><div class="phase-hd"><h4>AI 评分字段不一致 + DeepSeek 限流</h4><div class="pm"><span>跨文件命名问题</span></div></div>
+<div class="phase-bd">
+  <div class="dlg u"><b>User</b>AI评分环节要把5分及以上的文章都按照"相关性"、"贡献"、"方法"、"创新"来分析</div>
+  <div class="bf">
+    <div class="bug"><strong>Bug 1</strong>search-manager.ts 存储 p.contribution，前端读取 p.relevanceContribution — 字段名不匹配</div>
+    <div class="fix"><strong>Bug 2</strong>10 并发 AI 评分触发 DeepSeek 限流 &rarr; 80 篇仅 24 篇有评分。降并发至 5 + 重试逻辑</div>
+  </div>
+  <p style="margin-top:8px;font-size:.84rem;color:var(--amber)"><strong>跨会话反复出现的模式：</strong>管道和前端之间的字段命名不一致是多个 Bug 的根因。</p>
+</div></div>
+
+<div class="phase"><div class="phase-hd"><h4>Next.js 16 Middleware 废弃</h4></div>
+<div class="phase-bd">
+  <p>Next.js 16 将 <code>middleware.ts</code> 重命名为 <code>proxy.ts</code>（函数名 middleware &rarr; proxy）。旧文件名触发 deprecation warning，可能导致路由异常。重命名后 warning 消除。</p>
+</div></div>
+
+<!-- ═══════════════════ DEPLOYMENT ═══════════════════ -->
+<div class="sec"><h2>Phase 5 &mdash; 部署架构</h2><p>Docker 多阶段构建 &middot; GROBID 容器 &middot; Nginx 反向代理</p></div>
+
+<div class="arch">
+  <h3>Docker Compose 部署架构</h3>
+  <div class="af">
+    <div class="ab" style="border-color:var(--slate);background:var(--slate-l);color:var(--slate)">Nginx<br><small>反向代理 + SSL</small></div>
+    <div class="aa">&rarr;</div>
+    <div class="ab" style="border-color:var(--teal);background:var(--teal-l);color:var(--teal-d)">ScholarFlow<br><small>Node 22 + Python 3<br>4GB RAM</small></div>
+    <div class="aa">&harr;</div>
+    <div class="ab" style="border-color:var(--green);background:var(--green-l);color:#166534">PostgreSQL<br><small>Neon (Cloud)</small></div>
+  </div>
+  <div class="af" style="margin-top:4px">
+    <div class="ab" style="border-color:var(--purple);background:var(--purple-l);color:#5b21b6">GROBID<br><small>Docker &middot; 768MB<br>Port 8070</small></div>
+    <div class="aa">&harr;</div>
+    <div class="ab" style="border-color:var(--teal);background:var(--teal-l);color:var(--teal-d)">ScholarFlow App</div>
+    <div class="aa">&harr;</div>
+    <div class="ab" style="border-color:var(--amber);background:var(--amber-l);color:#92400e">Aliyun OSS<br><small>PDF 存储</small></div>
+  </div>
+  <p style="text-align:center;font-size:.82rem;color:var(--muted);margin-top:16px">Dockerfile 多阶段构建：Base (Node 22 + Python) &rarr; Dependencies (npm ci) &rarr; Builder (Next.js compile + Prisma generate) &rarr; Runner (最小生产镜像，3GB max heap)</p>
+</div>
+
+<!-- ═══════════════════ COLLABORATION PATTERNS ═══════════════════ -->
+<div class="sec"><h2>Phase 6 &mdash; 协作模式复盘</h2><p>40 天 &middot; 4 个会话 &middot; 477+ 轮交互中浮现的人机协作规律</p></div>
+
+<div class="g2">
+  <div class="ic" style="border-left:3px solid var(--blue)">
+    <h4 style="color:var(--blue)">User 的角色</h4>
+    <ul>
+      <li><strong>产品定义者</strong> — 统一身份、两栏布局、三引擎等方向性决策</li>
+      <li><strong>质量哨兵</strong> — 在真实场景中发现 Bug（检索不全、评分不一致、鼠标卡死）</li>
+      <li><strong>策略指引者</strong> — 集成理论知识库、移植想法模块等高层策略</li>
+      <li><strong>体验守护者</strong> — 检索结果有序、速度要快、对话要有记忆</li>
+    </ul>
+  </div>
+  <div class="ic" style="border-left:3px solid var(--teal)">
+    <h4 style="color:var(--teal)">Claude 的角色</h4>
+    <ul>
+      <li><strong>架构实现者</strong> — 数据模型、API 路由、前端组件、SSE 管道</li>
+      <li><strong>根因诊断者</strong> — AND/OR 逻辑、双重过滤、字段不匹配、85 hooks 并发</li>
+      <li><strong>知识工程师</strong> — 35+ OB 理论库、期刊列表官方校验</li>
+      <li><strong>性能调优者</strong> — 并发控制、token 裁剪、idle callback、预截断</li>
+    </ul>
+  </div>
+</div>
+
+<div class="g2">
+  <div class="ic" style="border-left:3px solid var(--red)">
+    <h4 style="color:var(--red)">反复出现的模式</h4>
+    <ul>
+      <li><strong>覆盖率 vs 速度拉锯</strong> — 检索管道跨 3 个会话反复调试，扩大 &rarr; 超时 &rarr; 缩小 &rarr; 漏论文 &rarr; 再扩大</li>
+      <li><strong>级联 Bug</strong> — 修一个 Bug 引入另一个（预截断 &rarr; 丢弃小众论文 &rarr; 0 结果）</li>
+      <li><strong>字段名不一致</strong> — 管道和前端之间的命名不匹配，反复出现</li>
+      <li><strong>缓存数据与新代码不兼容</strong> — sessionStorage 旧数据导致新页面崩溃</li>
+    </ul>
+  </div>
+  <div class="ic" style="border-left:3px solid var(--green)">
+    <h4 style="color:var(--green)">关键架构决策</h4>
+    <ul>
+      <li><strong>三引擎并存</strong> — 从用户追问自然演化，非预设方案</li>
+      <li><strong>GROBID 替代 unpdf</strong> — Docker 本地的 ML 解析器，质量远超规则解析</li>
+      <li><strong>理论知识库分层筛选</strong> — 全量用于分析，按 topic 裁剪版用于快速生成</li>
+      <li><strong>SSE 统一流式架构</strong> — 检索/综述/想法/提案/翻译全部使用 SSE 实时推送</li>
+      <li><strong>跨功能数据流</strong> — 领域空白 &rarr; 研究想法 &rarr; 研究提案，一键传递</li>
+    </ul>
+  </div>
+</div>
+
+</div><!-- /ctr -->
+
+<!-- ═══════════════════ FOOTER ═══════════════════ -->
+<footer class="ft">
   <div class="logo">ScholarFlow</div>
   <p>AI-Powered Research Platform &middot; Human-AI Collaborative Development</p>
-  <p style="margin-top: 8px; font-size: 0.8rem;">
-    Built with Next.js 16 &middot; React 19 &middot; DeepSeek V4 Flash &middot; Prisma 7 &middot; PostgreSQL &middot; Stanford STORM &middot; NotebookLM
-  </p>
-  <p style="margin-top: 4px; font-size: 0.75rem; opacity: 0.6;">
-    4 Sessions &middot; 40 Days &middot; 477+ Interactions &middot; 2026.05.02 &ndash; 2026.06.11
-  </p>
+  <p style="margin-top:8px;font-size:.78rem">Next.js 16 &middot; React 19 &middot; TypeScript 5 &middot; Prisma 7 &middot; PostgreSQL &middot; DeepSeek V4 &middot; STORM &middot; NotebookLM &middot; GROBID</p>
+  <p style="margin-top:4px;font-size:.72rem;opacity:.5">4 Sessions &middot; 40 Days &middot; 477+ Interactions &middot; 2026.05 &ndash; 2026.06</p>
 </footer>
 
 </body>
