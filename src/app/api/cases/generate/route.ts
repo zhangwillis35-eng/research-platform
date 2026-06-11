@@ -5,11 +5,18 @@ import { callAI, setAIContext } from "@/lib/ai";
 
 // POST /api/cases/generate — generate research questions from selected cases + knowledge graph
 export async function POST(request: Request) {
-  const { projectId, storyIds } = await request.json();
+  const { projectId, storyIds, topic } = await request.json();
 
   if (!projectId || !Array.isArray(storyIds) || storyIds.length === 0) {
     return NextResponse.json(
       { error: "projectId and non-empty storyIds array are required" },
+      { status: 400 }
+    );
+  }
+
+  if (!topic || typeof topic !== "string" || !topic.trim()) {
+    return NextResponse.json(
+      { error: "请先输入研究方向或话题" },
       { status: 400 }
     );
   }
@@ -103,8 +110,9 @@ export async function POST(request: Request) {
     `Return ONLY the JSON array, no markdown fences.`;
 
   const userPrompt =
+    `The researcher's stated research direction/topic: "${topic.trim()}"\n\n` +
     `Below are practitioner cases and (optionally) a knowledge graph from the researcher's project. ` +
-    `Generate research ideas that bridge these real-world observations with academic theory.\n\n` +
+    `Generate research ideas that are aligned with the researcher's topic and bridge these real-world observations with academic theory.\n\n` +
     `${caseSummaries}${graphContext}`;
 
   const res = await callAI({

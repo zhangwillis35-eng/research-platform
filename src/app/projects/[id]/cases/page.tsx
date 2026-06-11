@@ -123,6 +123,7 @@ export default function CasesPage() {
 
   // Selection & generation
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [researchTopic, setResearchTopic] = useState("");
   const [generating, setGenerating] = useState(false);
   const [ideas, setIdeas] = useState<GeneratedIdea[]>([]);
 
@@ -213,13 +214,13 @@ export default function CasesPage() {
   // ─── Generate research questions ───────────────────────────────────────
 
   async function handleGenerate() {
-    if (selected.size === 0) return;
+    if (selected.size === 0 || !researchTopic.trim()) return;
     setGenerating(true);
     try {
       const res = await fetch("/api/cases/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, storyIds: Array.from(selected) }),
+        body: JSON.stringify({ projectId, storyIds: Array.from(selected), topic: researchTopic.trim() }),
       });
       if (!res.ok) throw new Error("Failed to generate ideas");
       const data = await res.json();
@@ -677,29 +678,42 @@ export default function CasesPage() {
 
       {/* Selection bar */}
       {selected.size > 0 && (
-        <div className="flex items-center gap-3 rounded-lg border border-teal-500/30 bg-teal-500/5 px-4 py-2">
-          <span className="text-sm font-medium">
-            已选择 {selected.size} 个案例
-          </span>
-          <Button
-            size="sm"
-            onClick={handleGenerate}
-            disabled={generating}
-            className="bg-teal-600 hover:bg-teal-700 text-white"
-          >
-            {generating ? (
-              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-            ) : (
-              <Lightbulb className="h-4 w-4 mr-1" />
-            )}
-            生成研究问题
-          </Button>
-          <button
-            onClick={() => setSelected(new Set())}
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors ml-auto"
-          >
-            清空选择
-          </button>
+        <div className="space-y-2 rounded-lg border border-teal-500/30 bg-teal-500/5 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium shrink-0">
+              已选择 {selected.size} 个案例
+            </span>
+            <Input
+              value={researchTopic}
+              onChange={(e) => setResearchTopic(e.target.value)}
+              placeholder="输入你的研究方向或话题，如：远程办公对团队信任的影响"
+              className="flex-1 h-8 text-sm"
+            />
+            <Button
+              size="sm"
+              onClick={handleGenerate}
+              disabled={generating || !researchTopic.trim()}
+              className="bg-teal-600 hover:bg-teal-700 text-white shrink-0"
+            >
+              {generating ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Lightbulb className="h-4 w-4 mr-1" />
+              )}
+              生成研究问题
+            </Button>
+            <button
+              onClick={() => setSelected(new Set())}
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
+            >
+              清空
+            </button>
+          </div>
+          {!researchTopic.trim() && (
+            <p className="text-xs text-muted-foreground">
+              请先输入研究方向，AI 将结合所选案例和你的研究话题生成研究问题与假设
+            </p>
+          )}
         </div>
       )}
 
