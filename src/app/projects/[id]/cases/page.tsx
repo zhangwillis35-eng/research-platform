@@ -22,6 +22,8 @@ import {
   ChevronDown,
   ChevronUp,
   Filter,
+  HelpCircle,
+  X,
 } from "lucide-react";
 
 interface CaseStory {
@@ -92,6 +94,7 @@ export default function CasesPage() {
   const [ideas, setIdeas] = useState<GeneratedIdea[]>([]);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showGuide, setShowGuide] = useState(true);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -187,12 +190,72 @@ export default function CasesPage() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">案例库</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          浏览组织行为学案例，选择感兴趣的案例生成研究问题与假设
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">案例库</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            浏览组织行为学案例，选择感兴趣的案例生成研究问题与假设
+          </p>
+        </div>
+        {!showGuide && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            onClick={() => setShowGuide(true)}
+          >
+            <HelpCircle className="w-4 h-4 mr-1" />
+            使用说明
+          </Button>
+        )}
       </div>
+
+      {/* Collapsible guide */}
+      {showGuide && (
+        <Card className="border-teal/20 bg-teal/5">
+          <CardContent className="py-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-3 text-sm leading-relaxed">
+                <p className="font-medium text-base">如何使用案例库</p>
+                <ol className="list-decimal ml-5 space-y-1.5 text-muted-foreground">
+                  <li>
+                    <span className="text-foreground font-medium">浏览案例</span>
+                    &nbsp;— 使用上方的分类/场景筛选器或关键词搜索，找到感兴趣的真实职场案例。每个案例均经过 AI 匿名化处理，并附有学术摘要和理论标签。
+                  </li>
+                  <li>
+                    <span className="text-foreground font-medium">展开详情</span>
+                    &nbsp;— 点击卡片右侧的展开按钮（<ChevronDown className="inline w-3.5 h-3.5" />），可查看完整的匿名化故事和理论分析视角。
+                  </li>
+                  <li>
+                    <span className="text-foreground font-medium">收藏案例</span>
+                    &nbsp;— 点击书签图标（<Bookmark className="inline w-3.5 h-3.5" />）将案例收藏到当前项目，方便后续查阅。
+                  </li>
+                  <li>
+                    <span className="text-foreground font-medium">勾选 + 生成研究问题</span>
+                    &nbsp;— 勾选一个或多个案例，点击「生成研究问题」按钮。AI 将结合所选案例与你的知识图谱，生成 3-5 个研究问题和假设。
+                  </li>
+                  <li>
+                    <span className="text-foreground font-medium">衔接研究流程</span>
+                    &nbsp;— 将生成的研究问题导入到「研究想法」模块，继续文献检索和理论整合。
+                  </li>
+                </ol>
+                <p className="text-xs text-muted-foreground">
+                  案例来源：普通员工/投稿者通过&nbsp;
+                  <a href="/contribute" target="_blank" className="underline hover:text-foreground">洞察投稿入口</a>
+                  &nbsp;提交的真实职场故事，经 AI 匿名化和学术转译后发布。
+                </p>
+              </div>
+              <button
+                onClick={() => setShowGuide(false)}
+                className="shrink-0 p-1 rounded hover:bg-teal/10 text-muted-foreground hover:text-foreground transition-colors"
+                title="隐藏说明"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Filters bar */}
       <div className="flex flex-wrap items-center gap-3">
