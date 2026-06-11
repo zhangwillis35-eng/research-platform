@@ -84,3 +84,51 @@ export async function requireProjectAccess(
 
   return user;
 }
+
+// ─── Contributor Auth ────────────────────────────────────────────────
+
+export interface ContributorSession {
+  id: string;
+  nickname: string;
+  email: string;
+}
+
+/**
+ * Cookie-only contributor auth check (no DB round-trip).
+ * Returns ContributorSession or a 401 Response.
+ */
+export async function requireContributorAuth(): Promise<
+  ContributorSession | NextResponse
+> {
+  const cookieStore = await cookies();
+  const contributorId = cookieStore.get("contributor_id")?.value;
+  if (!contributorId) {
+    return NextResponse.json({ error: "请先登录贡献者账号" }, { status: 401 });
+  }
+  return { id: contributorId, nickname: "", email: "" };
+}
+
+/**
+ * Full DB-backed contributor auth check.
+ * Returns ContributorSession with nickname/email or a 401 Response.
+ */
+export async function requireContributorAuthFull(): Promise<
+  ContributorSession | NextResponse
+> {
+  const cookieStore = await cookies();
+  const contributorId = cookieStore.get("contributor_id")?.value;
+  if (!contributorId) {
+    return NextResponse.json({ error: "请先登录贡献者账号" }, { status: 401 });
+  }
+
+  const contributor = await prisma.contributor.findUnique({
+    where: { id: contributorId },
+    select: { id: true, nickname: true, email: true },
+  });
+
+  if (!contributor) {
+    return NextResponse.json({ error: "贡献者账号不存在" }, { status: 401 });
+  }
+
+  return contributor;
+}

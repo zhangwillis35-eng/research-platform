@@ -54,6 +54,7 @@ model ResearchProject {
   searchHistory SearchHistory[]
   chatHistory   ChatHistory[]
   journalFilters JournalFilter[]
+  caseBookmarks  CaseBookmark[]
 }
 
 // ─── Papers ─────────────────────────────────────
@@ -365,4 +366,71 @@ model JournalFilter {
 
   @@unique([projectId, journalName, filterType])
   @@index([projectId, filterType])
+}
+
+// ─── Insight Exchange Platform ──────────────────
+
+enum StoryStatus {
+  PENDING     // just submitted, awaiting AI processing
+  PROCESSING  // AI pipeline running
+  PUBLISHED   // visible to researchers
+  REJECTED    // flagged as unsuitable
+}
+
+model Contributor {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String   // bcrypt hashed
+  nickname  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stories Story[]
+}
+
+model Story {
+  id              String      @id @default(cuid())
+  contributorId   String
+  rawContent      String      @db.Text // original story text
+  status          StoryStatus @default(PENDING)
+
+  // AI-processed fields
+  anonymizedContent String?   @db.Text // names/companies replaced
+  academicSummary   String?   @db.Text // academic-style abstract
+  keyPhenomena      Json?     // ["social loafing", "groupthink", ...]
+  theoryTags        Json?     // [{theory, relevance, explanation}]
+  obCategory        String?   // "leadership" | "motivation" | "conflict" | ...
+  contextType       String?   // "workplace" | "classroom" | "community" | ...
+
+  // AI follow-up conversation
+  followUpMessages  Json?     // [{role, content}]
+
+  // Engagement metrics
+  viewCount       Int       @default(0)
+  bookmarkCount   Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contributor Contributor   @relation(fields: [contributorId], references: [id], onDelete: Cascade)
+  bookmarks   CaseBookmark[]
+
+  @@index([status, createdAt])
+  @@index([obCategory])
+  @@index([contributorId])
+}
+
+model CaseBookmark {
+  id        String   @id @default(cuid())
+  storyId   String
+  projectId String
+  userId    String
+  note      String?  @db.Text
+  createdAt DateTime @default(now())
+
+  story   Story            @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  project ResearchProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, projectId, userId])
+  @@index([projectId])
 }
