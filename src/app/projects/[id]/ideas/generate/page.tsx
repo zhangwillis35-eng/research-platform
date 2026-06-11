@@ -457,19 +457,19 @@ export default function IdeasGeneratePage() {
                       </CardTitle>
                       <div className="flex flex-wrap gap-1.5 mt-2">
                         <Badge variant="secondary" className="text-[10px] bg-blue-50 text-blue-700">
-                          {idea.theory.split(":")[0]}
+                          {(idea.theory ?? "").split(":")[0] || "未知理论"}
                         </Badge>
                         <Badge variant="secondary" className="text-[10px] bg-green-50 text-green-700">
-                          {idea.context.split(":")[0]}
+                          {(idea.context ?? "").split(":")[0] || "未知情境"}
                         </Badge>
                         <Badge variant="secondary" className="text-[10px] bg-purple-50 text-purple-700">
-                          {idea.method.split(":")[0]}
+                          {(idea.method ?? "").split(":")[0] || "未知方法"}
                         </Badge>
                       </div>
                     </div>
                     <div className="text-right shrink-0">
                       <span className="text-2xl font-bold tabular-nums text-teal">
-                        {idea.scores.overall.toFixed(1)}
+                        {(idea.scores?.overall ?? 0).toFixed(1)}
                       </span>
                       <span className="text-xs text-muted-foreground block">/10</span>
                     </div>
@@ -481,9 +481,9 @@ export default function IdeasGeneratePage() {
                     <Separator />
                     <CardContent className="pt-4 space-y-4">
                       <div className="max-w-xs space-y-1.5">
-                        <ScoreBar label="新颖性" value={idea.scores.novelty} />
-                        <ScoreBar label="可行性" value={idea.scores.feasibility} />
-                        <ScoreBar label="影响力" value={idea.scores.impact} />
+                        <ScoreBar label="新颖性" value={idea.scores?.novelty ?? 0} />
+                        <ScoreBar label="可行性" value={idea.scores?.feasibility ?? 0} />
+                        <ScoreBar label="影响力" value={idea.scores?.impact ?? 0} />
                       </div>
 
                       <div className="grid sm:grid-cols-2 gap-4 text-sm">
