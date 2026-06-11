@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireProjectAccess } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { callAI, setAIContext } from "@/lib/ai";
+import { buildTheoryPromptReference } from "@/lib/ob-knowledge-base";
 
 // POST /api/cases/generate — generate research questions from selected cases + knowledge graph
 export async function POST(request: Request) {
@@ -96,17 +97,21 @@ export async function POST(request: Request) {
       `Key relationships: ${edgeStr}`;
   }
 
+  const theoryRef = buildTheoryPromptReference();
+
   const systemPrompt =
     `You are a senior organizational behavior scholar specializing in bridging practitioner observations and academic theory. ` +
     `Generate research questions that are novel, theoretically grounded, and publishable in top-tier OB journals (AMJ, ASQ, JAP, OBHDP).\n\n` +
+    `You have access to this OB theory knowledge base — use it to ground your hypotheses in specific constructs and propositions:\n` +
+    `${theoryRef}\n\n` +
     `Return a JSON array of 3-5 research idea objects. Each object must have:\n` +
-    `- "title": concise title for the research idea\n` +
-    `- "researchQuestion": the core research question\n` +
-    `- "hypotheses": array of 2-4 testable hypotheses\n` +
-    `- "theoreticalBasis": which theories ground this inquiry and why\n` +
-    `- "methodology": suggested research design (e.g., field experiment, longitudinal survey, qualitative induction)\n` +
-    `- "caseLink": how practitioner cases inspired or inform this question\n` +
-    `- "novelty": what makes this question new compared to existing literature\n\n` +
+    `- "title": concise title (in Chinese)\n` +
+    `- "researchQuestion": the core research question (in Chinese)\n` +
+    `- "hypotheses": array of 2-4 testable hypotheses referencing specific theoretical constructs (in Chinese)\n` +
+    `- "theoreticalBasis": which theories and constructs ground this inquiry, with seminal author citations (in Chinese)\n` +
+    `- "methodology": suggested research design (in Chinese)\n` +
+    `- "caseLink": how the practitioner cases inspired this question (in Chinese)\n` +
+    `- "novelty": what makes this question new compared to existing literature (in Chinese)\n\n` +
     `Return ONLY the JSON array, no markdown fences.`;
 
   const userPrompt =

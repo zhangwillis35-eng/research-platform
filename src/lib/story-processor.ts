@@ -1,5 +1,6 @@
 import { callAI } from "@/lib/ai";
 import { prisma } from "@/lib/db";
+import { buildTheoryPromptReference } from "@/lib/ob-knowledge-base";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -78,22 +79,40 @@ export async function anonymizeStory(rawContent: string): Promise<string> {
 
 // ─── Analyze ─────────────────────────────────────────────────────────────────
 
-const ANALYZE_SYSTEM_PROMPT = `You are an organizational behavior (OB) research analyst. Given an anonymized workplace narrative, produce a structured JSON analysis.
+// Build the theory reference once at module load
+const THEORY_REFERENCE = buildTheoryPromptReference();
+
+const ANALYZE_SYSTEM_PROMPT = `You are a senior organizational behavior (OB) research analyst with deep expertise in management theory. Given an anonymized workplace narrative, produce a rigorous, theory-grounded JSON analysis.
+
+You have access to a curated OB theory knowledge base below. Use it to:
+- Select the MOST precisely matching theories (not just surface-level keyword matches)
+- Cite specific constructs from the theories when explaining relevance
+- Distinguish between theories that directly explain the phenomenon vs tangentially related ones
+
+=== OB THEORY KNOWLEDGE BASE ===
+${THEORY_REFERENCE}
+=== END KNOWLEDGE BASE ===
 
 Return a JSON object with exactly these fields:
 
-1. "academicSummary" (string): A 150-200 word academic abstract summarizing the narrative in scholarly language. Write in Chinese (中文).
+1. "academicSummary" (string): A 150-200 word academic abstract in Chinese (中文). Use scholarly language, reference specific theoretical constructs (e.g., "该案例体现了心理安全感 (Edmondson, 1999) 对团队学习行为的促进作用"), and highlight the key tension or phenomenon. Structure as: context → phenomenon → theoretical interpretation → implications.
 
-2. "keyPhenomena" (array of strings): 3-6 organizational behavior phenomena observed in the narrative (e.g., "transformational leadership", "role conflict", "psychological safety"). Use English academic terminology.
+2. "keyPhenomena" (array of strings): 3-6 organizational behavior phenomena observed. Use precise English academic terminology from the knowledge base constructs (e.g., "LMX differentiation", "surface acting", "psychological contract breach", "coercive isomorphism"). Avoid vague terms like "leadership issue" or "communication problem".
 
-3. "theoryTags" (array of objects): Each object has:
-   - "theory" (string): name of a relevant OB theory (e.g., "Leader-Member Exchange Theory")
-   - "relevance": one of "high", "medium", "low"
-   - "explanation" (string): one sentence in Chinese explaining why this theory applies
+3. "theoryTags" (array of objects): 2-5 objects, each with:
+   - "theory" (string): exact theory name from the knowledge base (e.g., "Leader-Member Exchange (LMX) Theory")
+   - "relevance": "high" if the theory's core constructs directly map to the narrative's central phenomenon; "medium" if it explains a supporting element; "low" if it offers an alternative lens
+   - "explanation" (string): 1-2 sentences in Chinese explaining which specific constructs from the theory apply and how. Reference the seminal author, e.g., "根据 Edmondson (1999) 的心理安全感理论，该团队中成员因担心被批评而选择沉默（防御性沉默），抑制了错误报告和学习行为。"
 
 4. "obCategory" (string): exactly one of: leadership, motivation, team_dynamics, organizational_justice, conflict, communication, power_politics, organizational_culture, change_management, decision_making, emotions_stress, diversity_inclusion, other
 
 5. "contextType" (string): exactly one of: corporate, startup, government, education, healthcare, nonprofit, military, remote_work, cross_cultural, other
+
+Quality guidelines:
+- Prefer theories with HIGH construct-level match over famous-but-tangential theories
+- If multiple theories from the same category apply, pick the most specific one as "high" relevance
+- The academicSummary should read like an AMJ/ASQ case vignette abstract, not a casual summary
+- keyPhenomena should map to constructs in the knowledge base where possible
 
 Return ONLY valid JSON. No markdown fences, no commentary.`;
 
