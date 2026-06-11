@@ -136,6 +136,9 @@ export default function CasesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
+  // Processing indicator
+  const [processingStoryId, setProcessingStoryId] = useState<string | null>(null);
+
   // Guide
   const [showGuide, setShowGuide] = useState(true);
 
@@ -234,6 +237,46 @@ export default function CasesPage() {
 
   // ─── Submit story ─────────────────────────────────────────────────────
 
+  // Poll a story until it reaches PUBLISHED, then refresh the list
+  function pollUntilPublished(storyId: string) {
+    setSubmitError("");
+    setProcessingStoryId(storyId);
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/cases/my-stories`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const story = data.stories?.find((s: { id: string }) => s.id === storyId);
+        if (!story) return;
+        if (story.status === "PUBLISHED") {
+          clearInterval(interval);
+          setProcessingStoryId(null);
+          fetchCases(1);
+        } else if (story.status === "PENDING" || story.status === "PROCESSING") {
+          // keep polling
+        } else {
+          // REJECTED or other
+          clearInterval(interval);
+          setProcessingStoryId(null);
+          setSubmitError("故事处理失败，请重试");
+        }
+      } catch {
+        // ignore network blips
+      }
+    }, 3000);
+    // Stop polling after 2 minutes max
+    setTimeout(() => {
+      clearInterval(interval);
+      setProcessingStoryId((prev) => {
+        if (prev === storyId) {
+          fetchCases(1); // try refresh anyway
+          return null;
+        }
+        return prev;
+      });
+    }, 120000);
+  }
+
   async function handleSubmit() {
     if (submitContent.trim().length < 5) {
       setSubmitError("请至少写5个字");
@@ -254,8 +297,8 @@ export default function CasesPage() {
       }
       setSubmitContent("");
       setShowSubmit(false);
-      // Refresh after a delay to let AI process
-      setTimeout(() => fetchCases(1), 3000);
+      // Poll until the story is processed and published
+      pollUntilPublished(data.id);
     } catch {
       setSubmitError("网络错误，请重试");
     } finally {
@@ -578,6 +621,16 @@ export default function CasesPage() {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Processing indicator */}
+      {processingStoryId && (
+        <div className="flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/5 px-4 py-2.5">
+          <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+          <span className="text-sm text-blue-600">
+            AI 正在处理你的故事，完成后将自动刷新列表（通常需要 10-30 秒）...
+          </span>
+        </div>
       )}
 
       {/* Collapsible guide */}
