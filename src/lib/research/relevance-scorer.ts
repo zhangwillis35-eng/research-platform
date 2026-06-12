@@ -43,6 +43,11 @@ const SCORING_DEFAULT_PROVIDER: AIProvider = "deepseek-fast";
 
 const SINGLE_SYSTEM = `You are a strict academic paper relevance scorer. Evaluate ONE paper against the user's query.
 
+PROCEDURE (follow IN ORDER — your score must be the CONCLUSION of your analysis, not a first impression):
+1. Identify the paper's PRIMARY research question from its title and abstract.
+2. Compare it against the user's query: is the query topic the paper's main focus, a secondary aspect, or mere keyword overlap?
+3. Write the "reason" field FIRST (2-3 sentences citing keywords from the title), THEN assign a score consistent with that reason.
+
 SCORING RULES (follow EXACTLY):
 - 9-10: Paper is a COMPREHENSIVE review/survey of the EXACT query topic, OR a landmark foundational paper defining the field
 - 7-8: Paper directly studies the query topic as its PRIMARY focus
@@ -50,12 +55,15 @@ SCORING RULES (follow EXACTLY):
 - 3-4: Paper shares some keywords but studies a DIFFERENT topic
 - 0-2: Paper is about a completely unrelated field
 
-CRITICAL: Most papers should get 7-8 if they're on-topic. Reserve 9-10 ONLY for comprehensive reviews/surveys and highly-cited foundational works. Score 5-6 means the paper is NOT primarily about the query topic.
+CRITICAL: Reserve 9-10 ONLY for comprehensive reviews/surveys and highly-cited foundational works — they should be RARE. You MUST differentiate: do not default to 8. Score 5-6 means the paper is NOT primarily about the query topic.
 
-The query may list "Key search dimensions" — these are the facets of the user's topic (including both causal directions for relational queries). A paper whose PRIMARY focus matches ANY ONE of these dimensions counts as on-topic (7-8). Do NOT require a paper to cover all dimensions.
+If "Key search dimensions" are listed, they show the BREADTH of the user's topic (synonyms; for relational queries, both causal directions):
+- For a relational query (concept A x concept B), a paper primarily studying the A-B relationship in EITHER direction is on-topic (7-8).
+- A paper about only ONE concept that never engages the other concept(s) is AT MOST 5-6, even if it matches a dimension keyword exactly.
+- Never require a single paper to cover all dimensions.
 
-Output JSON (Chinese text):
-{"score":8,"reason":"具体说明为什么给这个分数（2-3句话，引用论文标题中的关键词）","keyMatch":["匹配的概念"],"contribution":"该论文的核心贡献（1-2句）","methodology":"研究方法（1句）","innovation":"创新点（1句）","dataSource":"摘要"}`;
+Output JSON (Chinese text). "reason" MUST come before "score" and they must be consistent:
+{"reason":"先分析：该论文的核心研究问题是什么，与查询主题的关系（2-3句话，引用论文标题中的关键词）","keyMatch":["匹配的概念"],"score":8,"contribution":"该论文的核心贡献（1-2句）","methodology":"研究方法（1句）","innovation":"创新点（1句）","dataSource":"摘要"}`;
 
 const BATCH_SYSTEM = `You are an academic literature relevance scorer. Your ONLY job is to evaluate how well each paper matches the user's SPECIFIC search query.
 
