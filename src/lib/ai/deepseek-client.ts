@@ -59,17 +59,18 @@ function buildBody(options: AIRequestOptions, model: string, isReasoner: boolean
     body.stream_options = { include_usage: true };
   }
 
-  if (isReasoner) {
-    // For R1 reasoner: optionally disable chain-of-thought for faster structured extraction
-    if (options.noThinking) {
-      body.thinking = { type: "disabled" };
-    }
-  } else {
+  // noThinking disables chain-of-thought on ALL DeepSeek models.
+  // V4-flash/V4-pro also emit reasoning tokens by default — without this flag,
+  // small maxTokens budgets get fully consumed by reasoning and content comes back empty.
+  if (options.noThinking) {
+    body.thinking = { type: "disabled" };
+  }
+
+  if (!isReasoner) {
     body.temperature = options.temperature ?? 0.3;
     if (options.jsonMode) {
       body.response_format = { type: "json_object" };
     }
-    // Non-reasoner models (V3/V4-flash/V4-pro) have no thinking parameter
   }
 
   return body;

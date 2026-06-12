@@ -81,13 +81,13 @@ export default function ReviewEnhancePage() {
   const [customKeyword, setCustomKeyword] = useState("");
   const [basket, setBasket] = usePersistedState<BasketItem[]>(NS, "basket", []);
   const [chatMessages, setChatMessages] = usePersistedState<ChatMessage[]>(NS, "chatMsgs", []);
+  const [chatInput, setChatInput] = usePersistedState<string>(NS, "chatInput", "");
 
   // Transient state
   const [phase, setPhase] = useState<EnhancePhase>("idle");
   const [statusMsg, setStatusMsg] = useState("");
   const [libraryPapers, setLibraryPapers] = useState<Paper[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(true);
-  const [chatInput, setChatInput] = useState("");
   const [chatStreaming, setChatStreaming] = useState(false);
   const [basketOpen, setBasketOpen] = useState(false);
   const [basketPinned, setBasketPinned] = useState(true);

@@ -73,7 +73,7 @@ export default function TheoriesIntegratePage() {
   const params = useParams();
   const projectId = params.id as string;
 
-  const [topic, setTopic] = useState("");
+  const [topic, setTopic] = usePersistedState(`theories-${projectId}`, "topic", "");
   const [provider, setProvider] = usePersistedState<AIProvider>(`theories-${projectId}`, "aiProvider", "deepseek-fast");
   const [loading, setLoading] = useState(false);
   const [papers, setPapers] = useState<Paper[]>([]);

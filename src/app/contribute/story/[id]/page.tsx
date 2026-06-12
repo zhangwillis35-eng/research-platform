@@ -2,6 +2,7 @@
 
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
+import { usePersistedState } from "@/hooks/use-persisted-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,7 +48,7 @@ export default function StoryDetail({
   const router = useRouter();
   const [story, setStory] = useState<Story | null>(null);
   const [loading, setLoading] = useState(true);
-  const [chatInput, setChatInput] = useState("");
+  const [chatInput, setChatInput] = usePersistedState(`contribute-story-${id}`, "chatInput", "");
   const [chatLoading, setChatLoading] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
 

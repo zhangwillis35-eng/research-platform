@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { usePersistedState, clearPersistedState } from "@/hooks/use-persisted-state";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +11,7 @@ import Link from "next/link";
 
 export default function SubmitStory() {
   const router = useRouter();
-  const [content, setContent] = useState("");
+  const [content, setContent] = usePersistedState("contribute-submit", "content", "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -33,6 +34,9 @@ export default function SubmitStory() {
         setError(data.error || "提交失败");
         return;
       }
+      // Clear the persisted draft after successful submission
+      setContent("");
+      clearPersistedState("contribute-submit");
       router.push(`/contribute/story/${data.id}`);
     } catch {
       setError("网络错误，请重试");

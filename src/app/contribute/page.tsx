@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { usePersistedState } from "@/hooks/use-persisted-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,8 +47,9 @@ function PasswordInput({
 
 export default function ContributeLanding() {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>("intro");
-  const [email, setEmail] = useState("");
+  const [mode, setMode] = usePersistedState<Mode>("contribute-auth", "mode", "intro");
+  const [email, setEmail] = usePersistedState("contribute-auth", "email", "");
+  // Password is intentionally NOT persisted (sensitive)
   const [password, setPassword] = useState("");
   const [nickname, setNickname] = useState("");
   const [error, setError] = useState("");

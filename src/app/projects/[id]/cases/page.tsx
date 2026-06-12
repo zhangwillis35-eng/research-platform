@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
+import { usePersistedState } from "@/hooks/use-persisted-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -159,46 +160,85 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
 
 export default function CasesPage() {
   const { id: projectId } = useParams<{ id: string }>();
+  const NS = `cases-${projectId}`;
 
-  // Case list state
+  // Case list state (server data — refetched on every mount, not persisted)
   const [cases, setCases] = useState<CaseStory[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = usePersistedState<number>(NS, "page", 1);
 
   // Filters
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("");
-  const [contextType, setContextType] = useState("");
+  const [search, setSearch] = usePersistedState<string>(NS, "search", "");
+  const [category, setCategory] = usePersistedState<string>(NS, "category", "");
+  const [contextType, setContextType] = usePersistedState<string>(NS, "contextType", "");
 
   // Selection & generation
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [researchTopic, setResearchTopic] = useState("");
+  const [selected, setSelected] = usePersistedState<Set<string>>(NS, "selected", new Set());
+  const [researchTopic, setResearchTopic] = usePersistedState<string>(NS, "researchTopic", "");
   const [genPhase, setGenPhase] = useState<GenPhase>("idle");
-  const [dimensions, setDimensions] = useState<Dimensions | null>(null);
-  const [ideas, setIdeas] = useState<GeneratedIdea[]>([]);
-  const [expandedIdeaId, setExpandedIdeaId] = useState<string | null>(null);
+  const [dimensions, setDimensions] = usePersistedState<Dimensions | null>(NS, "dimensions", null);
+  const [ideas, setIdeas] = usePersistedState<GeneratedIdea[]>(NS, "ideas", []);
+  const [expandedIdeaId, setExpandedIdeaId] = usePersistedState<string | null>(NS, "expandedIdeaId", null);
   const [genError, setGenError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Detail panel
-  const [activeCase, setActiveCase] = useState<CaseStory | null>(null);
+  // Detail panel — only the case ID is persisted; the full object (long
+  // anonymizedContent) is re-derived from the fetched list after hydration
+  const [activeCaseId, setActiveCaseId] = usePersistedState<string | null>(NS, "activeCaseId", null);
+  const [activeCase, setActiveCaseObj] = useState<CaseStory | null>(null);
 
-  // Submit form
-  const [showSubmit, setShowSubmit] = useState(false);
-  const [submitContent, setSubmitContent] = useState("");
+  const setActiveCase = useCallback(
+    (c: CaseStory | null) => {
+      setActiveCaseObj(c);
+      setActiveCaseId(c?.id ?? null);
+    },
+    [setActiveCaseId],
+  );
+
+  // Submit form (draft content persisted so a half-written story survives navigation)
+  const [showSubmit, setShowSubmit] = usePersistedState<boolean>(NS, "showSubmit", false);
+  const [submitContent, setSubmitContent] = usePersistedState<string>(NS, "submitContent", "");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
-  // Processing indicator
+  // Processing indicator (tied to an in-flight polling interval — not persisted)
   const [processingStoryId, setProcessingStoryId] = useState<string | null>(null);
 
   // Guide
-  const [showGuide, setShowGuide] = useState(true);
+  const [showGuide, setShowGuide] = usePersistedState<boolean>(NS, "showGuide", true);
 
-  // Follow-up chat
-  const [chatInput, setChatInput] = useState("");
+  // Follow-up chat (messages live on the server; only the input draft is persisted)
+  const [chatInput, setChatInput] = usePersistedState<string>(NS, "chatInput", "");
   const [chatLoading, setChatLoading] = useState(false);
+
+  // Hydration gate: usePersistedState hydrates from sessionStorage in idle
+  // callbacks registered before this effect, so this callback fires after all
+  // of them. The initial fetch waits for it so it uses the restored
+  // page/filters instead of the defaults.
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    const done = () => setHydrated(true);
+    if (typeof requestIdleCallback !== "undefined") {
+      requestIdleCallback(done, { timeout: 200 });
+    } else {
+      setTimeout(done, 0);
+    }
+  }, []);
+
+  // Re-derive the active case object from the loaded list after hydration
+  useEffect(() => {
+    if (!activeCaseId || activeCase) return;
+    const found = cases.find((c) => c.id === activeCaseId);
+    if (found) setActiveCaseObj(found);
+  }, [activeCaseId, activeCase, cases]);
+
+  // A hydrated ideas result can no longer be in-flight — surface it as done
+  useEffect(() => {
+    if (ideas.length > 0 && genPhase === "idle" && !abortRef.current) {
+      setGenPhase("done");
+    }
+  }, [ideas, genPhase]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -220,7 +260,6 @@ export default function CasesPage() {
         const data = await res.json();
         setCases(data.cases ?? []);
         setTotal(data.total ?? 0);
-        setPage(p);
       } catch (err) {
         console.error("Failed to fetch cases:", err);
         toast.error("加载案例列表失败，请刷新重试");
@@ -232,12 +271,14 @@ export default function CasesPage() {
   );
 
   useEffect(() => {
-    fetchCases(1);
-  }, [category, contextType]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!hydrated) return;
+    fetchCases(page);
+  }, [hydrated, page, category, contextType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
-    fetchCases(1);
+    if (page !== 1) setPage(1); // effect refetches with the new search
+    else fetchCases(1);
   }
 
   // ─── Selection & bookmark ───────────────────────────────────────────────
@@ -366,6 +407,7 @@ export default function CasesPage() {
         if (story.status === "PUBLISHED") {
           clearInterval(interval);
           setProcessingStoryId(null);
+          setPage(1);
           fetchCases(1);
         } else if (story.status !== "PENDING" && story.status !== "PROCESSING") {
           clearInterval(interval);
@@ -380,6 +422,7 @@ export default function CasesPage() {
       clearInterval(interval);
       setProcessingStoryId((prev) => {
         if (prev === storyId) {
+          setPage(1);
           fetchCases(1);
           return null;
         }
@@ -853,7 +896,10 @@ export default function CasesPage() {
 
         <Select
           value={category || "__all__"}
-          onValueChange={(v) => setCategory(v === "__all__" ? "" : (v ?? ""))}
+          onValueChange={(v) => {
+            setCategory(v === "__all__" ? "" : (v ?? ""));
+            setPage(1);
+          }}
         >
           <SelectTrigger className="w-[140px]">
             <SelectValue placeholder="全部分类" />
@@ -872,9 +918,10 @@ export default function CasesPage() {
 
         <Select
           value={contextType || "__all__"}
-          onValueChange={(v) =>
-            setContextType(v === "__all__" ? "" : (v ?? ""))
-          }
+          onValueChange={(v) => {
+            setContextType(v === "__all__" ? "" : (v ?? ""));
+            setPage(1);
+          }}
         >
           <SelectTrigger className="w-[140px]">
             <SelectValue placeholder="全部场景" />
@@ -1111,7 +1158,7 @@ export default function CasesPage() {
                     variant="outline"
                     size="sm"
                     disabled={page <= 1}
-                    onClick={() => fetchCases(page - 1)}
+                    onClick={() => setPage(page - 1)}
                   >
                     上一页
                   </Button>
@@ -1122,7 +1169,7 @@ export default function CasesPage() {
                     variant="outline"
                     size="sm"
                     disabled={page >= totalPages}
-                    onClick={() => fetchCases(page + 1)}
+                    onClick={() => setPage(page + 1)}
                   >
                     下一页
                   </Button>

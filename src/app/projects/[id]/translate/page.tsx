@@ -104,7 +104,7 @@ export default function TranslatePage() {
   const [paperCharCount, setPaperCharCount] = usePersistedState<number>(NS, "charCount", 0);
   const [figures, setFigures] = useState<ExtractedFigure[]>([]);
   const [figuresLoading, setFiguresLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<ActiveTab>("translation");
+  const [activeTab, setActiveTab] = usePersistedState<ActiveTab>(NS, "activeTab", "translation");
   const [progress, setProgress] = useState({
     current: 0,       // sections completed
     total: 0,         // total sections

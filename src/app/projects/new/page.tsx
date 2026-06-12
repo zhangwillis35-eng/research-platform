@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { usePersistedState, clearPersistedState } from "@/hooks/use-persisted-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,9 +12,9 @@ import { toast } from "@/components/toast";
 
 export default function NewProjectPage() {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [domain, setDomain] = useState("");
-  const [description, setDescription] = useState("");
+  const [name, setName] = usePersistedState("project-new", "name", "");
+  const [domain, setDomain] = usePersistedState("project-new", "domain", "");
+  const [description, setDescription] = usePersistedState("project-new", "description", "");
   const [creating, setCreating] = useState(false);
 
   async function handleCreate(e: React.FormEvent) {
@@ -29,6 +30,11 @@ export default function NewProjectPage() {
       });
       if (!res.ok) throw new Error("创建失败");
       const { project } = await res.json();
+      // Clear the persisted draft after successful creation
+      setName("");
+      setDomain("");
+      setDescription("");
+      clearPersistedState("project-new");
       router.push(`/projects/${project.id}`);
     } catch {
       toast.error("创建项目失败，请稍后重试");

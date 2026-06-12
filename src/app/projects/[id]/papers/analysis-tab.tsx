@@ -48,7 +48,7 @@ export function PaperAnalysisTab({
   // Chat state — local state with DB persistence
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [chatLoaded, setChatLoaded] = useState(false);
-  const [inputValue, setInputValue] = useState("");
+  const [inputValue, setInputValue] = usePersistedState<string>(NS, "inputValue", "");
   const [isStreaming, setIsStreaming] = useState(false);
   const [indexing, setIndexing] = useState(false);
   const [indexed, setIndexed] = usePersistedState<boolean>(NS, "indexed", false);
