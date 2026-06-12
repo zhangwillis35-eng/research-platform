@@ -1245,16 +1245,31 @@ Note journal rankings (UTD24/FT50/ABS4*). Use Chinese academic writing style.`,
     }
   }
 
-  function handleDeleteHistory(h: SearchHistoryItem) {
+  async function handleDeleteHistory(h: SearchHistoryItem) {
+    if (!window.confirm(`确定删除对话记录「${h.query.slice(0, 30)}${h.query.length > 30 ? "…" : ""}」？\n关联的检索结果和 AI 对话将一并删除，且不可恢复。`)) return;
     const deletedQuery = h.query;
-    // 1. Delete from DB (search history + associated chat history)
-    Promise.all([
-      fetch(`/api/search-history?id=${h.id}`, { method: "DELETE" }),
-      fetch(`/api/chat-history?projectId=${projectId}&query=${encodeURIComponent(deletedQuery)}`, { method: "DELETE" }),
-    ]).catch(() => { toast.error("删除检索记录失败"); });
+    // 1. Delete from DB first (search history + associated chat history).
+    //    Local copy is only removed after DB confirms — keeps the two in sync.
+    //    Records with a local-only id ("new-...") were never saved to DB.
+    if (!h.id.startsWith("new-")) {
+      try {
+        const [resSearch, resChat] = await Promise.all([
+          fetch(`/api/search-history?id=${h.id}`, { method: "DELETE" }),
+          fetch(`/api/chat-history?projectId=${projectId}&query=${encodeURIComponent(deletedQuery)}`, { method: "DELETE" }),
+        ]);
+        if (!resSearch.ok || !resChat.ok) {
+          toast.error("数据库删除失败，请稍后重试");
+          return;
+        }
+      } catch {
+        toast.error("删除检索记录失败，请检查网络");
+        return;
+      }
+    }
     // 2. Remove from local search history + clean up its chat
     setSearchHistory((prev) => prev.filter((x) => x.id !== h.id));
     setAllChats(prev => { const u = { ...prev }; delete u[h.id]; return u; });
+    toast.success("对话记录已删除");
     // 3. If deleted query matches current active query, clear everything
     if (query === deletedQuery || query === h.translatedQuery) {
       setActiveSearchId(`new-${Date.now()}`);

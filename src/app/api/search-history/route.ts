@@ -110,7 +110,10 @@ export async function POST(request: Request) {
   }
 }
 
-// DELETE
+// DELETE — by id. deleteMany is intentional:
+// 1. idempotent — the parallel chat-history DELETE (by query) may have already
+//    removed this row; delete() would throw P2025 and return a false 500
+// 2. the userId filter scopes deletion to the caller's own projects
 export async function DELETE(request: Request) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
@@ -119,6 +122,8 @@ export async function DELETE(request: Request) {
   const auth = await requireAuth();
   if (auth instanceof NextResponse) return auth;
 
-  await prisma.searchHistory.delete({ where: { id } });
+  await prisma.searchHistory.deleteMany({
+    where: { id, project: { userId: auth.id } },
+  });
   return NextResponse.json({ success: true });
 }
