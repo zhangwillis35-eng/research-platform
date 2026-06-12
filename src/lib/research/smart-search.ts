@@ -110,11 +110,18 @@ function isPriority2(p: UnifiedPaper | ScoredPaper): boolean {
   return false;
 }
 
+/** arXiv detection — by venue, arXiv DOI prefix (10.48550), or arxiv.org URL */
+function isArxivPaper(p: UnifiedPaper | ScoredPaper): boolean {
+  const venue = String(p.venue ?? "").toLowerCase();
+  if (venue.includes("arxiv")) return true;
+  if ((p.doi ?? "").toLowerCase().includes("10.48550")) return true;
+  const url = String((p as { url?: string }).url ?? "").toLowerCase();
+  return url.includes("arxiv.org");
+}
+
 /** P3: Recent arXiv with citations */
 function isPriority3(p: UnifiedPaper | ScoredPaper): boolean {
-  const venue = String(p.venue ?? "").toLowerCase();
-  const isArxiv = venue.startsWith("arxiv") || venue.includes("arxiv");
-  return isArxiv && (p.year ?? 0) >= new Date().getFullYear() && (p.citationCount ?? 0) > 0;
+  return isArxivPaper(p) && (p.year ?? 0) >= new Date().getFullYear() && (p.citationCount ?? 0) > 0;
 }
 
 /** Get priority tier (0=highest) */
@@ -176,12 +183,16 @@ function applyTieredLimit(papers: ScoredPaper[], limit: number, relevanceScored:
     return sorted;
   }
 
-  if (limit >= 100) {
-    return sorted.slice(0, 100);
-  }
+  const cap = limit >= 100 ? 100 : limit;
+  const head = sorted.slice(0, cap);
 
-  // 20 or 50: sorted by relevance score (if available) → priority tier → citations
-  return sorted.slice(0, limit);
+  // arXiv papers don't count against the limit — keep every arXiv paper that
+  // isn't clearly off-topic (score ≥ 5, or unscored when scoring is disabled).
+  const arxivExtras = sorted
+    .slice(cap)
+    .filter((p) => isArxivPaper(p) && (p.relevanceScore == null || p.relevanceScore >= 5));
+
+  return [...head, ...arxivExtras];
 }
 
 const EXTRACT_SYSTEM = `You are an academic literature search expert. Follow these steps IN ORDER:
@@ -752,10 +763,14 @@ export async function smartSearch(
   const enrichCap = limit >= 999
     ? allDeduped.length
     : Math.min(allDeduped.length, 150, Math.max(limit * 3, 60));
-  const rawPapers = allDeduped.slice(0, enrichCap);
+  // arXiv papers never get dropped by the cap — they have no journal tier and
+  // few citations, so tier+citation sorting would otherwise bury them all.
+  const arxivBeyondCap = allDeduped.slice(enrichCap).filter(isArxivPaper);
+  const rawPapers = [...allDeduped.slice(0, enrichCap), ...arxivBeyondCap];
 
-  if (allDeduped.length > enrichCap) {
-    onProgress?.("enrich", `去重后 ${allDeduped.length} 篇，按期刊等级 + 引用量保留前 ${enrichCap} 篇，补全摘要 + 期刊元数据...`);
+  if (allDeduped.length > rawPapers.length) {
+    const arxivNote = arxivBeyondCap.length > 0 ? ` + ${arxivBeyondCap.length} 篇 arXiv 全保留` : "";
+    onProgress?.("enrich", `去重后 ${allDeduped.length} 篇，按期刊等级 + 引用量保留前 ${enrichCap} 篇${arxivNote}，补全摘要 + 期刊元数据...`);
   } else {
     onProgress?.("enrich", `去重后 ${rawPapers.length} 篇，补全摘要 + 期刊元数据...`);
   }
@@ -793,6 +808,14 @@ export async function smartSearch(
     papers = papers.filter((p) => {
       const meta = p.journalMeta;
       const ranking = p.journalRanking;
+
+      // arXiv papers are exempt from journal-quality filters (they carry no
+      // journal metadata and would always be excluded). Only year filters apply.
+      if (isArxivPaper(p)) {
+        if (f.yearFrom && (p.year ?? 0) < f.yearFrom) return false;
+        if (f.yearTo && (p.year ?? 9999) > f.yearTo) return false;
+        return true;
+      }
 
       // ABS filter
       if (f.minABS && meta?.absRating) {

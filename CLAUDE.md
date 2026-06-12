@@ -59,6 +59,7 @@
 ### Performance
 - DeepSeek relevance scoring: single mode (1 paper/call, best differentiation), 25 concurrent, noThinking.
 - Scoring pool: 3x limit (min 60, max 150) papers enter enrichment + scoring; unlimited mode (999) scores all.
+- arXiv papers are NEVER dropped: exempt from the scoring-pool cap, from journal-quality filters (year filters still apply), and from the final limit (kept when relevance ≥ 5 or unscored).
 - Full-text fetcher: 5s per-strategy timeout, 15s per-paper total timeout.
 - Relevance scoring uses abstract only (no full-text fetch) for speed.
 - Full-text is only fetched in batch-analyze (deep analysis).
