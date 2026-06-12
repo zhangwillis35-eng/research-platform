@@ -34,7 +34,9 @@ export interface ScoredPaper extends UnifiedPaper {
   hasFullText?: boolean;
 }
 
-const SCORING_CONCURRENCY = 5; // 5 concurrent to avoid DeepSeek rate limiting
+// 25 concurrent — DeepSeek tolerates this well; fetchWithRetry backs off on 429.
+// Raised from 5 so the larger scoring pool (3x limit) finishes in the same wall time.
+const SCORING_CONCURRENCY = 25;
 // Single mode: 1 paper per LLM call — best score differentiation
 const BATCH_SCORING_THRESHOLD = 999; // disabled — always single mode
 const SCORING_DEFAULT_PROVIDER: AIProvider = "deepseek-fast";
@@ -49,6 +51,8 @@ SCORING RULES (follow EXACTLY):
 - 0-2: Paper is about a completely unrelated field
 
 CRITICAL: Most papers should get 7-8 if they're on-topic. Reserve 9-10 ONLY for comprehensive reviews/surveys and highly-cited foundational works. Score 5-6 means the paper is NOT primarily about the query topic.
+
+The query may list "Key search dimensions" — these are the facets of the user's topic (including both causal directions for relational queries). A paper whose PRIMARY focus matches ANY ONE of these dimensions counts as on-topic (7-8). Do NOT require a paper to cover all dimensions.
 
 Output JSON (Chinese text):
 {"score":8,"reason":"具体说明为什么给这个分数（2-3句话，引用论文标题中的关键词）","keyMatch":["匹配的概念"],"contribution":"该论文的核心贡献（1-2句）","methodology":"研究方法（1句）","innovation":"创新点（1句）","dataSource":"摘要"}`;
@@ -73,11 +77,15 @@ Output a JSON array. Use Chinese for text fields:
 function buildSinglePrompt(
   paper: UnifiedPaper,
   userQuery: string,
-  translatedQuery: string | undefined
+  translatedQuery: string | undefined,
+  keyTerms?: string[]
 ): string {
-  const queryDesc = translatedQuery
+  let queryDesc = translatedQuery
     ? `Query: "${userQuery}" (${translatedQuery})`
     : `Query: "${userQuery}"`;
+  if (keyTerms && keyTerms.length > 0) {
+    queryDesc += `\nKey search dimensions: ${keyTerms.join("; ")}`;
+  }
 
   const ext = paper as any;
   const ctxs = ext._citationContexts as string[] | undefined;
@@ -144,7 +152,9 @@ export async function scoreRelevance(
   provider: AIProvider = SCORING_DEFAULT_PROVIDER,
   onProgress?: (scored: number, total: number) => void,
   onPaperScored?: (index: number, score: RelevanceScore) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  /** Key terms from the search plan — gives the scorer the topic's full facet breadth */
+  keyTerms?: string[]
 ): Promise<ScoredPaper[]> {
   if (papers.length === 0) return [];
 
@@ -257,13 +267,15 @@ export async function scoreRelevance(
               messages: [
                 {
                   role: "user",
-                  content: buildSinglePrompt(paper, userQuery, translatedQuery),
+                  content: buildSinglePrompt(paper, userQuery, translatedQuery, keyTerms),
                 },
               ],
               jsonMode: true,
               noThinking: true,
               temperature: 0,
-              maxTokens: 500,
+              // 700 — Chinese JSON (reason/contribution/methodology/innovation) can
+              // exceed 500 tokens and truncate, causing parse failures + retries
+              maxTokens: 700,
               signal,
             });
 

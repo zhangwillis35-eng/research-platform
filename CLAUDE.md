@@ -57,7 +57,8 @@
 - Year validation: reject years > current year (Serper sometimes returns arXiv IDs as years).
 
 ### Performance
-- DeepSeek scoring concurrency: 50 threads, batch mode for 30+ papers (10 papers/batch).
+- DeepSeek relevance scoring: single mode (1 paper/call, best differentiation), 25 concurrent, noThinking.
+- Scoring pool: 3x limit (min 60, max 150) papers enter enrichment + scoring; unlimited mode (999) scores all.
 - Full-text fetcher: 5s per-strategy timeout, 15s per-paper total timeout.
 - Relevance scoring uses abstract only (no full-text fetch) for speed.
 - Full-text is only fetched in batch-analyze (deep analysis).

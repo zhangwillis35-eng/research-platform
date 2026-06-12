@@ -745,8 +745,13 @@ export async function smartSearch(
     return (a.title ?? "").localeCompare(b.title ?? "");
   });
 
-  // Take top papers for enrichment (limit + 20 buffer for quality filtering)
-  const enrichCap = Math.min(allDeduped.length, limit + 20);
+  // Take top papers for enrichment + relevance scoring.
+  // 3x limit (min 60, max 150) — the old tight cap (limit+20) silently dropped
+  // relevant-but-low-citation papers before relevance was ever measured.
+  // Wall time holds: scoring runs 25-concurrent with thinking disabled.
+  const enrichCap = limit >= 999
+    ? allDeduped.length
+    : Math.min(allDeduped.length, 150, Math.max(limit * 3, 60));
   const rawPapers = allDeduped.slice(0, enrichCap);
 
   if (allDeduped.length > enrichCap) {
@@ -960,7 +965,8 @@ export async function smartSearch(
       scoredPapers = await scoreRelevance(papers, input, plan.translatedInput, "deepseek-fast",
         (scored, total) => onProgress?.("score", `AI 摘要快速评分: ${scored}/${total} 篇...`),
         onPaperScored,
-        signal
+        signal,
+        plan.keyTerms
       );
       // Don't pre-filter here — let applyTieredLimit handle the final selection
       // Sort by score descending so applyTieredLimit picks best papers first
