@@ -16,6 +16,7 @@ import {
   Tag,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { toast } from "@/components/toast";
 
 interface Story {
   id: string;
@@ -56,6 +57,10 @@ export default function StoryDetail({
       .then((data) => {
         setStory(data.story);
         setLoading(false);
+      })
+      .catch(() => {
+        toast.error("加载故事失败，请刷新重试");
+        setLoading(false);
       });
   }
 
@@ -83,11 +88,14 @@ export default function StoryDetail({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: chatInput }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (story) {
         setStory({ ...story, followUpMessages: data.messages });
       }
       setChatInput("");
+    } catch {
+      toast.error("发送消息失败，请重试");
     } finally {
       setChatLoading(false);
     }
@@ -101,10 +109,13 @@ export default function StoryDetail({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (story) {
         setStory({ ...story, followUpMessages: data.messages });
       }
+    } catch {
+      toast.error("开始对话失败，请稍后重试");
     } finally {
       setChatLoading(false);
     }
@@ -112,16 +123,24 @@ export default function StoryDetail({
 
   async function handleReprocess() {
     setReprocessing(true);
-    await fetch(`/api/stories/${id}/process`, { method: "POST" });
-    // Poll for completion
-    setTimeout(fetchStory, 2000);
+    try {
+      await fetch(`/api/stories/${id}/process`, { method: "POST" });
+      // Poll for completion
+      setTimeout(fetchStory, 2000);
+    } catch {
+      toast.error("重新分析请求失败，请重试");
+    }
     setReprocessing(false);
   }
 
   async function handleDelete() {
     if (!confirm("确定删除这个故事？此操作不可撤销。")) return;
-    await fetch(`/api/stories/${id}`, { method: "DELETE" });
-    router.push("/contribute/dashboard");
+    try {
+      await fetch(`/api/stories/${id}`, { method: "DELETE" });
+      router.push("/contribute/dashboard");
+    } catch {
+      toast.error("删除故事失败，请重试");
+    }
   }
 
   if (loading || !story) {

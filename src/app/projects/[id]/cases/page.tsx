@@ -33,6 +33,7 @@ import {
   ChevronLeft,
   MessageSquare,
 } from "lucide-react";
+import { toast } from "@/components/toast";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -222,6 +223,7 @@ export default function CasesPage() {
         setPage(p);
       } catch (err) {
         console.error("Failed to fetch cases:", err);
+        toast.error("加载案例列表失败，请刷新重试");
       } finally {
         setLoading(false);
       }
@@ -264,6 +266,7 @@ export default function CasesPage() {
       );
     } catch (err) {
       console.error("Failed to toggle bookmark:", err);
+      toast.error("收藏操作失败，请重试");
     }
   }
 
@@ -424,6 +427,7 @@ export default function CasesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const updated = { ...activeCase, followUpMessages: data.messages };
       setActiveCase(updated);
@@ -431,6 +435,8 @@ export default function CasesPage() {
       setCases((prev) =>
         prev.map((c) => (c.id === activeCase.id ? { ...c, followUpMessages: data.messages } : c)),
       );
+    } catch {
+      toast.error("开始对话失败，请稍后重试");
     } finally {
       setChatLoading(false);
     }
@@ -445,6 +451,7 @@ export default function CasesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: chatInput }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const updated = { ...activeCase, followUpMessages: data.messages };
       setActiveCase(updated);
@@ -452,6 +459,8 @@ export default function CasesPage() {
         prev.map((c) => (c.id === activeCase.id ? { ...c, followUpMessages: data.messages } : c)),
       );
       setChatInput("");
+    } catch {
+      toast.error("发送消息失败，请重试");
     } finally {
       setChatLoading(false);
     }
@@ -1395,6 +1404,7 @@ export default function CasesPage() {
                           navigator.clipboard.writeText(
                             `${idea.title}\n\n理论: ${idea.theory}\n情境: ${idea.context}\n方法: ${idea.method}\n\n假设: ${idea.hypothesis}\n\n贡献: ${idea.contribution}`,
                           );
+                          toast.success("已复制");
                         }}
                       >
                         复制

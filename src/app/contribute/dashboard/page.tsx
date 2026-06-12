@@ -14,6 +14,7 @@ import {
   Loader2,
   LogOut,
 } from "lucide-react";
+import { toast } from "@/components/toast";
 
 interface StoryPreview {
   id: string;
@@ -88,16 +89,23 @@ export default function ContributorDashboard() {
       setNickname(me.contributor?.nickname || "");
       setStories(data.stories || []);
       setLoading(false);
+    }).catch(() => {
+      toast.error("加载数据失败，请刷新重试");
+      setLoading(false);
     });
   }, []);
 
   async function handleLogout() {
-    await fetch("/api/contributors/auth", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "logout" }),
-    });
-    router.push("/contribute");
+    try {
+      await fetch("/api/contributors/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "logout" }),
+      });
+      router.push("/contribute");
+    } catch {
+      toast.error("退出登录失败，请重试");
+    }
   }
 
   if (loading) {

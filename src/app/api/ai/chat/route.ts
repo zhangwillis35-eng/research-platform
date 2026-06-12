@@ -29,6 +29,7 @@ export async function POST(request: Request) {
 
     const stream = streamAI({
       provider,
+      signal: request.signal,
       messages: messages.map((m) => ({
         role: m.role as "user" | "assistant" | "system",
         content: m.content,

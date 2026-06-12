@@ -18,6 +18,7 @@ import { StopButton } from "@/components/stop-button";
 import Link from "next/link";
 import { setCrossFeatureData } from "@/lib/cross-feature";
 import { PaperAnalysisTab } from "./analysis-tab";
+import { toast } from "@/components/toast";
 
 interface Paper {
   id: string;
@@ -108,7 +109,7 @@ export default function PapersPage() {
     fetch(`/api/papers?projectId=${projectId}`)
       .then((r) => r.json())
       .then((data) => setPapers(data.papers ?? []))
-      .catch(() => {})
+      .catch(() => toast.error("加载文献列表失败，请刷新重试"))
       .finally(() => setLoading(false));
     // Check if NotebookLM is configured
     fetch(`/api/papers?projectId=${projectId}&check=notebook`)
@@ -240,31 +241,43 @@ export default function PapersPage() {
   }
 
   async function toggleSelected(paperId: string, current: boolean) {
-    await fetch(`/api/papers/${paperId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isSelected: !current }),
-    });
-    setPapers((prev) =>
-      prev.map((p) => (p.id === paperId ? { ...p, isSelected: !current } : p))
-    );
+    try {
+      await fetch(`/api/papers/${paperId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isSelected: !current }),
+      });
+      setPapers((prev) =>
+        prev.map((p) => (p.id === paperId ? { ...p, isSelected: !current } : p))
+      );
+    } catch {
+      toast.error("更新核心文献标记失败，请重试");
+    }
   }
 
   async function deletePaper(paperId: string) {
-    await fetch(`/api/papers/${paperId}`, { method: "DELETE" });
-    setPapers((prev) => prev.filter((p) => p.id !== paperId));
+    try {
+      await fetch(`/api/papers/${paperId}`, { method: "DELETE" });
+      setPapers((prev) => prev.filter((p) => p.id !== paperId));
+    } catch {
+      toast.error("删除文献失败，请重试");
+    }
   }
 
   async function batchDelete() {
     if (selectedForDelete.size === 0) return;
     if (!confirm(`确定删除选中的 ${selectedForDelete.size} 篇文献？`)) return;
-    await Promise.all(
-      Array.from(selectedForDelete).map((id) =>
-        fetch(`/api/papers/${id}`, { method: "DELETE" })
-      )
-    );
-    setPapers((prev) => prev.filter((p) => !selectedForDelete.has(p.id)));
-    setSelectedForDelete(new Set());
+    try {
+      await Promise.all(
+        Array.from(selectedForDelete).map((id) =>
+          fetch(`/api/papers/${id}`, { method: "DELETE" })
+        )
+      );
+      setPapers((prev) => prev.filter((p) => !selectedForDelete.has(p.id)));
+      setSelectedForDelete(new Set());
+    } catch {
+      toast.error("批量删除失败，请重试");
+    }
   }
 
   function toggleSelectForDelete(paperId: string) {
@@ -762,6 +775,8 @@ export default function PapersPage() {
         const reload = await fetch(`/api/papers?projectId=${projectId}`);
         const reloadData = await reload.json();
         setPapers(reloadData.papers ?? []);
+      } else {
+        setUploadResult("清空失败，请重试");
       }
     } catch {
       setUploadResult("清空失败");
@@ -940,7 +955,7 @@ export default function PapersPage() {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ category }),
-            }).catch(() => {});
+            }).catch(() => toast.error("保存文献分类失败，请重试"));
           }}
         />
       )}

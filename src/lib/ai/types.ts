@@ -30,6 +30,8 @@ export interface AIRequestOptions {
   noThinking?: boolean;
   /** Per-request timeout in ms. Default: 60s. Use higher values for long-running operations (e.g., review generation with many papers). */
   timeoutMs?: number;
+  /** Abort signal — propagates client disconnect / stop button down to the provider fetch. */
+  signal?: AbortSignal;
 }
 
 export interface AIResponse {

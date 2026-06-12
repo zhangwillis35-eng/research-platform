@@ -3,7 +3,7 @@
  */
 import type { AIRequestOptions, AIResponse } from "./types";
 import { fetchWithRetry } from "@/lib/retry-fetch";
-import { proxyFetch } from "./proxy-fetch";
+import { proxyFetch, combineSignals } from "./proxy-fetch";
 import { getEnv } from "@/lib/env";
 
 const CLAUDE_MODEL = "claude-sonnet-4-20250514";
@@ -22,21 +22,25 @@ export async function callClaude(options: AIRequestOptions): Promise<AIResponse>
     .filter((m) => m.role !== "system")
     .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
-  const res = await fetchWithRetry(`${CLAUDE_BASE}/messages`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
+  const res = await fetchWithRetry(
+    `${CLAUDE_BASE}/messages`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: options.maxTokens ?? 4096,
+        temperature: options.temperature ?? 0.3,
+        system: options.system ?? "",
+        messages,
+      }),
     },
-    body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      max_tokens: options.maxTokens ?? 4096,
-      temperature: options.temperature ?? 0.3,
-      system: options.system ?? "",
-      messages,
-    }),
-  });
+    { signal: options.signal, timeoutMs: options.timeoutMs }
+  );
 
   if (!res.ok) {
     const errText = await res.text();
@@ -66,7 +70,7 @@ export async function* streamClaude(
     .filter((m) => m.role !== "system")
     .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
-  // Streaming: use proxyFetch (no timeout — stream can take minutes)
+  // Streaming: caller signal + 300s cap — streams can take minutes but must not hang forever
   const res = await proxyFetch(`${CLAUDE_BASE}/messages`, {
     method: "POST",
     headers: {
@@ -82,6 +86,7 @@ export async function* streamClaude(
       messages,
       stream: true,
     }),
+    signal: combineSignals(options.signal, options.timeoutMs ?? 300_000),
   });
 
   if (!res.ok) {

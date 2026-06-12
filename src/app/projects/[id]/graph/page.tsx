@@ -23,6 +23,7 @@ import { KnowledgeGraph } from "@/components/graph/KnowledgeGraph";
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 import { AnalysisChat } from "@/components/analysis-chat";
+import { toast } from "@/components/toast";
 
 interface Paper {
   id: string;
@@ -188,7 +189,7 @@ export default function GraphPage() {
     fetch(`/api/papers?projectId=${projectId}&source=fulltext`)
       .then((r) => r.json())
       .then((d) => setPapers(d.papers ?? []))
-      .catch(() => {})
+      .catch(() => toast.error("加载文献列表失败，请刷新重试"))
       .finally(() => setPapersLoading(false));
   }, [projectId]);
 
@@ -234,7 +235,7 @@ export default function GraphPage() {
             })),
           }, signal);
           if (stormData.article) externalContext = stormData.article;
-        } catch { /* continue without STORM */ }
+        } catch { toast.info("STORM 深度分析失败，已跳过，继续生成图谱"); }
       }
 
       setLoadingPhase("AI 元分析编码 + 领域全景生成...");

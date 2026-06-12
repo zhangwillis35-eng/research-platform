@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { usePersistedState } from "@/hooks/use-persisted-state";
+import { toast } from "@/components/toast";
 
 type CitationStyle = "apa" | "mla" | "chicago" | "gb-t-7714" | "bibtex";
 
@@ -44,7 +45,7 @@ export default function ReferencesPage() {
     fetch(`/api/papers?projectId=${projectId}&source=catalog`)
       .then((r) => r.json())
       .then((d) => setPapers(d.papers ?? []))
-      .catch(() => {})
+      .catch(() => toast.error("加载文献列表失败，请刷新重试"))
       .finally(() => setLoading(false));
   }, [projectId]);
 
@@ -77,9 +78,11 @@ export default function ReferencesPage() {
       if (res.ok) {
         const data = await res.json();
         setCitations(data.citations ?? []);
+      } else {
+        toast.error("生成参考文献失败，请稍后重试");
       }
     } catch {
-      /* skip */
+      toast.error("生成参考文献失败，请检查网络后重试");
     } finally {
       setGenerating(false);
     }

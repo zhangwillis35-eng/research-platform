@@ -26,6 +26,7 @@ import type {
   CoverageGap,
   WeakSection,
 } from "@/lib/research/review-enhance";
+import { toast } from "@/components/toast";
 
 interface Paper {
   id: string;
@@ -110,7 +111,7 @@ export default function ReviewEnhancePage() {
     fetch(`/api/papers?projectId=${projectId}&source=fulltext`)
       .then((r) => r.json())
       .then((d) => setLibraryPapers(d.papers ?? []))
-      .catch(() => {})
+      .catch(() => toast.error("加载文献列表失败，请刷新重试"))
       .finally(() => setLibraryLoading(false));
   }, [projectId]);
 
@@ -324,9 +325,13 @@ export default function ReviewEnhancePage() {
   }
 
   async function handleExportWord() {
-    const { generateReviewDocx, downloadBlob } = await import("@/lib/docx-export");
-    const blob = await generateReviewDocx(draftAnalysis?.topic ?? "文献综述", enhancedReview);
-    downloadBlob(blob, `综述优化-${new Date().toISOString().slice(0, 10)}.docx`);
+    try {
+      const { generateReviewDocx, downloadBlob } = await import("@/lib/docx-export");
+      const blob = await generateReviewDocx(draftAnalysis?.topic ?? "文献综述", enhancedReview);
+      downloadBlob(blob, `综述优化-${new Date().toISOString().slice(0, 10)}.docx`);
+    } catch {
+      toast.error("导出 Word 失败，请重试");
+    }
   }
 
   function handleReset() {

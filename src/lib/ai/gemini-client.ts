@@ -7,7 +7,7 @@ import { resolve } from "path";
 import type { AIRequestOptions, AIResponse } from "./types";
 import { PROVIDER_MODELS } from "./types";
 import { fetchWithRetry } from "@/lib/retry-fetch";
-import { proxyFetch } from "./proxy-fetch";
+import { proxyFetch, combineSignals } from "./proxy-fetch";
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -72,11 +72,15 @@ export async function callGemini(options: AIRequestOptions): Promise<AIResponse>
 
   console.log(`[gemini] Calling ${model} with key ${apiKey.slice(0, 10)}...`);
 
-  const res = await fetchWithRetry(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const res = await fetchWithRetry(
+    url,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    { signal: options.signal, timeoutMs: options.timeoutMs }
+  );
 
   if (!res.ok) {
     const errText = await res.text();
@@ -120,11 +124,12 @@ export async function* streamGemini(
   const body = buildRequestBody(options);
   const url = `${GEMINI_BASE}/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
 
-  // Streaming: use proxyFetch (no timeout — stream can take minutes)
+  // Streaming: caller signal + 300s cap — streams can take minutes but must not hang forever
   const res = await proxyFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal: combineSignals(options.signal, options.timeoutMs ?? 300_000),
   });
 
   if (!res.ok) {

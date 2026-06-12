@@ -14,6 +14,8 @@ interface RetryOptions {
   retryOn?: number[];
   /** Per-request timeout in ms (default: 15000) */
   timeoutMs?: number;
+  /** Caller abort signal — combined with the per-attempt timeout. Aborting it stops retries immediately. */
+  signal?: AbortSignal;
 }
 
 const DEFAULT_RETRY_ON = [429, 503];
@@ -33,8 +35,12 @@ export async function fetchWithRetry(
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      // Add timeout signal — prevents hanging on unresponsive APIs
-      const signal = AbortSignal.timeout(timeoutMs);
+      // Combine caller signal + timeout — prevents hanging on unresponsive APIs
+      // and propagates client disconnects down to the provider fetch
+      const timeoutSignal = AbortSignal.timeout(timeoutMs);
+      const signal = options?.signal
+        ? AbortSignal.any([options.signal, timeoutSignal])
+        : timeoutSignal;
       const mergedInit = init ? { ...init, signal } : { signal };
 
       const res = await proxyFetch(url, mergedInit as RequestInit & { body?: string });
@@ -63,6 +69,9 @@ export async function fetchWithRetry(
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
+
+      // External abort (client disconnect / stop button) — never retry
+      if (options?.signal?.aborted) throw lastError;
 
       if (attempt === maxRetries) break;
 

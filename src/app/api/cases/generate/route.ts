@@ -117,6 +117,7 @@ export async function POST(request: Request) {
         // Step 1: Extract dimensions + generate ideas (single LLM call)
         const ideaRes = await callAI({
           provider: "deepseek-fast",
+          signal: request.signal,
           system:
             `You are a senior organizational behavior scholar. Analyze the practitioner cases below and generate novel research ideas.\n\n` +
             `OB Theory Knowledge Base:\n${theoryRef}\n\n` +
@@ -195,6 +196,7 @@ export async function POST(request: Request) {
               try {
                 const reviewRes = await callAI({
                   provider: "deepseek-fast",
+                  signal: request.signal,
                   system:
                     `You are an anonymous reviewer for a top management journal (AMJ, ASQ, JAP). Rigorously review the research proposal.\n\n` +
                     `Output JSON (ALL values MUST be in Chinese 中文):\n` +

@@ -15,6 +15,7 @@ import {
 import type { AcademicTerm, PaperAnalysis, TranslateStreamEvent } from "@/lib/research/paper-translator";
 import { generateTranslationDocx, downloadBlob } from "@/lib/docx-export";
 import { useThrottledStream } from "@/hooks/use-throttled-stream";
+import { toast } from "@/components/toast";
 
 type Phase =
   | "idle"
@@ -142,7 +143,10 @@ export default function TranslatePage() {
   // ─── PDF upload & text extraction ──────────────────────────────────────
 
   async function handleFile(file: File) {
-    if (!file.name.toLowerCase().endsWith(".pdf")) return;
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
+      toast.error("仅支持 PDF 文件");
+      return;
+    }
 
     setPhase("uploading");
     setTranslatedText("");
@@ -173,6 +177,7 @@ export default function TranslatePage() {
       setPhase("idle");
     } catch (err) {
       console.error("[translate] PDF extraction error:", err);
+      toast.error("PDF 文本提取失败，请重试或更换文件");
       setPhase("idle");
     }
   }
@@ -260,6 +265,7 @@ export default function TranslatePage() {
               startBackgroundTasks(paperTitle, paperTextRef.current, stream.getText());
             } else if (event.phase === "error") {
               console.error("[translate] stream error:", event.error);
+              toast.error(`翻译出错：${String(event.error ?? "未知错误").slice(0, 80)}`);
             }
           } catch {
             // ignore parse errors
@@ -269,6 +275,7 @@ export default function TranslatePage() {
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         console.error("[translate]", err);
+        toast.error("翻译失败，请检查网络后重试");
       }
       setPhase("done");
     }
@@ -368,6 +375,7 @@ export default function TranslatePage() {
       downloadBlob(blob, filename);
     } catch (err) {
       console.error("[export]", err);
+      toast.error("导出 Word 失败，请重试");
     } finally {
       setExporting(false);
     }

@@ -118,6 +118,7 @@ export async function POST(request: Request) {
         try {
           const stream = streamAI({
             provider,
+            signal: request.signal,
             system: PROPOSAL_SYSTEM,
             messages: [{ role: "user", content: userContent }],
             maxTokens: 8192,

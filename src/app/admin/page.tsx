@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "@/components/toast";
 
 // ─── Helpers ───────────────────────────────────
 /** Fill in missing days so the chart has a continuous 30-day series */
@@ -112,6 +113,8 @@ function LoginForm({ onLogin }: { onLogin: () => void }) {
         return;
       }
       onLogin();
+    } catch {
+      setError("网络错误，请重试");
     } finally {
       setLoading(false);
     }
@@ -248,7 +251,7 @@ function Dashboard() {
       }
       const data = await res.json();
       setStats(data);
-    } catch { /* ignore */ }
+    } catch { toast.error("加载统计数据失败，请刷新重试"); }
     setLoading(false);
   }, []);
 
@@ -288,30 +291,40 @@ function Dashboard() {
   };
 
   async function handleApprove(id: string) {
-    const res = await fetch("/api/admin/stats", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "approve", id }),
-    });
-    const data = await res.json();
-    if (data.success) {
-      if (data.emailSent) {
-        alert(`邀请码已发送至 ${data.email}`);
+    try {
+      const res = await fetch("/api/admin/stats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "approve", id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (data.emailSent) {
+          alert(`邀请码已发送至 ${data.email}`);
+        } else {
+          alert(`SMTP 未配置，请手动将邀请码发给用户：\n\n邮箱: ${data.email}\n邀请码: ${data.inviteCode}`);
+        }
+        fetchStats();
       } else {
-        alert(`SMTP 未配置，请手动将邀请码发给用户：\n\n邮箱: ${data.email}\n邀请码: ${data.inviteCode}`);
+        toast.error("审批失败，请重试");
       }
-      fetchStats();
+    } catch {
+      toast.error("审批失败，请检查网络后重试");
     }
   }
 
   async function handleReject(id: string) {
     if (!confirm("确认拒绝该注册申请？")) return;
-    await fetch("/api/admin/stats", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "reject", id }),
-    });
-    fetchStats();
+    try {
+      await fetch("/api/admin/stats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reject", id }),
+      });
+      fetchStats();
+    } catch {
+      toast.error("拒绝申请失败，请重试");
+    }
   }
 
   return (

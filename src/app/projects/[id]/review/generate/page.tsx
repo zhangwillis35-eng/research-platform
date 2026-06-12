@@ -27,6 +27,7 @@ import { StopButton } from "@/components/stop-button";
 import { consumeCrossFeatureData } from "@/lib/cross-feature";
 import { generateReviewDocx, downloadBlob } from "@/lib/docx-export";
 import { AnalysisChat } from "@/components/analysis-chat";
+import { toast } from "@/components/toast";
 
 interface Paper {
   id: string;
@@ -94,7 +95,7 @@ export default function ReviewGeneratePage() {
     fetch(`/api/papers?projectId=${projectId}&source=fulltext`)
       .then((r) => r.json())
       .then((d) => setPapers(d.papers ?? []))
-      .catch(() => {})
+      .catch(() => toast.error("加载文献列表失败，请刷新重试"))
       .finally(() => setPapersLoading(false));
   }, [projectId]);
 
@@ -347,8 +348,12 @@ Return the modified outline as JSON only.`;
 
   async function handleExportWord() {
     if (!reviewText) return;
-    const blob = await generateReviewDocx(outline?.title ?? topic, reviewText);
-    downloadBlob(blob, `综述-${topic.slice(0, 20)}.docx`);
+    try {
+      const blob = await generateReviewDocx(outline?.title ?? topic, reviewText);
+      downloadBlob(blob, `综述-${topic.slice(0, 20)}.docx`);
+    } catch {
+      toast.error("导出 Word 失败，请重试");
+    }
   }
 
   const phaseLabels: Record<Phase, string> = {

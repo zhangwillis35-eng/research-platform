@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { AIProviderSelect, type AIProvider } from "@/components/ai-provider-select";
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
+import { toast } from "@/components/toast";
 
 interface Paper {
   id: string;
@@ -100,7 +101,7 @@ export function PaperAnalysisTab({
         messages,
         provider: aiProvider,
       }),
-    }).catch(() => {});
+    }).catch(() => toast.error("对话记录保存失败"));
   }
 
   // ── Index papers ──────────────────────────────────
@@ -116,9 +117,12 @@ export function PaperAnalysisTab({
         const data = await res.json();
         setIndexed(true);
         console.log(`[analysis] Indexed ${data.indexed} papers, ${data.totalChunks} chunks`);
+      } else {
+        toast.error("构建文献索引失败，请稍后重试");
       }
     } catch (e) {
       console.error("[analysis] Index failed:", e);
+      toast.error("构建文献索引失败，请检查网络后重试");
     } finally {
       setIndexing(false);
     }
@@ -213,7 +217,7 @@ export function PaperAnalysisTab({
     setChatHistory([]);
     fetch(`/api/chat-history?projectId=${projectId}&query=${encodeURIComponent(CHAT_QUERY)}`, {
       method: "DELETE",
-    }).catch(() => {});
+    }).catch(() => toast.error("清空对话记录失败，请稍后重试"));
   }
 
   // ── Drag handlers ─────────────────────────────────

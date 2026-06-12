@@ -117,6 +117,7 @@ Format requirements:
   try {
     const result = await callAI({
       provider: provider as AIProvider,
+      signal: request.signal,
       messages: [
         {
           role: "user",

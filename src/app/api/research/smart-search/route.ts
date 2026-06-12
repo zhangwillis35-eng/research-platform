@@ -38,7 +38,7 @@ export async function POST(request: Request) {
 
     if (!stream) {
       // Non-streaming mode — backwards compatible JSON response
-      const result = await smartSearch(query, provider, limit, enableRelevanceScoring, undefined, journalLang);
+      const result = await smartSearch(query, provider, limit, enableRelevanceScoring, undefined, journalLang, undefined, request.signal);
       if (projectId) {
         const { papers: filtered, removedCount } = await applyJournalFilter(projectId, result.papers);
         result.papers = filtered;
@@ -55,7 +55,9 @@ export async function POST(request: Request) {
     const readable = new ReadableStream({
       async start(controller) {
         function send(data: Record<string, unknown>) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          } catch { /* stream already closed (client disconnected) */ }
         }
 
         // Keepalive ping every 15s — shorter interval survives stricter proxies
@@ -83,7 +85,8 @@ export async function POST(request: Request) {
             // Stream individual paper scores as they complete
             enableRelevanceScoring ? (paperIndex, score) => {
               send({ type: "paper_score", paperIndex, ...score });
-            } : undefined
+            } : undefined,
+            request.signal
           );
 
           console.log(`[smart-search] Total: ${((Date.now() - searchStart) / 1000).toFixed(1)}s, papers: ${result.papers.length}`);
@@ -130,15 +133,24 @@ export async function POST(request: Request) {
           // Full-text fetching is handled separately via /api/papers/fulltext
           // endpoint when the user needs it (e.g., for deep analysis).
         } catch (error) {
-          send({
-            type: "error",
-            error: "Smart search failed",
-            details: String(error),
-          });
+          const err = error instanceof Error ? error : new Error(String(error));
+          if (err.name === "AbortError" || err.message.toLowerCase().includes("abort")) {
+            // Client disconnected — close quietly, no error event
+            console.log("[smart-search] client disconnected, aborting");
+          } else {
+            send({
+              type: "error",
+              error: "Smart search failed",
+              details: String(error),
+            });
+          }
         }
 
         clearInterval(keepalive);
-        controller.close();
+        try { controller.close(); } catch { /* already closed */ }
+      },
+      cancel() {
+        console.log("[smart-search] stream cancelled (client disconnected)");
       },
     });
 

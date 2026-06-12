@@ -9,7 +9,7 @@
  */
 import type { AIRequestOptions, AIResponse } from "./types";
 import { PROVIDER_MODELS } from "./types";
-import { proxyFetch } from "./proxy-fetch";
+import { proxyFetch, combineSignals } from "./proxy-fetch";
 import { fetchWithRetry } from "@/lib/retry-fetch";
 import { getEnv } from "@/lib/env";
 
@@ -95,6 +95,7 @@ export async function callDeepSeek(options: AIRequestOptions): Promise<AIRespons
       maxDelayMs: 15000,
       retryOn: [429, 500, 502, 503],
       timeoutMs: options.timeoutMs ?? 60000,
+      signal: options.signal,
     }
   );
 
@@ -137,10 +138,12 @@ export async function* streamDeepSeek(
 
   const body = buildBody(options, model, isReasoner, true);
 
+  // Streaming: caller signal + 300s cap — streams can take minutes but must not hang forever
   const res = await proxyFetch(`${DEEPSEEK_BASE}/chat/completions`, {
     method: "POST",
     headers: baseHeaders(apiKey),
     body: JSON.stringify(body),
+    signal: combineSignals(options.signal, options.timeoutMs ?? 300_000),
   });
 
   if (!res.ok) {

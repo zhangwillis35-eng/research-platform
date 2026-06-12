@@ -8,6 +8,12 @@ import { ProxyAgent, fetch as undiciFetch } from "undici";
 
 let cachedDispatcher: ProxyAgent | null = null;
 
+/** Combine an optional caller signal with a timeout. Used to cap streaming LLM calls. */
+export function combineSignals(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
 function getDispatcher(): ProxyAgent | undefined {
   const proxy =
     process.env.https_proxy ||

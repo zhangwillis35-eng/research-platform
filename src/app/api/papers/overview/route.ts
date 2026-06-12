@@ -74,6 +74,7 @@ Format requirements:
 
     const stream = streamAI({
       provider: provider as AIProvider,
+      signal: request.signal,
       messages: [
         {
           role: "user",

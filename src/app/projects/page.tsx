@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/toast";
 
 interface Project {
   id: string;
@@ -54,8 +55,10 @@ export default function ProjectsPage() {
       const res = await fetch(`/api/projects?id=${id}`, { method: "DELETE" });
       if (res.ok) {
         setProjects((prev) => prev.filter((p) => p.id !== id));
+      } else {
+        toast.error("删除项目失败，请稍后重试");
       }
-    } catch { /* ignore */ }
+    } catch { toast.error("删除项目失败，请检查网络后重试"); }
     setDeleting(null);
     setConfirmId(null);
   }
@@ -64,7 +67,7 @@ export default function ProjectsPage() {
     fetch("/api/projects")
       .then((r) => r.json())
       .then((data) => setProjects(data.projects ?? []))
-      .catch(() => {})
+      .catch(() => toast.error("加载项目列表失败，请刷新重试"))
       .finally(() => setLoading(false));
   }, []);
 

@@ -23,6 +23,7 @@ import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedAnalysis } from "@/hooks/use-saved-analysis";
 import { consumeCrossFeatureData } from "@/lib/cross-feature";
 import { AnalysisChat } from "@/components/analysis-chat";
+import { toast } from "@/components/toast";
 
 interface Paper {
   id: string;
@@ -105,7 +106,7 @@ export default function TheoriesIntegratePage() {
     fetch(`/api/papers?projectId=${projectId}&source=fulltext`)
       .then((r) => r.json())
       .then((d) => setPapers(d.papers ?? []))
-      .catch(() => {})
+      .catch(() => toast.error("加载文献列表失败，请刷新重试"))
       .finally(() => setPapersLoading(false));
   }, [projectId]);
 
@@ -145,6 +146,7 @@ export default function TheoriesIntegratePage() {
           if (stormData.combined) stormContext = stormData.combined;
         } catch (err) {
           if (err instanceof Error && err.name === "AbortError") throw err;
+          toast.info("STORM 深度分析失败，已跳过，继续理论分析");
           /* continue without STORM */
         }
         setStormStatus(null);

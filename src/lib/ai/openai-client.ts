@@ -3,7 +3,7 @@
  */
 import type { AIRequestOptions, AIResponse } from "./types";
 import { fetchWithRetry } from "@/lib/retry-fetch";
-import { proxyFetch } from "./proxy-fetch";
+import { proxyFetch, combineSignals } from "./proxy-fetch";
 import { getEnv } from "@/lib/env";
 
 const OPENAI_MODEL = "gpt-4o";
@@ -25,20 +25,24 @@ export async function callOpenAI(options: AIRequestOptions): Promise<AIResponse>
     messages.push({ role: m.role, content: m.content });
   }
 
-  const res = await fetchWithRetry(`${OPENAI_BASE}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+  const res = await fetchWithRetry(
+    `${OPENAI_BASE}/chat/completions`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        messages,
+        temperature: options.temperature ?? 0.3,
+        max_tokens: options.maxTokens ?? 4096,
+        ...(options.jsonMode ? { response_format: { type: "json_object" } } : {}),
+      }),
     },
-    body: JSON.stringify({
-      model: OPENAI_MODEL,
-      messages,
-      temperature: options.temperature ?? 0.3,
-      max_tokens: options.maxTokens ?? 4096,
-      ...(options.jsonMode ? { response_format: { type: "json_object" } } : {}),
-    }),
-  });
+    { signal: options.signal, timeoutMs: options.timeoutMs }
+  );
 
   if (!res.ok) {
     const errText = await res.text();
@@ -73,7 +77,7 @@ export async function* streamOpenAI(
     messages.push({ role: m.role, content: m.content });
   }
 
-  // Streaming: use proxyFetch (no timeout — stream can take minutes)
+  // Streaming: caller signal + 300s cap — streams can take minutes but must not hang forever
   const res = await proxyFetch(`${OPENAI_BASE}/chat/completions`, {
     method: "POST",
     headers: {
@@ -87,6 +91,7 @@ export async function* streamOpenAI(
       max_tokens: options.maxTokens ?? 4096,
       stream: true,
     }),
+    signal: combineSignals(options.signal, options.timeoutMs ?? 300_000),
   });
 
   if (!res.ok) {

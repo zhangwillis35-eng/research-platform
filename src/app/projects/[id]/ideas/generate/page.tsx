@@ -22,6 +22,7 @@ import { consumeCrossFeatureData, setCrossFeatureData } from "@/lib/cross-featur
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedAnalysis } from "@/hooks/use-saved-analysis";
 import { AnalysisChat } from "@/components/analysis-chat";
+import { toast } from "@/components/toast";
 
 interface Paper {
   id: string;
@@ -137,7 +138,7 @@ export default function IdeasGeneratePage() {
     fetch(`/api/papers?projectId=${projectId}&source=fulltext`)
       .then((r) => r.json())
       .then((d) => setPapers(d.papers ?? []))
-      .catch(() => {})
+      .catch(() => toast.error("加载文献列表失败，请刷新重试"))
       .finally(() => setPapersLoading(false));
   }, [projectId]);
 
@@ -165,6 +166,7 @@ export default function IdeasGeneratePage() {
         if (stormData.combined) engineContext = stormData.combined;
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") { setPhase("idle"); return; }
+        toast.info("STORM 深度分析失败，已跳过，继续生成想法");
         /* continue without STORM */
       }
     }
@@ -265,9 +267,11 @@ export default function IdeasGeneratePage() {
       });
       if (res.ok) {
         setObsidianPushed((prev) => new Set([...prev, idea.id]));
+      } else {
+        toast.error("推送到 Obsidian 失败，请检查「设置」中的 Obsidian 配置");
       }
     } catch {
-      // silently fail
+      toast.error("推送到 Obsidian 失败，请确认 Obsidian 已启动且插件已开启");
     }
   }
 
@@ -583,6 +587,7 @@ export default function IdeasGeneratePage() {
                             navigator.clipboard.writeText(
                               `${idea.title}\n\n理论: ${idea.theory}\n情境: ${idea.context}\n方法: ${idea.method}\n\n假设: ${idea.hypothesis}\n\n贡献: ${idea.contribution}`
                             );
+                            toast.success("已复制");
                           }}
                         >
                           复制

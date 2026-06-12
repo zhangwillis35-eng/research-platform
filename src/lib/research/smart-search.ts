@@ -395,7 +395,8 @@ RULES:
 export async function buildSmartSearchPlan(
   input: string,
   provider: AIProvider = "deepseek-fast",
-  journalLang: JournalLang = "en"
+  journalLang: JournalLang = "en",
+  signal?: AbortSignal
 ): Promise<SmartSearchPlan> {
   try {
     const system = journalLang === "zh" ? EXTRACT_SYSTEM_ZH : EXTRACT_SYSTEM;
@@ -407,6 +408,7 @@ export async function buildSmartSearchPlan(
       jsonMode: true,
       noThinking: true,
       temperature: 0,
+      signal,
     });
 
     console.log(`[smart-search] AI response (${response.provider}):`, response.content.slice(0, 200));
@@ -448,7 +450,8 @@ export async function smartSearch(
   enableRelevanceScoring: boolean = true,
   onProgress?: (phase: string, detail: string) => void,
   journalLang: JournalLang = "en",
-  onPaperScored?: (paperIndex: number, score: { score: number; reason?: string; keyMatch?: string[]; contribution?: string; methodology?: string; innovation?: string }) => void
+  onPaperScored?: (paperIndex: number, score: { score: number; reason?: string; keyMatch?: string[]; contribution?: string; methodology?: string; innovation?: string }) => void,
+  signal?: AbortSignal
 ): Promise<SmartSearchResult> {
   const startTime = Date.now();
 
@@ -456,7 +459,10 @@ export async function smartSearch(
   // Always use deepseek-fast for keyword extraction — fastest for structured extraction
   const extractionProvider: AIProvider = "deepseek-fast";
   onProgress?.("plan", journalLang === "zh" ? "AI 提取中文关键词..." : "AI 提取关键词与同义词...");
-  const plan = await buildSmartSearchPlan(input, extractionProvider, journalLang);
+  const plan = await buildSmartSearchPlan(input, extractionProvider, journalLang, signal);
+
+  // Client disconnected during plan extraction — stop before firing source searches
+  signal?.throwIfAborted();
 
   // Pass year filters to search APIs for server-side filtering (much more effective)
   const yearFrom = plan.filters.yearFrom;
@@ -613,6 +619,9 @@ export async function smartSearch(
     ];
   }
 
+  // Client disconnected during source searches — stop before further work
+  signal?.throwIfAborted();
+
   // ── Targeted journal search (when user specifies specific journals or journal lists) ──
   // When user says "Nature子刊 + FT50", we search ALL those journals via OpenAlex.
   // Dual strategy: OpenAlex source ID filter + Google Scholar source: operator
@@ -745,6 +754,9 @@ export async function smartSearch(
   } else {
     onProgress?.("enrich", `去重后 ${rawPapers.length} 篇，补全摘要 + 期刊元数据...`);
   }
+
+  // Client disconnected — skip enrichment
+  signal?.throwIfAborted();
 
   // Enrichment: fill abstracts + journal metadata from S2, CrossRef, OpenAlex
   let enrichedPapers: typeof rawPapers;
@@ -933,6 +945,9 @@ export async function smartSearch(
     }
   }
 
+  // Client disconnected — skip relevance scoring (the most expensive LLM phase)
+  signal?.throwIfAborted();
+
   // Step 7: AI relevance scoring on the pre-selected papers (limit+20 pool)
   // Papers were pre-selected by journal tier + citations — now AI scores for relevance
   const isQualityTier = limit <= 50;
@@ -944,7 +959,8 @@ export async function smartSearch(
     try {
       scoredPapers = await scoreRelevance(papers, input, plan.translatedInput, "deepseek-fast",
         (scored, total) => onProgress?.("score", `AI 摘要快速评分: ${scored}/${total} 篇...`),
-        onPaperScored
+        onPaperScored,
+        signal
       );
       // Don't pre-filter here — let applyTieredLimit handle the final selection
       // Sort by score descending so applyTieredLimit picks best papers first
@@ -960,6 +976,9 @@ export async function smartSearch(
 
   // Apply tiered limit: P1 → P2 → P3 → rest, up to user's limit
   const finalPapers = applyTieredLimit(scoredPapers, limit, relevanceScored, journalLang);
+
+  // Client disconnected — skip SPECTER2 re-ranking
+  signal?.throwIfAborted();
 
   // Step 10: Optional SPECTER2 semantic re-ranking for quality tiers
   if (isQualityTier && finalPapers.length > 0) {

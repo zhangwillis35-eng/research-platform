@@ -183,6 +183,7 @@ export async function POST(request: Request) {
             try {
               const res = await callAI({
                 provider,
+                signal: request.signal,
                 system: systemPrompt,
                 messages: [{ role: "user", content: batchContent }],
                 jsonMode: true,
@@ -234,6 +235,7 @@ export async function POST(request: Request) {
 
     const response = await callAI({
       provider,
+      signal: request.signal,
       system: systemPrompt,
       messages: [{ role: "user", content }],
       jsonMode: type !== "review",

@@ -15,7 +15,8 @@ export async function concurrentPool<T, R>(
   items: T[],
   fn: (item: T, index: number) => Promise<R>,
   concurrency: number,
-  onProgress?: (completed: number, total: number, result: PoolResult<R>) => void
+  onProgress?: (completed: number, total: number, result: PoolResult<R>) => void,
+  signal?: AbortSignal
 ): Promise<PoolResult<R>[]> {
   const results: PoolResult<R>[] = new Array(items.length);
   let completed = 0;
@@ -23,6 +24,8 @@ export async function concurrentPool<T, R>(
 
   async function worker() {
     while (cursor < items.length) {
+      // Stop claiming new items once the caller aborted (client disconnect / stop button)
+      if (signal?.aborted) break;
       const idx = cursor++;
       try {
         const value = await fn(items[idx], idx);
@@ -40,5 +43,18 @@ export async function concurrentPool<T, R>(
     () => worker()
   );
   await Promise.all(workers);
+
+  // Fill slots for items that never ran (aborted before being claimed) so the
+  // returned array has no holes. No onProgress for these — they never executed.
+  for (let i = 0; i < results.length; i++) {
+    if (!results[i]) {
+      results[i] = {
+        status: "rejected",
+        reason: new DOMException("Aborted", "AbortError"),
+        index: i,
+      };
+    }
+  }
+
   return results;
 }

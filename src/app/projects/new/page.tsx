@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
+import { toast } from "@/components/toast";
 
 export default function NewProjectPage() {
   const router = useRouter();
@@ -30,6 +31,7 @@ export default function NewProjectPage() {
       const { project } = await res.json();
       router.push(`/projects/${project.id}`);
     } catch {
+      toast.error("创建项目失败，请稍后重试");
       setCreating(false);
     }
   }

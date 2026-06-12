@@ -21,6 +21,7 @@ import {
 import { useAbort } from "@/hooks/use-abort";
 import { StopButton } from "@/components/stop-button";
 import { AnalysisChat } from "@/components/analysis-chat";
+import { toast } from "@/components/toast";
 
 interface Paper {
   id: string;
@@ -63,7 +64,7 @@ export default function ProposalPage() {
     fetch(`/api/papers?projectId=${projectId}&source=fulltext`)
       .then((r) => r.json())
       .then((d) => setPapers(d.papers ?? []))
-      .catch(() => {})
+      .catch(() => toast.error("加载文献列表失败，请刷新重试"))
       .finally(() => setPapersLoading(false));
   }, [projectId]);
 
@@ -90,7 +91,7 @@ export default function ProposalPage() {
             })),
           }, signal);
           if (stormData.article) externalContext = stormData.article;
-        } catch { /* continue */ }
+        } catch { toast.info("STORM 深度分析失败，已跳过，继续生成 Proposal"); }
       }
 
       setLoadingPhase("AI 撰写 Proposal...");
@@ -194,6 +195,8 @@ export default function ProposalPage() {
         a.download = "references-apa.txt";
         a.click();
         URL.revokeObjectURL(url);
+      } else {
+        toast.error("导出参考文献失败，请稍后重试");
       }
     } catch {
       alert("导出失败");
@@ -327,7 +330,7 @@ export default function ProposalPage() {
               })}
               <Separator className="my-2" />
               <Button size="sm" variant="outline" className="w-full h-7 text-xs" onClick={handleExport}>导出 Markdown</Button>
-              <Button size="sm" variant="outline" className="w-full h-7 text-xs" onClick={() => { navigator.clipboard.writeText(proposalText); }}>复制全文</Button>
+              <Button size="sm" variant="outline" className="w-full h-7 text-xs" onClick={() => { navigator.clipboard.writeText(proposalText); toast.success("已复制全文"); }}>复制全文</Button>
             </div>
           </div>
 

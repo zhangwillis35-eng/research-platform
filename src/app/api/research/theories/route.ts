@@ -27,6 +27,7 @@ export async function POST(request: Request) {
 
     const response = await callAI({
       provider,
+      signal: request.signal,
       system: `You are a management theory analysis expert. Identify all theoretical frameworks used in the literature and discover cross-theory connections.
 
 Output strict JSON. Use Chinese for all descriptive text fields:

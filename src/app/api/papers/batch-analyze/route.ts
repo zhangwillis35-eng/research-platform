@@ -10,6 +10,10 @@ const MAX_CONCURRENCY = 15;
 const FULLTEXT_CONCURRENCY = 20;
 const DEFAULT_PROVIDER: AIProvider = "deepseek-fast";
 
+// Abstract-only papers are analyzed in batches — one LLM call per 10 papers
+const ABSTRACT_BATCH_SIZE = 10;
+const ABSTRACT_BATCH_CONCURRENCY = 5;
+
 // Max full text chars to send to LLM per paper
 // deepseek-chat has 64K context; ~8K per paper leaves room for prompt + output
 const MAX_FULLTEXT_PER_PAPER = 8000;
@@ -28,19 +32,48 @@ Respond in Chinese. Return JSON object only, no other text.`;
 const SYSTEM_PROMPT_ABSTRACT =
   "You are a management research methodology expert. Extract 3-5 key tags (theory names, method types, research domains) from the paper, and analyze its theoretical model, key variables, research methods, and marginal contribution. Respond in Chinese. Return JSON object only, no other text.";
 
-function buildPrompt(paper: {
+const SYSTEM_PROMPT_BATCH_ABSTRACT =
+  `You are a management research methodology expert. You will receive MULTIPLE papers, each labeled [0], [1], [2]... with title, authors, year, venue, citations, and abstract.
+
+For EACH paper, extract 3-5 key tags (theory names, method types, research domains) and analyze its theoretical model, key variables, research methods, and marginal contribution based strictly on the provided abstract — never fabricate.
+
+ALL text values MUST be written in Chinese (中文). Return a strict JSON object only (no markdown, no other text) in this exact shape:
+{"results":[{"index":0,"tags":["标签1","标签2","标签3"],"model":"理论模型分析（1-2句中文）","variables":"关键变量分析：自变量、因变量、中介、调节（中文）","method":"研究方法分析（1-2句中文）","contribution":"边际贡献分析（1-2句中文）","dataSource":"仅摘要"}]}
+
+The "index" field MUST match each paper's [N] label. Include exactly one result object per paper — do not skip any paper.`;
+
+interface PaperRow {
   title: string;
   abstract: string | null;
   authors: unknown;
   year: number | null;
   venue: string | null;
   citationCount: number;
-}, fullText?: string) {
-  const authors =
+}
+
+function formatAuthors(paper: PaperRow): string {
+  return (
     (paper.authors as Array<{ name: string }>)
       ?.slice(0, 3)
       .map((a) => a.name)
-      .join(", ") ?? "";
+      .join(", ") ?? ""
+  );
+}
+
+/** Batch prompt: multiple abstract-only papers, labeled [0], [1]... for index-keyed results */
+function buildBatchAbstractPrompt(papers: PaperRow[]): string {
+  return papers
+    .map(
+      (p, i) => `[${i}] Title: ${p.title}
+Authors: ${formatAuthors(p)}
+Year: ${p.year ?? "N/A"} | Venue: ${p.venue ?? "N/A"} | Citations: ${p.citationCount}
+Abstract: ${(p.abstract ?? "No abstract available").slice(0, 1500)}`
+    )
+    .join("\n\n---\n\n");
+}
+
+function buildPrompt(paper: PaperRow, fullText?: string) {
+  const authors = formatAuthors(paper);
 
   const header = `Title: ${paper.title}
 Authors: ${authors}
@@ -135,7 +168,16 @@ export async function POST(request: Request) {
 `)); } catch { /* closed */ }
           }, 10000);
       function send(data: Record<string, unknown>) {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        } catch { /* stream already closed (client disconnected) */ }
+      }
+
+      /** Client disconnected — stop all remaining work and close the stream */
+      function abortAndClose(): void {
+        console.log("[batch-analyze] client disconnected, aborting");
+        clearInterval(keepalive);
+        try { controller.close(); } catch { /* already closed */ }
       }
 
       // Phase 1: Enrich incomplete abstracts from OpenAlex (parallel, fast)
@@ -184,6 +226,12 @@ export async function POST(request: Request) {
         );
       }
 
+      // Client disconnected during abstract enrichment — stop before full-text fetch
+      if (request.signal.aborted) {
+        abortAndClose();
+        return;
+      }
+
       // Phase 2: Fetch full text for ALL papers (20 concurrent)
       send({
         type: "status",
@@ -199,22 +247,69 @@ export async function POST(request: Request) {
         FULLTEXT_CONCURRENCY
       );
 
+      // Client disconnected during full-text fetch — stop before LLM calls
+      if (request.signal.aborted) {
+        abortAndClose();
+        return;
+      }
+
       const withFullText = [...fullTextMap.values()].filter((ft) => ft.text.length > 300).length;
       send({
         type: "status",
         message: `全文获取完成: ${withFullText}/${papers.length} 篇有全文，开始 AI 深度分析 (${poolSize} 并发, ${aiProvider})...`,
       });
 
-      // Phase 3: Concurrent AI analysis with full text
+      // Phase 3: Concurrent AI analysis.
+      // Full-text papers: per-paper calls (8K chars each — can't merge).
+      // Abstract-only papers: batched 10-per-call to cut request overhead and cost.
       let analyzed = 0;
       let failed = 0;
+      let completed = 0; // shared across both pools
+      const total = papers.length;
 
-      await concurrentPool(
-        papers,
+      const hasFullTextFor = (paper: (typeof papers)[number]): boolean => {
+        const ft = fullTextMap.get(paper.doi || paper.title);
+        return !!(ft && ft.text.length > 300);
+      };
+      const fullTextPapers = papers.filter(hasFullTextFor);
+      const abstractPapers = papers.filter((p) => !hasFullTextFor(p));
+
+      const sendOk = (paper: (typeof papers)[number], hasFullText: boolean) => {
+        analyzed++;
+        completed++;
+        send({
+          type: "progress",
+          completed,
+          total,
+          paperId: paper.id,
+          title: paper.title.slice(0, 60),
+          status: "ok",
+          hasFullText,
+        });
+      };
+      const sendError = (paper: (typeof papers)[number], reason: unknown) => {
+        failed++;
+        completed++;
+        const errMsg =
+          reason instanceof Error
+            ? reason.message.slice(0, 120)
+            : String(reason).slice(0, 120);
+        send({
+          type: "progress",
+          completed,
+          total,
+          paperId: paper.id,
+          title: paper.title.slice(0, 60),
+          status: "error",
+          error: errMsg,
+        });
+      };
+
+      // Pool A: full-text papers — one deep-analysis call per paper
+      const fullTextPool = concurrentPool(
+        fullTextPapers,
         async (paper) => {
-          const key = paper.doi || paper.title;
-          const ft = fullTextMap.get(key);
-          const hasFullText = ft && ft.text.length > 300;
+          const ft = fullTextMap.get(paper.doi || paper.title);
 
           const result = await callAI({
             provider: aiProvider,
@@ -224,11 +319,12 @@ export async function POST(request: Request) {
                 content: buildPrompt(paper, ft?.text),
               },
             ],
-            system: hasFullText ? SYSTEM_PROMPT_FULLTEXT : SYSTEM_PROMPT_ABSTRACT,
+            system: SYSTEM_PROMPT_FULLTEXT,
             jsonMode: true,
             noThinking: true,
             temperature: 0.1,
-            maxTokens: hasFullText ? 1500 : 800,
+            maxTokens: 1500,
+            signal: request.signal,
           });
 
           const cleaned = result.content
@@ -245,42 +341,102 @@ export async function POST(request: Request) {
           return analysis;
         },
         poolSize,
-        (completed, total, result) => {
+        (_completed, _total, result) => {
+          const paper = fullTextPapers[result.index];
           if (result.status === "fulfilled") {
-            analyzed++;
-            const key = papers[result.index].doi || papers[result.index].title;
-            const ft = fullTextMap.get(key);
-            send({
-              type: "progress",
-              completed,
-              total,
-              paperId: papers[result.index].id,
-              title: papers[result.index].title.slice(0, 60),
-              status: "ok",
-              hasFullText: !!(ft && ft.text.length > 300),
-            });
+            sendOk(paper, true);
           } else {
-            failed++;
-            const errMsg =
-              result.reason instanceof Error
-                ? result.reason.message.slice(0, 120)
-                : String(result.reason).slice(0, 120);
-            send({
-              type: "progress",
-              completed,
-              total,
-              paperId: papers[result.index].id,
-              title: papers[result.index].title.slice(0, 60),
-              status: "error",
-              error: errMsg,
-            });
+            sendError(paper, result.reason);
           }
-        }
+        },
+        request.signal
       );
+
+      // Pool B: abstract-only papers — one call per batch of 10
+      const abstractBatches: (typeof papers)[] = [];
+      for (let i = 0; i < abstractPapers.length; i += ABSTRACT_BATCH_SIZE) {
+        abstractBatches.push(abstractPapers.slice(i, i + ABSTRACT_BATCH_SIZE));
+      }
+
+      const abstractPool = concurrentPool(
+        abstractBatches,
+        async (batch) => {
+          const result = await callAI({
+            provider: aiProvider,
+            system: SYSTEM_PROMPT_BATCH_ABSTRACT,
+            messages: [{ role: "user", content: buildBatchAbstractPrompt(batch) }],
+            jsonMode: true,
+            noThinking: true,
+            temperature: 0.1,
+            maxTokens: Math.max(800, batch.length * 500),
+            signal: request.signal,
+          });
+
+          const cleaned = result.content
+            .replace(/```json\s*/g, "")
+            .replace(/```\s*/g, "")
+            .trim();
+          const parsed = JSON.parse(cleaned);
+          // Tolerate both {"results":[...]} and a raw array
+          const results: Array<Record<string, unknown>> = Array.isArray(parsed)
+            ? parsed
+            : parsed.results;
+          if (!Array.isArray(results)) {
+            throw new Error("Batch response missing results array");
+          }
+
+          const byIndex = new Map<number, Record<string, unknown>>();
+          for (const r of results) {
+            if (r && typeof r.index === "number") byIndex.set(r.index, r);
+          }
+
+          await Promise.all(
+            batch.map(async (paper, i) => {
+              const r = byIndex.get(i);
+              if (!r) {
+                sendError(paper, new Error("missing from batch response"));
+                return;
+              }
+              const analysis = {
+                tags: r.tags ?? [],
+                model: r.model ?? "",
+                variables: r.variables ?? "",
+                method: r.method ?? "",
+                contribution: r.contribution ?? "",
+                dataSource: r.dataSource ?? "仅摘要",
+              };
+              try {
+                await prisma.paper.update({
+                  where: { id: paper.id },
+                  data: { aiAnalysis: JSON.stringify(analysis) },
+                });
+                sendOk(paper, false);
+              } catch (err) {
+                sendError(paper, err);
+              }
+            })
+          );
+        },
+        ABSTRACT_BATCH_CONCURRENCY,
+        (_completed, _total, result) => {
+          // Whole batch call failed — every paper in it counts as failed
+          if (result.status === "rejected") {
+            for (const paper of abstractBatches[result.index]) {
+              sendError(paper, result.reason);
+            }
+          }
+        },
+        request.signal
+      );
+
+      await Promise.all([fullTextPool, abstractPool]);
 
       send({ type: "done", analyzed, failed, total: papers.length, withFullText });
       clearInterval(keepalive);
-        controller.close();
+      try { controller.close(); } catch { /* already closed */ }
+    },
+    cancel() {
+      console.log("[batch-analyze] stream cancelled (client disconnected)");
     },
   });
 

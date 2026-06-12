@@ -69,6 +69,7 @@ ${graphContext}`;
 
         const stream = streamAI({
           provider: provider as AIProvider,
+          signal: request.signal,
           system: systemPrompt,
           messages: [{ role: "user", content: question }],
           noThinking: true,

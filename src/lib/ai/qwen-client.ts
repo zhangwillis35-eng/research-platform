@@ -3,7 +3,8 @@
  * Uses OpenAI-compatible endpoint.
  */
 import type { AIRequestOptions, AIResponse } from "./types";
-import { proxyFetch } from "./proxy-fetch";
+import { proxyFetch, combineSignals } from "./proxy-fetch";
+import { fetchWithRetry } from "@/lib/retry-fetch";
 import { getEnv } from "@/lib/env";
 
 const QWEN_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1";
@@ -63,11 +64,20 @@ export async function callQwen(options: AIRequestOptions): Promise<AIResponse> {
   const apiKey = getApiKey();
   const body = buildBody(options, false);
 
-  const res = await proxyFetch(`${QWEN_BASE}/chat/completions`, {
-    method: "POST",
-    headers: baseHeaders(apiKey),
-    body: JSON.stringify(body),
-  });
+  const res = await fetchWithRetry(
+    `${QWEN_BASE}/chat/completions`,
+    {
+      method: "POST",
+      headers: baseHeaders(apiKey),
+      body: JSON.stringify(body),
+    },
+    {
+      maxRetries: 3,
+      retryOn: [429, 503],
+      timeoutMs: options.timeoutMs ?? 60000,
+      signal: options.signal,
+    }
+  );
 
   if (!res.ok) {
     const errText = await res.text();
@@ -96,10 +106,12 @@ export async function* streamQwen(
   const apiKey = getApiKey();
   const body = buildBody(options, true);
 
+  // Streaming: caller signal + 300s cap — streams can take minutes but must not hang forever
   const res = await proxyFetch(`${QWEN_BASE}/chat/completions`, {
     method: "POST",
     headers: baseHeaders(apiKey),
     body: JSON.stringify(body),
+    signal: combineSignals(options.signal, options.timeoutMs ?? 300_000),
   });
 
   if (!res.ok) {

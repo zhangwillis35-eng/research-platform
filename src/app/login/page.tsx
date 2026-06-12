@@ -120,6 +120,8 @@ export default function LoginPage() {
       const data = await res.json();
       if (!res.ok) { setError(data.error); return; }
       router.replace("/projects");
+    } catch {
+      setError("网络错误，请检查网络后重试");
     } finally {
       setLoading(false);
     }
@@ -141,6 +143,8 @@ export default function LoginPage() {
       const data = await res.json();
       if (!res.ok) { setError(data.error); return; }
       setMode("pending");
+    } catch {
+      setError("网络错误，请检查网络后重试");
     } finally {
       setLoading(false);
     }
@@ -161,6 +165,8 @@ export default function LoginPage() {
       const data = await res.json();
       if (!res.ok) { setError(data.error); return; }
       router.push("/projects");
+    } catch {
+      setError("网络错误，请检查网络后重试");
     } finally {
       setLoading(false);
     }

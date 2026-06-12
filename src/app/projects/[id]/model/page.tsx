@@ -37,6 +37,7 @@ import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useSavedAnalysis } from "@/hooks/use-saved-analysis";
 import { AnalysisChat } from "@/components/analysis-chat";
 import { toPng } from "html-to-image";
+import { toast } from "@/components/toast";
 
 // ─── Custom Node Component ──────────────────────
 
@@ -133,7 +134,7 @@ export default function ConceptualModelPage() {
         setPapers(loadedPapers);
         setPaperCount(loadedPapers.length);
       })
-      .catch(() => {});
+      .catch(() => toast.error("加载文献列表失败，请刷新重试"));
   }, [projectId]);
 
   // Restore saved model data (only if still showing initial placeholder nodes)
@@ -208,6 +209,7 @@ export default function ConceptualModelPage() {
           if (stormData.combined) engineInsights = "\n\n[STORM 分析结果]\n" + stormData.combined;
         } catch (err) {
           if (err instanceof Error && err.name === "AbortError") throw err;
+          toast.info("STORM 深度分析失败，已跳过，继续生成模型");
           /* continue without STORM */
         }
       }
@@ -288,6 +290,8 @@ export default function ConceptualModelPage() {
         setEdges(newEdges);
         setHypothesisCount(newEdges.length + 1);
         saveModel({ nodes: newNodes, edges: newEdges });
+      } else {
+        toast.error("AI 返回的模型格式无效，请重试");
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") { setGenerating(false); return; }
@@ -310,6 +314,7 @@ export default function ConceptualModelPage() {
       a.click();
     } catch (e) {
       console.error("PNG export failed:", e);
+      toast.error("导出 PNG 失败，请重试");
     }
   }
 

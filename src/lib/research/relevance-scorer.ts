@@ -143,7 +143,8 @@ export async function scoreRelevance(
   translatedQuery: string | undefined,
   provider: AIProvider = SCORING_DEFAULT_PROVIDER,
   onProgress?: (scored: number, total: number) => void,
-  onPaperScored?: (index: number, score: RelevanceScore) => void
+  onPaperScored?: (index: number, score: RelevanceScore) => void,
+  signal?: AbortSignal
 ): Promise<ScoredPaper[]> {
   if (papers.length === 0) return [];
 
@@ -216,6 +217,7 @@ export async function scoreRelevance(
           noThinking: true,
           temperature: 0,
           maxTokens: batch.papers.length * 150,
+          signal,
         });
 
         const cleaned = response.content
@@ -237,7 +239,8 @@ export async function scoreRelevance(
         if (completed % 5 === 0 || completed === total) {
           console.log(`[relevance-scorer] Batch progress: ${completed}/${total} batches`);
         }
-      }
+      },
+      signal
     );
   } else {
     // Single mode: 1 paper per AI call — better quality for smaller sets
@@ -261,6 +264,7 @@ export async function scoreRelevance(
               noThinking: true,
               temperature: 0,
               maxTokens: 500,
+              signal,
             });
 
             const cleaned = response.content
@@ -274,6 +278,8 @@ export async function scoreRelevance(
             onPaperScored?.(idx, score);
             return; // success
           } catch (err) {
+            // Caller aborted (client disconnect / stop button) — stop retrying immediately
+            if (signal?.aborted) throw err;
             if (attempt < MAX_ATTEMPTS - 1) {
               // Exponential backoff: 1s, 2s, 4s
               const delay = 1000 * Math.pow(2, attempt);
@@ -290,7 +296,8 @@ export async function scoreRelevance(
         if (completed % 10 === 0 || completed === total) {
           console.log(`[relevance-scorer] Progress: ${completed}/${total}`);
         }
-      }
+      },
+      signal
     );
   }
 

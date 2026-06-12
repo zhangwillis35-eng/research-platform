@@ -53,6 +53,7 @@ export async function POST(request: Request) {
   try {
     const extractResult = await callAI({
       provider,
+      signal: request.signal,
       system: EXTRACT_TITLES_PROMPT,
       messages: [{ role: "user", content: references }],
       noThinking: true,
