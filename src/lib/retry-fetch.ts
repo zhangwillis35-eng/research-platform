@@ -55,7 +55,10 @@ export async function fetchWithRetry(
 
       if (retryAfter) {
         const seconds = parseInt(retryAfter, 10);
-        delayMs = isNaN(seconds) ? baseDelay : seconds * 1000;
+        // Cap by maxDelay — some APIs (e.g. OpenAlex) return absurd Retry-After
+        // values (tens of thousands of seconds). Honoring them blindly hangs the
+        // request for hours. We'd rather give up fast than sleep past any timeout.
+        delayMs = isNaN(seconds) ? baseDelay : Math.min(seconds * 1000, maxDelay);
       } else {
         // Exponential backoff with jitter
         delayMs = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);

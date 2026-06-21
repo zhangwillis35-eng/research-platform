@@ -16,18 +16,29 @@ import { concurrentPool } from "@/lib/concurrent-pool";
 import { fetchWithRetry } from "@/lib/retry-fetch";
 import type { UnifiedPaper } from "@/lib/sources/types";
 
+// Polite-pool email — REQUIRED in practice. Shared cloud IPs (e.g. Alibaba
+// ECS) get 429'd instantly in OpenAlex's anonymous common pool; the polite
+// pool is keyed by `mailto`, not IP, so it bypasses that. Always send it.
+// Set OPENALEX_EMAIL in the server's .env to your real contact email;
+// this fallback only guarantees the request still enters the polite pool.
+const OPENALEX_MAILTO = process.env.OPENALEX_EMAIL || "scholarflow-digest@proton.me";
+
+/** Append the polite-pool mailto to an OpenAlex works URL. */
+function withMailto(url: string): string {
+  return url + (url.includes("?") ? "&" : "?") + "mailto=" + encodeURIComponent(OPENALEX_MAILTO);
+}
+
 // OpenAlex fetch — proxy-aware + light retry + bounded timeout.
-// Production servers (esp. in CN) have slower international links than dev.
 // Retries are kept LOW: if OpenAlex is unreachable, heavy retrying just makes
 // the whole endpoint hang until a gateway timeout, surfacing as a generic
 // "获取失败". A preflight probe (below) fails fast instead.
 const oaStats = { ok: 0, fail: 0 };
 async function openAlexFetch(url: string, timeoutMs = 12000): Promise<Response | null> {
   try {
-    const res = await fetchWithRetry(url, {}, {
-      maxRetries: 1,
-      baseDelayMs: 600,
-      maxDelayMs: 2000,
+    const res = await fetchWithRetry(withMailto(url), {}, {
+      maxRetries: 2,
+      baseDelayMs: 800,
+      maxDelayMs: 3000,
       retryOn: [429, 500, 502, 503],
       timeoutMs,
     });
@@ -39,16 +50,17 @@ async function openAlexFetch(url: string, timeoutMs = 12000): Promise<Response |
   }
 }
 
-// Preflight reachability check — single short request, no retry.
-// Lets a blocked/unreachable OpenAlex fail in ~10s with an accurate message
-// instead of hanging for minutes on 40 retrying requests.
-async function openAlexReachable(): Promise<boolean> {
-  const url = "https://api.openalex.org/works?per_page=1&select=id&search=artificial%20intelligence";
+// Preflight reachability check — single short request via the polite pool,
+// one retry. Returns the status so the caller can tell a 429 (rate limited,
+// transient) apart from an unreachable host (network/proxy issue) and show an
+// accurate message instead of hanging for minutes on the full request set.
+async function openAlexProbe(): Promise<{ ok: boolean; status: number | null }> {
+  const url = withMailto("https://api.openalex.org/works?per_page=1&select=id&search=artificial%20intelligence");
   try {
-    const res = await fetchWithRetry(url, {}, { maxRetries: 0, timeoutMs: 10000 });
-    return res.ok;
+    const res = await fetchWithRetry(url, {}, { maxRetries: 1, baseDelayMs: 1000, retryOn: [429, 503], timeoutMs: 10000 });
+    return { ok: res.ok, status: res.status };
   } catch {
-    return false;
+    return { ok: false, status: null };
   }
 }
 
@@ -158,7 +170,7 @@ async function fetchFromOpenAlex(daysBack: number): Promise<UnifiedPaper[]> {
             sort: "cited_by_count:desc",
             select: "id,doi,display_name,title,publication_year,cited_by_count,authorships,primary_location,abstract_inverted_index,open_access",
           });
-          if (process.env.OPENALEX_EMAIL) params.set("mailto", process.env.OPENALEX_EMAIL);
+          // mailto (polite pool) is added centrally by openAlexFetch.
 
           const res = await openAlexFetch(`https://api.openalex.org/works?${params}`);
           if (!res) continue;
@@ -457,17 +469,21 @@ async function runDigest(projectId: string, daysBack: number = 30) {
   const folderName = `AI 前沿周刊 ${weekLabel}`;
 
   // Preflight: bail fast (and WITHOUT touching existing data) if OpenAlex is
-  // unreachable from this server — otherwise 40 retrying requests hang until a
+  // unreachable/throttled — otherwise the full request set hangs until a
   // gateway timeout and the user just sees a generic "获取失败".
-  if (!(await openAlexReachable())) {
-    console.warn("[weekly-digest] OpenAlex preflight failed — server cannot reach api.openalex.org");
+  const probe = await openAlexProbe();
+  if (!probe.ok) {
+    const reason = probe.status === 429
+      ? "OpenAlex 暂时限流（429），请过几分钟再试；如持续，请在服务器 .env 设置 OPENALEX_EMAIL 以使用 polite pool"
+      : "无法连接 OpenAlex 学术数据库（服务器网络受限，请为容器配置代理）";
+    console.warn(`[weekly-digest] OpenAlex preflight failed (status=${probe.status}): ${reason}`);
     return {
       saved: 0,
       savedIds: [] as string[],
       total: 0,
       folder: folderName,
-      reason: "无法连接 OpenAlex 学术数据库（服务器网络受限，请为容器配置代理）",
-      diagnostics: { openAlexOk: 0, openAlexFailed: 1, preflight: "failed" },
+      reason,
+      diagnostics: { openAlexOk: 0, openAlexFailed: 1, preflightStatus: probe.status },
       sources: { targetJournals: 0 },
     };
   }
