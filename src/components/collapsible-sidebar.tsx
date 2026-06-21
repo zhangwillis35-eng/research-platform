@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from "react";
 
 const navItems = [
   { label: "项目概览", href: "", icon: "◐" },
+  { label: "案例库", href: "/cases", icon: "💬" },
   { label: "① 文献检索", href: "/papers/search", icon: "◎" },
   { label: "② 文献库", href: "/papers", icon: "▤" },
   { label: "③ 文献综述", href: "/review", icon: "¶" },
@@ -13,10 +14,9 @@ const navItems = [
   { label: "⑤ 研究想法", href: "/ideas/generate", icon: "✦" },
   { label: "⑥ 理论整合", href: "/theories/integrate", icon: "⬡" },
   { label: "⑦ 概念模型", href: "/model", icon: "◇" },
-  { label: "⑧ 案例库", href: "/cases", icon: "💬" },
-  { label: "⑨ Proposal", href: "/proposal", icon: "📝" },
-  { label: "⑩ 参考文献", href: "/references", icon: "☰" },
-  { label: "⑪ 文献翻译", href: "/translate", icon: "译" },
+  { label: "⑧ Proposal", href: "/proposal", icon: "📝" },
+  { label: "⑨ 参考文献", href: "/references", icon: "☰" },
+  { label: "⑩ 文献翻译", href: "/translate", icon: "译" },
   { label: "设置", href: "/settings", icon: "⚙" },
 ];
 
