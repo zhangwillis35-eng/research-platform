@@ -309,6 +309,13 @@ export default function PapersPage() {
         signal,
       });
       const data = await res.json();
+      // Distinguish a failed request from a genuinely-empty result.
+      if (!res.ok || data.error) {
+        const detail = data.error || `HTTP ${res.status}`;
+        setDigestResult(`获取失败：${detail}`);
+        toast.error(`获取本周 AI 前沿失败：${detail}`);
+        return;
+      }
       if (data.saved > 0) {
         setDigestResult(`已收录 ${data.saved} 篇文献，正在 AI 分析中...`);
         setActiveTab("weekly");
@@ -378,7 +385,9 @@ export default function PapersPage() {
           setDigestResult(`已收录 ${data.saved} 篇文献`);
         }
       } else {
-        setDigestResult("本周暂无符合条件的新文献");
+        // saved === 0 but request succeeded — show the backend's reason
+        // (e.g. "无法连接 OpenAlex" vs genuinely no new papers).
+        setDigestResult(data.reason || "本周暂无符合条件的新文献");
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {

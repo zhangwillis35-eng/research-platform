@@ -13,7 +13,29 @@ import { requireProjectAccess } from "@/lib/auth";
 import { searchArxiv } from "@/lib/sources/arxiv";
 import { searchGoogleScholar } from "@/lib/sources/google-scholar";
 import { concurrentPool } from "@/lib/concurrent-pool";
+import { fetchWithRetry } from "@/lib/retry-fetch";
 import type { UnifiedPaper } from "@/lib/sources/types";
+
+// OpenAlex fetch — proxy-aware + retry + generous timeout.
+// Production servers (esp. in CN) have slower international links than dev,
+// so a plain 12s fetch() silently times out and the digest returns 0 papers.
+const oaStats = { ok: 0, fail: 0 };
+async function openAlexFetch(url: string): Promise<Response | null> {
+  try {
+    const res = await fetchWithRetry(url, {}, {
+      maxRetries: 2,
+      baseDelayMs: 800,
+      maxDelayMs: 4000,
+      retryOn: [429, 500, 502, 503],
+      timeoutMs: 25000,
+    });
+    if (res.ok) oaStats.ok++; else oaStats.fail++;
+    return res.ok ? res : null;
+  } catch {
+    oaStats.fail++;
+    return null;
+  }
+}
 
 // ─── OpenAlex Source IDs for target journals ──────
 // Using source IDs (not name search) for reliable filtering
@@ -123,10 +145,8 @@ async function fetchFromOpenAlex(daysBack: number): Promise<UnifiedPaper[]> {
           });
           if (process.env.OPENALEX_EMAIL) params.set("mailto", process.env.OPENALEX_EMAIL);
 
-          const res = await fetch(`https://api.openalex.org/works?${params}`, {
-            signal: AbortSignal.timeout(12000),
-          });
-          if (!res.ok) continue;
+          const res = await openAlexFetch(`https://api.openalex.org/works?${params}`);
+          if (!res) continue;
           const data = await res.json();
 
           for (const w of data.results ?? []) {
@@ -416,6 +436,8 @@ export async function POST(request: Request) {
 }
 
 async function runDigest(projectId: string, daysBack: number = 30) {
+  oaStats.ok = 0;
+  oaStats.fail = 0;
   const weekLabel = getWeekLabel();
   const folderName = `AI 前沿周刊 ${weekLabel}`;
 
@@ -439,10 +461,29 @@ async function runDigest(projectId: string, daysBack: number = 30) {
   // Sort by citations and take top 80
   const allPapers = dedupByTitle(targetPapers)
     .sort((a, b) => b.citationCount - a.citationCount);
-  console.log(`[weekly-digest] After dedup + citation sort: ${allPapers.length}`);
+  console.log(`[weekly-digest] After dedup + citation sort: ${allPapers.length} (OpenAlex requests: ${oaStats.ok} ok / ${oaStats.fail} failed)`);
+
+  // Guard: if we fetched NOTHING, do NOT wipe the existing folder.
+  // A failed run (e.g. OpenAlex unreachable) must not destroy the last good batch.
+  if (allPapers.length === 0) {
+    const reason = oaStats.ok === 0
+      ? "无法连接 OpenAlex 学术数据库（请检查服务器网络/代理）"
+      : "本周暂无符合条件的新文献";
+    console.warn(`[weekly-digest] 0 papers fetched — keeping existing folder. Reason: ${reason}`);
+    return {
+      saved: 0,
+      savedIds: [] as string[],
+      total: 0,
+      folder: folderName,
+      reason,
+      diagnostics: { openAlexOk: oaStats.ok, openAlexFailed: oaStats.fail },
+      sources: { targetJournals: 0 },
+    };
+  }
 
   // Delete ALL previous weekly digest papers (not just current week's)
-  // so re-running always gets fresh top-tier papers
+  // so re-running always gets fresh top-tier papers. Only reached when we
+  // actually have new papers to replace them with.
   await prisma.paper.deleteMany({
     where: { projectId, folder: { contains: "AI 前沿" } },
   });
@@ -483,6 +524,7 @@ async function runDigest(projectId: string, daysBack: number = 30) {
     savedIds,
     total: allPapers.length,
     folder: folderName,
+    diagnostics: { openAlexOk: oaStats.ok, openAlexFailed: oaStats.fail },
     sources: {
       targetJournals: targetPapers.length,
     },
