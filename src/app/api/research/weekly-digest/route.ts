@@ -16,24 +16,39 @@ import { concurrentPool } from "@/lib/concurrent-pool";
 import { fetchWithRetry } from "@/lib/retry-fetch";
 import type { UnifiedPaper } from "@/lib/sources/types";
 
-// OpenAlex fetch — proxy-aware + retry + generous timeout.
-// Production servers (esp. in CN) have slower international links than dev,
-// so a plain 12s fetch() silently times out and the digest returns 0 papers.
+// OpenAlex fetch — proxy-aware + light retry + bounded timeout.
+// Production servers (esp. in CN) have slower international links than dev.
+// Retries are kept LOW: if OpenAlex is unreachable, heavy retrying just makes
+// the whole endpoint hang until a gateway timeout, surfacing as a generic
+// "获取失败". A preflight probe (below) fails fast instead.
 const oaStats = { ok: 0, fail: 0 };
-async function openAlexFetch(url: string): Promise<Response | null> {
+async function openAlexFetch(url: string, timeoutMs = 12000): Promise<Response | null> {
   try {
     const res = await fetchWithRetry(url, {}, {
-      maxRetries: 2,
-      baseDelayMs: 800,
-      maxDelayMs: 4000,
+      maxRetries: 1,
+      baseDelayMs: 600,
+      maxDelayMs: 2000,
       retryOn: [429, 500, 502, 503],
-      timeoutMs: 25000,
+      timeoutMs,
     });
     if (res.ok) oaStats.ok++; else oaStats.fail++;
     return res.ok ? res : null;
   } catch {
     oaStats.fail++;
     return null;
+  }
+}
+
+// Preflight reachability check — single short request, no retry.
+// Lets a blocked/unreachable OpenAlex fail in ~10s with an accurate message
+// instead of hanging for minutes on 40 retrying requests.
+async function openAlexReachable(): Promise<boolean> {
+  const url = "https://api.openalex.org/works?per_page=1&select=id&search=artificial%20intelligence";
+  try {
+    const res = await fetchWithRetry(url, {}, { maxRetries: 0, timeoutMs: 10000 });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 
@@ -440,6 +455,22 @@ async function runDigest(projectId: string, daysBack: number = 30) {
   oaStats.fail = 0;
   const weekLabel = getWeekLabel();
   const folderName = `AI 前沿周刊 ${weekLabel}`;
+
+  // Preflight: bail fast (and WITHOUT touching existing data) if OpenAlex is
+  // unreachable from this server — otherwise 40 retrying requests hang until a
+  // gateway timeout and the user just sees a generic "获取失败".
+  if (!(await openAlexReachable())) {
+    console.warn("[weekly-digest] OpenAlex preflight failed — server cannot reach api.openalex.org");
+    return {
+      saved: 0,
+      savedIds: [] as string[],
+      total: 0,
+      folder: folderName,
+      reason: "无法连接 OpenAlex 学术数据库（服务器网络受限，请为容器配置代理）",
+      diagnostics: { openAlexOk: 0, openAlexFailed: 1, preflight: "failed" },
+      sources: { targetJournals: 0 },
+    };
+  }
 
   // Fetch ONLY from top journals: Nature/Science/PNAS family + FT50 (via OpenAlex targeted search)
   // User requirement: no broad/arXiv/GS — only the highest quality journals
